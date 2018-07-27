@@ -10,6 +10,7 @@ Written by Waleed Abdulla
 import sys
 import os
 import math
+import zlib
 import random
 import numpy as np
 import tensorflow as tf
@@ -817,7 +818,7 @@ def compute_recall(pred_boxes, gt_boxes, iou):
 
 
 ############################################################
-#  Utility Functions
+##  Utility Functions
 ############################################################
 def log(text, array=None):
     """Prints a text message. And, optionally, if a Numpy array is provided it
@@ -834,3 +835,21 @@ def log(text, array=None):
 
 def mask_string(mask):
     return np.array2string(np.where(mask,1,0),max_line_width=134, separator = '')    
+
+from   sys      import stdout    
+    
+def write_stdout(filepath=None,filenm=None,stdout=stdout):
+    with open(filepath+filenm+'.out','wb'  ) as f_obj :
+        content = stdout.getvalue().encode('utf_8')
+        f_obj.write(content)
+        f_obj.close()    
+    return
+
+    
+def write_zip_stdout(filepath=None,filenm=None,stdout=stdout):
+    with open(filepath+filenm+'_xtrct_out.zip','wb'  ) as f_obj :
+        stdout = stdout.getvalue().encode('utf_8')
+        comp_stdout = zlib.compress(stdout)   
+        f_obj.write(comp_stdout)
+        f_obj.close()    
+    return

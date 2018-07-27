@@ -1,0 +1,46 @@
+
+######################################################
+# HTCondor Submit Description File. COMMON TEMPLATE   
+# Next commands should be added to all your submit files   
+######################################################
+ if !defined FNAME
+   FNAME = r
+ endif
+ #ID      = $(Cluster).$(Process)
+ 
+ ID      = $(Cluster)
+ output  = $(FNAME)$(ID).out
+ error   = $(FNAME)$(ID).err
+ log     = $(FNAME)$(ID).log
+
+#-------------------------------------------------------
+#
+#-------------------------------------------------------
+universe         = vanilla 
+
+executable  = /users/students/r0653928/anaconda3/envs/TF35/bin/python
+initialdir  = /users/students/r0653928/projs/mrcnn2
+Arguments   = "train_newshapes_fcn.py --epochs 100 --steps_in_epoch 100 --last_epoch 0 --batch_size 2 --lr 0.01 --logs_dir mrcnn_newshape_train_logs  --model last"
+
+#Arguments      = "train_dev.py --input_weight_path /esat/tiger/joramas/mscStudentsData/kbardool/projs/frcnn/vgg16_weights_tf_dim_ordering_tf_kernels.h5 --path  ../../MLDatasets "
+#Arguments       = "train_dev.py --input_weight_path ./new_model_frcnn_18.hdf5 --output_weight_path ./new_model_frcnn_19.hdf5 --path  ../../MLDatasets --num_epochs 10 --hf --vf --rot"
+
+
+notification     = error
+RequestCpus      = 1
+RequestMemory    = 32G
+Request_GPUs     = 1
++RequestWalltime = 72000 
+         
+Requirements = ( machineowner == "Visics" ) && ( CUDAGlobalMemoryMb > 12000 ) && (CUDACapability >=3.5)
+
+NiceUser = true
+ 
+Queue 1
+
+
+#Output = /users/students/r0653928/projs/frcnn/output.out
+#Error  = /users/students/r0653928/projs/frcnn/errors.err
+#Log    = /users/students/r0653928/projs/frcnn/logfile.log
+### Requirements = machine == "monkey.esat.kuleuven.be"
+### Rank = machine == "monkey.east.kuleuven.be"

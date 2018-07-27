@@ -9,11 +9,8 @@
 ##  Pass predicitions from MRCNN to use as training data for FCN
 ##-------------------------------------------------------------------------------------------
 
-import os
-import sys
-import math
+import os, sys, math, io, time
 import gc
-import time
 import numpy as np
 import argparse
 import platform
@@ -28,10 +25,11 @@ import mrcnn.model_mrcnn  as mrcnn_modellib
 import mrcnn.model_fcn    as fcn_modellib
 import mrcnn.visualize    as visualize
 import mrcnn.new_shapes   as shapes
+from datetime import datetime   
 
 from mrcnn.config       import Config
 from mrcnn.dataset      import Dataset 
-from mrcnn.utils        import log, stack_tensors, stack_tensors_3d
+from mrcnn.utils        import log, stack_tensors, stack_tensors_3d, write_stdout
 from mrcnn.datagen      import data_generator, load_image_gt
 from mrcnn.callbacks    import get_layer_output_1,get_layer_output_2
 import pprint
@@ -39,21 +37,25 @@ pp = pprint.PrettyPrinter(indent=2, width=100)
 np.set_printoptions(linewidth=100,precision=4,threshold=1000, suppress = True)
 syst = platform.system()
 
+
+start_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
+print()
+print('--> Execution started at:', start_time)
+print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
+
 ##------------------------------------------------------------------------------------
-## process input arguments
-##  example:
+## Parse command line arguments
+##  
+## Example:
 ##           train-shapes_gpu --epochs 12 --steps-in-epoch 7 --last_epoch 1234 --logs_dir mrcnn_logs
 ##------------------------------------------------------------------------------------
-# Parse command line arguments
 parser = argparse.ArgumentParser(description='Train Mask R-CNN on MS COCO.')
 # parser.add_argument("command",
                     # metavar="<command>",
                     # help="'train' or 'evaluate' on MS COCO")
-                    
 # parser.add_argument('--dataset', required=True,
                     # metavar="/path/to/coco/",
                     # help='Directory of the MS-COCO dataset')
-                    
 # parser.add_argument('--limit', required=False,
                     # default=500,
                     # metavar="<image count>",
@@ -88,6 +90,11 @@ parser.add_argument('--steps_in_epoch', required=False,
                     default=1,
                     metavar="<steps in each epoch>",
                     help='Number of batches to run in each epochs (default=5)')
+
+parser.add_argument('--val_steps', required=False,
+                    default=1,
+                    metavar="<val steps in each epoch>",
+                    help='Number of validation batches to run at end of each epoch (default=1)')
                     
 parser.add_argument('--batch_size', required=False,
                     default=5,
@@ -98,34 +105,46 @@ parser.add_argument('--lr', required=False,
                     default=0.001,
                     metavar="<learning rate>",
                     help='Learning Rate (default=0.001)')
-
-                    
 args = parser.parse_args()
+
+
+##----------------------------------------------------------------------------------------------
+## if debug is true set stdout destination to stringIO
+##----------------------------------------------------------------------------------------------            
+debug = True
+if debug:
+    sys.stdout = io.StringIO()
+
 # args = parser.parse_args("train --dataset E:\MLDatasets\coco2014 --model mask_rcnn_coco.h5 --limit 10".split())
-pp.pprint(args)
+# pp.pprint(args)
+
 print()
-print("Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
+print('--> Execution started at:', start_time)
+print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
+
 # print("Dataset: ", args.dataset)
 # print("Logs:    ", args.logs)
 # print("Limit:   ", args.limit)
 
-print("   MRCNN Model        : ", args.model)
-print("   FCN Model          : ", args.fcn_model)
-print("   Log Dir            : ", args.logs_dir)
-print("   Last Epoch         : ", args.last_epoch)
-print("   Epochs to run      : ", args.epochs)
-print("   Steps in each epoch: ", args.steps_in_epoch)
-print("   Batch Size         : ", args.batch_size)
-print("   OS Platform        : ", syst)
+print("    MRCNN Model        : ", args.model)
+print("    FCN Model          : ", args.fcn_model)
+print("    Log Dir            : ", args.logs_dir)
+print("    Last Epoch         : ", args.last_epoch)
+print("    Epochs to run      : ", args.epochs)
+print("    Steps in each epoch: ", args.steps_in_epoch)
+print("    Validation steps   : ", args.val_steps)
+print("    Batch Size         : ", args.batch_size)
+print("    OS Platform        : ", syst)
 
 
 ##------------------------------------------------------------------------------------
 ## setup project directories
-#---------------------------------------------------------------------------------
-# # Root directory of the project 
-# MODEL_DIR    :    Directory to save logs and trained model
-# COCO_MODEL_PATH  : Path to COCO trained weights
-#---------------------------------------------------------------------------------
+## 
+## ROOT_DIR        :    Root directory of the project 
+## MODEL_DIR       :    Directory to save logs and trained model
+## COCO_MODEL_PATH :    Path to COCO trained weights
+##---------------------------------------------------------------------------------
+
 if syst == 'Windows':
     # WINDOWS MACHINE ------------------------------------------------------------------
     ROOT_DIR          = "E:\\"
@@ -161,6 +180,7 @@ else :
     # IMAGES_PER_GPU = 1
     # DETECTION_MIN_CONFIDENCE = 0
 # config = InferenceConfig()
+
 ##------------------------------------------------------------------------------------
 ## Build configuration object 
 ##------------------------------------------------------------------------------------
@@ -179,19 +199,16 @@ mrcnn_config.REDUCE_LR_FACTOR   = 0.5
 mrcnn_config.REDUCE_LR_COOLDOWN = 30
 mrcnn_config.REDUCE_LR_PATIENCE = 40
 mrcnn_config.EARLY_STOP_PATIENCE= 80
+mrcnn_config.EARLY_STOP_MIN_DELTA = 1.0e-4
 mrcnn_config.MIN_LR             = 1.0e-10
-# mrcnn_config.display() 
 
 ##------------------------------------------------------------------------------------
-## Build shape dataset        
+## Build shape dataset for Training and Validation       
 ##------------------------------------------------------------------------------------
-# Training dataset
-# generate 500 shapes 
 dataset_train = shapes.NewShapesDataset(mrcnn_config)
 dataset_train.load_shapes(10000)
 dataset_train.prepare()
 
-# Validation dataset
 dataset_val = shapes.NewShapesDataset(mrcnn_config)
 dataset_val.load_shapes(2500)
 dataset_val.prepare()
@@ -200,7 +217,6 @@ dataset_val.prepare()
 ##------------------------------------------------------------------------------------
 ## Build Mask RCNN Model in TRAINFCN mode
 ##------------------------------------------------------------------------------------
-
 try :
     del mrcnn_model
     gc.collect()
@@ -209,12 +225,9 @@ except:
 KB.clear_session()
 mrcnn_model = mrcnn_modellib.MaskRCNN(mode="trainfcn", config=mrcnn_config, model_dir=MODEL_DIR)
 
-print(' COCO Model Path       : ', COCO_MODEL_PATH)
-print(' Checkpoint folder Path: ', MODEL_DIR)
-print(' Model Parent Path     : ', MODEL_PATH)
-# print(model.find_last())
-
+##------------------------------------------------------------------------------------
 ## Load Mask RCNN Model Weight file
+##------------------------------------------------------------------------------------
 exclude_layers = \
        ['fcn_block1_conv1' 
        ,'fcn_block1_conv2' 
@@ -244,13 +257,20 @@ exclude_layers = \
        ,'fcn_scoring'      
        ,'fcn_heatmap'      
        ,'fcn_norm_loss']
+
 mrcnn_model.load_model_weights( init_with = args.model)   
+
 print('==========================================')
 print(" MRCNN MODEL Load weight file COMPLETE    ")
 print('==========================================')
 
 mrcnn_config.display()  
 mrcnn_model.layer_info()
+
+print(' COCO Model Path       : ', COCO_MODEL_PATH)
+print(' Checkpoint folder Path: ', MODEL_DIR)
+print(' Model Parent Path     : ', MODEL_PATH)
+# print(model.find_last())
 
 ##------------------------------------------------------------------------------------
 ## Build configuration for FCN model
@@ -259,20 +279,19 @@ fcn_config                    = shapes.NewShapesConfig()
 fcn_config.BATCH_SIZE         = mrcnn_config.BATCH_SIZE                 # Batch size is 2 (# GPUs * images/GPU).
 fcn_config.IMAGES_PER_GPU     = mrcnn_config.BATCH_SIZE               # Must match BATCH_SIZE
 fcn_config.STEPS_PER_EPOCH    = int(args.steps_in_epoch)
-
 fcn_config.LEARNING_RATE      = float(args.lr)
-# fcn_config.LEARNING_RATE      = 0.005
-                          
 fcn_config.EPOCHS_TO_RUN      = int(args.epochs)
 fcn_config.FCN_INPUT_SHAPE    = mrcnn_config.IMAGE_SHAPE[0:2]
 fcn_config.LAST_EPOCH_RAN     = int(args.last_epoch)
 fcn_config.WEIGHT_DECAY       = 2.0e-4
-fcn_config.VALIDATION_STEPS   = 5
+fcn_config.VALIDATION_STEPS   = int(args.val_steps)
 fcn_config.REDUCE_LR_FACTOR   = 0.5
-fcn_config.REDUCE_LR_COOLDOWN = 2
-fcn_config.REDUCE_LR_PATIENCE = 3
-fcn_config.EARLY_STOP_PATIENCE= 6
+fcn_config.REDUCE_LR_COOLDOWN = 5
+fcn_config.REDUCE_LR_PATIENCE = 8
+fcn_config.EARLY_STOP_PATIENCE= 20
+fcn_config.EARLY_STOP_MIN_DELTA = 1.0e-4
 fcn_config.MIN_LR             = 1.0e-10
+fcn_config.NEW_LOG_FOLDER     = True  
 fcn_config.display() 
 
 ##------------------------------------------------------------------------------------
@@ -283,44 +302,77 @@ try :
     gc.collect()
 except: 
     pass
+    
 fcn_model = fcn_modellib.FCN(mode="training", config=fcn_config, model_dir=MODEL_DIR)
 
 print(' COCO Model Path       : ', COCO_MODEL_PATH)
 print(' Checkpoint folder Path: ', MODEL_DIR)
 print(' Model Parent Path     : ', MODEL_PATH)
 
-print('=====================================')
-print(" Load second weight file  ")
-print('=====================================')
+##------------------------------------------------------------------------------------
+## Load FCN Model weights  
+##------------------------------------------------------------------------------------
+
 fcn_model.load_model_weights(init_with = args.fcn_model)
 
-print('=====================================')
 print(" Load second weight file COMPLETE    ")
 print('=====================================')
 fcn_config.display()  
 fcn_model.layer_info()
 
 # exit(8)
+file_pfx = '_sysout'   ##  if training_mode else 'TST_'
+#file_sfx = datetime.now().strftime("%m%d%H%M")
+output_filename = file_pfx  # + file_sfx
+
+#----------------------------------------------------------------------------------------------
+# If in debug mode write stdout intercepted IO to output file  
+#----------------------------------------------------------------------------------------------            
+# if debug:
+    # write_stdout(fcn_model.log_dir, output_filename, sys.stdout )        
+    # sys.stdout = sys.__stdout__
+# print(' Run information written to ', fcn_model.log_dir+output_filename+'.out')
+
+##----------------------------------------------------------------------------------------------
+## Setup optimizaion method 
+##----------------------------------------------------------------------------------------------            
+print('    learning rate : ', fcn_model.config.LEARNING_RATE)
+print('    momentum      : ', fcn_model.config.LEARNING_MOMENTUM)
+print()
+
+optimizer = keras.optimizers.Adagrad(lr=fcn_model.config.LEARNING_RATE, epsilon=None, decay=0.01)                                 
+
+# optimizer = keras.optimizers.SGD(lr=fcn_model.config.LEARNING_RATE, 
+                                 # momentum=fcn_model.config.LEARNING_MOMENTUM, clipnorm=5.0)
+# optimizer= tf.train.GradientDescentOptimizer(learning_rate, momentum)
+# optimizer = keras.optimizers.RMSprop(lr=learning_rate, rho=0.9, epsilon=None, decay=0.0)
+# optimizer = keras.optimizers.Adagrad(lr=learning_rate, epsilon=None, decay=0.0)
+# optimizer = keras.optimizers.Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
+# optimizer = keras.optimizers.Nadam(lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
+
+
+
+
+
 ##----------------------------------------------------------------------------------------------
 ## Train the FCN only 
 ## Passing layers="heads" freezes all layers except the head
 ## layers. You can also pass a regular expression to select
 ## which layers to train by name pattern.
 ##----------------------------------------------------------------------------------------------            
-
 train_layers = ['fcn']
 loss_names   = ["fcn_norm_loss"]
-
 fcn_model.epoch                  = fcn_config.LAST_EPOCH_RAN
-# fcn_model.config.LEARNING_RATE   = fcn_config.LEARNING_RATE
-# fcn_model.config.STEPS_PER_EPOCH = fcn_config.STEPS_PER_EPOCH
+
 
 fcn_model.train_in_batches(
             mrcnn_model,    
+            optimizer,
             dataset_train,
             dataset_val, 
             layers = train_layers,
-            losses = loss_names
+            losses = loss_names,
+            debug = debug
             # learning_rate   = fcn_config.LEARNING_RATE,  
             # epochs          = 25,                             # total number of epochs to run (accross multiple trainings)
             # epochs_to_run   = fcn_config.EPOCHS_TO_RUN,
@@ -329,10 +381,15 @@ fcn_model.train_in_batches(
             # min_LR          = fcn_config.MIN_LR
             )
 
+
+##------------------------------------------------------------------------------------
+## Final save
+##------------------------------------------------------------------------------------
 final_save  =  "/home/kbardool/models/train_fcn_alt/fcn_train_final.h5"
 file = fcn_model.save_model(final_save)            
 
 
+print(' --> Execution ended at:',datetime.now().strftime("%m-%d-%Y @ %H:%M:%S"))
 
 ##------------------------------------------------------------------------------------
 ## setup tf session and debugging 

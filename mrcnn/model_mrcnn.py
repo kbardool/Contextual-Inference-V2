@@ -36,7 +36,7 @@ import mrcnn.loss             as loss
 from   mrcnn.datagen          import data_generator
 from   mrcnn.utils            import log
 from   mrcnn.utils            import parse_image_meta_graph, parse_image_meta
-
+from   mrcnn.model_base       import ModelBase
 from   mrcnn.RPN_model        import build_rpn_model
 from   mrcnn.resnet_model     import resnet_graph
 
@@ -81,7 +81,7 @@ tf.get_variable_scope().reuse_variables()
 ############################################################
 ##  MaskRCNN Class
 ############################################################
-class MaskRCNN():
+class MaskRCNN(ModelBase):
     """Encapsulates the Mask RCNN model functionality.
 
     The actual Keras model is in the keras_model property.
@@ -94,7 +94,7 @@ class MaskRCNN():
         model_dir: Directory to save training logs and trained weights
         """
         assert mode in ['training', 'trainfcn', 'inference']
-
+        super().__init__()
         print('>>> Initialize MRCNN model, mode: ',mode)
 
         self.mode      = mode
@@ -604,10 +604,6 @@ class MaskRCNN():
 ##-------------------------------------------------------------------------------------        
 ##-------------------------------------------------------------------------------------
 ##-------------------------------------------------------------------------------------        
-        
-        
-        
-                
     def detect(self, images, verbose=0):
         '''
         Runs the detection pipeline.
@@ -897,7 +893,436 @@ class MaskRCNN():
 
         return boxes, class_ids, scores, pre_scores, fcn_scores     # , full_masks
 
+    def train(self, optimzer,
+              train_dataset, 
+              val_dataset, 
+              learning_rate, 
+              layers            = None,
+              losses            = None,
+              epochs            = 0,
+              epochs_to_run     = 0,
+              batch_size        = 0, 
+              steps_per_epoch   = 0,
+              min_lr            = 0):
+        '''
+        Train the model.
+        train_dataset, 
+        val_dataset:    Training and validation Dataset objects.
+        
+        learning_rate:  The learning rate to train with
+        
+        layers:         Allows selecting wich layers to train. It can be:
+                        - A regular expression to match layer names to train
+                        - One of these predefined values:
+                        heads: The RPN, classifier and mask heads of the network
+                        all: All the layers
+                        3+: Train Resnet stage 3 and up
+                        4+: Train Resnet stage 4 and up
+                        5+: Train Resnet stage 5 and up
+        
+        losses:         List of losses to monitor.
+        
+        epochs:         Number of training epochs. Note that previous training epochs
+                        are considered to be done already, so this actually determines
+                        the epochs to train in total rather than in this particaular
+                        call.
+        
+        epochs_to_run:  Number of epochs to run, will update the 'epochs parm.                        
+                        
+        '''
+        assert self.mode == "training", "Create model in training mode."
+        
+        if batch_size == 0 :
+            batch_size = self.config.BATCH_SIZE
+        if epochs_to_run > 0 :
+            epochs = self.epoch + epochs_to_run
+        if steps_per_epoch == 0:
+            steps_per_epoch = self.config.STEPS_PER_EPOCH
+        if min_lr == 0:
+            min_lr = self.config.MIN_LR
+            
+            
+        # use Pre-defined layer regular expressions
+        # if layers in self.layer_regex.keys():
+            # layers = self.layer_regex[layers]
+        print(layers)
+        # train_regex_list = []
+        # for x in layers:
+            # print( ' layers ias : ',x)
+            # train_regex_list.append(x)
+        train_regex_list = [self.layer_regex[x] for x in layers]
+        print(train_regex_list)
+        layers = '|'.join(train_regex_list)        
+        print('layers regex :', layers)
+        
 
+            
+        
+        # Data generators
+        train_generator = data_generator(train_dataset, self.config, shuffle=True,
+                                         batch_size=batch_size)
+        val_generator = data_generator(val_dataset, self.config, shuffle=True,
+                                        batch_size=batch_size,
+                                        augment=False)
+
+        # my_callback = MyCallback()
+
+        # Callbacks
+        ## call back for model checkpoint was originally (?) loss. chanegd to val_loss (which is default) 2-5-18
+        callbacks = [
+              keras.callbacks.TensorBoard(log_dir=self.log_dir,
+                                          histogram_freq=0,
+                                          batch_size=32,
+                                          write_graph=True,
+                                          write_grads=False,
+                                          write_images=True,
+                                          embeddings_freq=0,
+                                          embeddings_layer_names=None,
+                                          embeddings_metadata=None)
+
+            , keras.callbacks.ModelCheckpoint(self.checkpoint_path, 
+                                              mode = 'auto', 
+                                              period = 1, 
+                                              monitor='val_loss', 
+                                              verbose=1, 
+                                              save_best_only = True, 
+                                              save_weights_only=True)
+                                            
+            , keras.callbacks.ReduceLROnPlateau(monitor='val_loss', 
+                                                mode     = 'auto', 
+                                                factor   = self.config.REDUCE_LR_FACTOR,   
+                                                cooldown = self.config.REDUCE_LR_COOLDOWN,
+                                                patience = self.config.REDUCE_LR_PATIENCE,
+                                                min_lr   = self.config.MIN_LR, 
+                                                verbose  = 1)                                            
+                                                
+            , keras.callbacks.EarlyStopping(monitor='val_loss', 
+                                                mode      = 'auto', 
+                                                min_delta = 0.00001, 
+                                                patience  = self.config.EARLY_STOP_PATIENCE, 
+                                                verbose   = 1)                                            
+            # , my_callback
+        ]
+
+        # Train
+
+        self.set_trainable(layers)
+        # self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)
+        self.compile(losses, optimizer)
+        
+        log("Starting at epoch   {} of {} epochs. LR={}\n".format(self.epoch, epochs, learning_rate))
+        log("Steps per epochs    {} ".format(steps_per_epoch))
+        log("Batch size          {} ".format(batch_size))
+        log("Checkpoint Path:    {} ".format(self.checkpoint_path))
+        log("Weight Decay:       {} ".format(self.config.WEIGHT_DECAY       ))
+        log("VALIDATION_STEPS    {} ".format(self.config.VALIDATION_STEPS   ))
+        log("REDUCE_LR_FACTOR    {} ".format(self.config.REDUCE_LR_FACTOR   ))
+        log("REDUCE_LR_COOLDOWN  {} ".format(self.config.REDUCE_LR_COOLDOWN ))
+        log("REDUCE_LR_PATIENCE  {} ".format(self.config.REDUCE_LR_PATIENCE ))
+        log("MIN_LR              {} ".format(self.config.MIN_LR             ))
+        log("EARLY_STOP_PATIENCE {} ".format(self.config.EARLY_STOP_PATIENCE))        
+        
+        self.keras_model.fit_generator(
+            train_generator,
+            initial_epoch=self.epoch,
+            epochs=epochs,
+            steps_per_epoch=steps_per_epoch,
+            callbacks=callbacks,
+            validation_data=next(val_generator),
+            validation_steps=self.config.VALIDATION_STEPS,
+            max_queue_size=100,
+            workers=1,                                  # max(self.config.BATCH_SIZE // 2, 2),
+            use_multiprocessing=False
+        )
+        self.epoch = max(self.epoch, epochs)
+
+        print('Final : self.epoch {}   epochs {}'.format(self.epoch, epochs))
+
+        
+    def train_in_batches(self, optimizer,
+              train_dataset, val_dataset, 
+              learning_rate, 
+              layers            = None,
+              losses            = None,              
+              epochs            = 0,
+              epochs_to_run     = 1, 
+              batch_size        = 0, 
+              steps_per_epoch   = 0,
+              min_LR            = 0.00001):
+              
+        '''
+        Train the model.
+        train_dataset, 
+        val_dataset:    Training and validation Dataset objects.
+        
+        learning_rate:  The learning rate to train with
+        
+        epochs:         Number of training epochs. Note that previous training epochs
+                        are considered to be done already, so this actually determines
+                        the epochs to train in total rather than in this particaular
+                        call.
+                        
+        layers:         Allows selecting wich layers to train. It can be:
+                        - A regular expression to match layer names to train
+                        - One of these predefined values:
+                        heads: The RPN, classifier and mask heads of the network
+                        all: All the layers
+                        3+: Train Resnet stage 3 and up
+                        4+: Train Resnet stage 4 and up
+                        5+: Train Resnet stage 5 and up
+        '''
+        assert self.mode == "training", "Create model in training mode."
+        
+        if batch_size == 0 :
+            batch_size = self.config.BATCH_SIZE
+        if epochs_to_run > 0 :
+            epochs = self.epoch + epochs_to_run
+        if steps_per_epoch == 0:
+            steps_per_epoch = self.config.STEPS_PER_EPOCH
+            
+        # use Pre-defined layer regular expressions
+        # if layers in self.layer_regex.keys():
+            # layers = self.layer_regex[layers]
+        print(layers)
+        # train_regex_list = []
+        # for x in layers:
+            # print( ' layers ias : ',x)
+            # train_regex_list.append(x)
+        train_regex_list = [self.layer_regex[x] for x in layers]
+        print(train_regex_list)
+        layers = '|'.join(train_regex_list)        
+        print('layers regex :', layers)
+        
+        
+        # Data generators
+        train_generator = data_generator(train_dataset, self.config, shuffle=True,
+                                         batch_size=batch_size)
+        val_generator   = data_generator(val_dataset, self.config, shuffle=True,
+                                         batch_size=batch_size,
+                                         augment=False)
+       
+        epochs = self.epoch + epochs_to_run
+        
+        from tensorflow.python.platform import gfile
+        if not gfile.IsDirectory(self.log_dir):
+            log('Creating checkpoint folder')
+            gfile.MakeDirs(self.log_dir)
+        else:
+            log('Checkpoint folder already exists')
+        
+        self.set_trainable(layers)            
+        # self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)        
+        self.compile(losses, optimizer)        
+
+
+        log("Starting at epoch {} of {} epochs. LR={}\n".format(self.epoch, epochs, learning_rate))
+        log("Steps per epochs {} ".format(steps_per_epoch))
+        log("    Last epoch completed : {} ".format(self.epoch))
+        log("    Starting from epoch  : {} for {} epochs".format(self.epoch, epochs_to_run))
+        log("    Learning Rate        : {} ".format(learning_rate))
+        log("    Steps per epoch      : {} ".format(steps_per_epoch))
+        log("    Batch Size           : {} ".format(batch_size))
+        log("    Checkpoint Folder    : {} ".format(self.checkpoint_path))
+
+        
+        # copied from \keras\engine\training.py
+        # def _get_deduped_metrics_names(self):
+        ## get metrics from keras_model.metrics_names
+        out_labels = self.get_deduped_metrics_names()
+        print(' ====> out_labels : ', out_labels)
+
+        ## setup Progress Bar callback
+        callback_metrics = out_labels + ['val_' + n for n in out_labels]
+        print(' Callback metrics monitored by progbar')
+        pp.pprint(callback_metrics)
+        
+        progbar = keras.callbacks.ProgbarLogger(count_mode='steps')
+        progbar.set_model(self.keras_model)
+        progbar.set_params({
+            'epochs': epochs,
+            'steps': steps_per_epoch,
+            'verbose': 1,
+            'do_validation': False,
+            'metrics': callback_metrics,
+        })
+        
+        progbar.set_model(self.keras_model) 
+
+        ## setup Checkpoint callback
+        chkpoint = keras.callbacks.ModelCheckpoint(self.checkpoint_path, 
+                                                   monitor='val_loss', verbose=1, save_best_only = True, save_weights_only=True)
+        chkpoint.set_model(self.keras_model)
+
+        progbar.on_train_begin()
+        epoch_idx = self.epoch
+
+        if epoch_idx >= epochs:
+            print('Final epoch {} has already completed - Training will not proceed'.format(epochs))
+        else:
+            while epoch_idx < epochs :
+                progbar.on_epoch_begin(epoch_idx)
+                
+                for steps_index in range(steps_per_epoch):
+                    batch_logs = {}
+                    # print(' self.epoch {}   epochs {}  step {} '.format(self.epoch, epochs, steps_index))
+                    batch_logs['batch'] = steps_index
+                    batch_logs['size']  = batch_size
+                    progbar.on_batch_begin(steps_index, batch_logs)
+
+                    train_batch_x, train_batch_y = next(train_generator)
+                    
+                    outs = self.keras_model.train_on_batch(train_batch_x, train_batch_y)
+                    print(' outs: ', outs)
+                    if not isinstance(outs, list):
+                        outs = [outs]
+                    for l, o in zip(out_labels, outs):
+                        batch_logs[l] = o
+    
+                    progbar.on_batch_end(steps_index, batch_logs)
+                    
+                    # print(outs)
+                progbar.on_epoch_end(epoch_idx, {})
+                # if (epoch_idx % 10) == 0:
+                chkpoint.on_epoch_end(epoch_idx  , batch_logs)
+                epoch_idx += 1
+
+            # if epoch_idx != self.epoch:
+            # chkpoint.on_epoch_end(epoch_idx -1, batch_logs)
+            self.epoch = max(epoch_idx - 1, epochs)
+
+            print('Final : self.epoch {}   epochs {}'.format(self.epoch, epochs))
+        # end if (else)
+
+
+        
+    # def compile(self, learning_rate, momentum, losses):
+    def compile(self, losses, optimizer):
+        '''
+        Gets the model ready for training. Adds losses, regularization, and
+        metrics. Then calls the Keras compile() function.
+        '''
+        assert isinstance(losses, list) , "A loss function must be defined as the objective"
+        # Optimizer object
+        print('\n')
+        print(' Compile Model :')
+        print('----------------')
+        print('    losses        : ', losses)
+        print('    optimizer     : ', optimizer)
+        # print('    learning rate : ', learning_rate)
+        # print('    momentum      : ', momentum )
+        print()
+        # optimizer = keras.optimizers.SGD(lr=learning_rate, momentum=momentum, clipnorm=5.0)
+        # optimizer= tf.train.GradientDescentOptimizer(learning_rate, momentum)
+        # optimizer = keras.optimizers.RMSprop(lr=learning_rate, rho=0.9, epsilon=None, decay=0.0)
+        # optimizer = keras.optimizers.Adagrad(lr=learning_rate, epsilon=None, decay=0.0)
+        # optimizer = keras.optimizers.Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
+        # optimizer = keras.optimizers.Nadam(lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
+
+
+        ##------------------------------------------------------------------------
+        ## Add Losses
+        ## These are the losses aimed for minimization
+        ## Normally Keras expects the same number of losses as outputs. Since we 
+        ## are returning more outputs , we go deep and set the losses in the base
+        ## layers () 
+        ##------------------------------------------------------------------------    
+        print()
+        # First, clear previously set losses to avoid duplication
+        self.keras_model._losses = []
+        self.keras_model._per_input_losses = {}
+
+        # loss_names = [  "rpn_class_loss", "rpn_bbox_loss", "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss" ]
+        # loss_names = [ "fcn_loss", "fcn_norm_loss" ]
+
+        print(' Add losses:')
+        print('----------------')
+        print('    losses: ', losses)
+        print('    keras_model.losses           :', self.keras_model.losses)
+
+        print()
+        loss_names = losses              
+        for name in loss_names:
+            layer = self.keras_model.get_layer(name)
+            print('    Loss: {}  Related Layer is : {}'.format(name, layer.name))
+            if layer.output in self.keras_model.losses:
+                print('      ',layer.output,' is in self.keras_model.losses, and wont be added to list')
+                continue
+            print('      >> Add add loss for ', layer.output, ' to list of losses...')
+            self.keras_model.add_loss(tf.reduce_mean(layer.output, keepdims=True))
+            
+        print()    
+        print('Keras model.losses : ') 
+        print('---------------------') 
+        for ls in self.keras_model.losses:
+            print('  ',ls, '   name:',ls.name )
+        
+        print()    
+        print('Keras_model._losses:' ) 
+        print('---------------------' ) 
+        for ls in self.keras_model._losses:
+            print('  ',ls, '   name:',ls.name )
+
+        print()    
+        print('Keras_model._per_input_losses:')
+        print('------------------------------')
+        for ls in self.keras_model._per_input_losses:
+            print('  ',ls, '   name:',type(ls))
+        pp.pprint(self.keras_model._per_input_losses)
+            
+            
+        ## Add L2 Regularization as loss to list of losses
+        # Skip gamma and beta weights of batch normalization layers.
+        reg_losses = [keras.regularizers.l2(self.config.WEIGHT_DECAY)(w) / tf.cast(tf.size(w), tf.float32)
+                      for w in self.keras_model.trainable_weights
+                      if 'gamma' not in w.name and 'beta' not in w.name]
+        print()    
+        print('L2 Regularization losses:')
+        print('-------------------------')
+        for ls in reg_losses:
+            print('  ',ls, '   name:',ls.name )
+
+        self.keras_model.add_loss(tf.add_n(reg_losses))
+
+        print()
+        print('    Final list of keras_model.losses ') 
+        print('    -------------------------------- ') 
+        pp.pprint(self.keras_model.losses)
+        
+        
+
+        ##------------------------------------------------------------------------    
+        ## Compile
+        ##------------------------------------------------------------------------   
+        print()
+        print (' Length of Keras_Model.outputs:', len(self.keras_model.outputs))
+        self.keras_model.compile(optimizer=optimizer, 
+                                 loss=[None] * len(self.keras_model.outputs))
+
+        ##------------------------------------------------------------------------    
+        ## Add metrics for losses
+        ##------------------------------------------------------------------------    
+        print()
+        print(' Add Metrics :')
+        print('--------------')                                 
+        print (' Initial Keras metric_names:', self.keras_model.metrics_names)                                 
+
+        for name in loss_names:
+            if name in self.keras_model.metrics_names:
+                print('      ' , name , 'is already in in self.keras_model.metrics_names')
+                continue
+            layer = self.keras_model.get_layer(name)
+            print('    Loss name : {}  Related Layer is : {}'.format(name, layer.name))
+            self.keras_model.metrics_names.append(name)
+            self.keras_model.metrics_tensors.append(tf.reduce_mean(layer.output, keepdims=True))
+            print('      >> Add metric ', name, ' with metric tensor: ', layer.output.name, ' to list of metrics ...')
+        print (' Final Keras metric_names:') 
+        pp.pprint(self.keras_model.metrics_names)                                 
+        print()
+        return
+
+
+        
+"""
     ##------------------------------------------------------------------------------------    
     ## LOAD MODEL
     ##------------------------------------------------------------------------------------        
@@ -962,7 +1387,7 @@ class MaskRCNN():
 
         
     def find_last(self):
-        """
+        '''
         Finds the last checkpoint file of the last trained model in the
         model directory.
         
@@ -970,7 +1395,7 @@ class MaskRCNN():
         --------
             log_dir: The directory where events and weights are saved
             checkpoint_path: the path to the last checkpoint file
-        """
+        '''
         # Get directory names. Each directory corresponds to a model
         print('>>> find_last checkpoint in : ', self.model_dir)
         dir_names = next(os.walk(self.model_dir))[1]
@@ -994,12 +1419,12 @@ class MaskRCNN():
 
                 
     def load_weights(self, filepath, by_name=False, exclude=None, new_folder = False):
-        """
+        '''
         Modified version of the correspoding Keras function with
         the addition of multi-GPU support and the ability to exclude
         some layers from loading.
         exlude: list of layer names to excluce
-        """
+        '''
         import h5py
         from keras.engine import topology
         print()
@@ -1115,12 +1540,12 @@ class MaskRCNN():
 
 
     def save_model(self, filepath, by_name=False, exclude=None):
-        """
+        '''
         Modified version of the correspoding Keras function with
         the addition of multi-GPU support and the ability to exclude
         some layers from loading.
         exlude: list of layer names to excluce
-        """
+        '''
         print('>>> save_model_architecture()')
 
         model_json = self.keras_model.to_json()
@@ -1140,10 +1565,10 @@ class MaskRCNN():
 
         
     def get_imagenet_weights(self):
-        """
+        '''
         Downloads ImageNet trained weights from Keras.
         Returns path to weights file.
-        """
+        '''
         from keras.utils.data_utils import get_file
         TF_WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.2/'\
                                  'resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5'
@@ -1156,12 +1581,13 @@ class MaskRCNN():
 
         
     def ancestor(self, tensor, name, checked=None):
-        """Finds the ancestor of a TF tensor in the computation graph.
+        '''
+        Finds the ancestor of a TF tensor in the computation graph.
         tensor: TensorFlow symbolic tensor.
         name: Name of ancestor tensor to find
         checked: For internal use. A list of tensors that were already
                  searched to avoid loops in traversing the graph.
-        """
+        '''
         checked = checked if checked is not None else []
         # Put a limit on how deep we go to avoid very long loops
         if len(checked) > 500:
@@ -1185,7 +1611,8 @@ class MaskRCNN():
 
         
     def run_graph(self, images, outputs):
-        """Runs a sub-set of the computation graph that computes the given
+        '''
+        Runs a sub-set of the computation graph that computes the given
         outputs.
 
         outputs: List of tuples (name, tensor) to compute. The tensors are
@@ -1193,7 +1620,7 @@ class MaskRCNN():
 
         Returns an ordered dict of results. Keys are the names received in the
         input and values are Numpy arrays.
-        """
+        '''
         model = self.keras_model
 
         # Organize desired outputs into an ordered dict
@@ -1235,17 +1662,20 @@ class MaskRCNN():
 
       
     def find_trainable_layer(self, layer):
-        """If a layer is encapsulated by another layer, this function
+        '''
+        If a layer is encapsulated by another layer, this function
         digs through the encapsulation and returns the layer that holds
         the weights.
-        """
+        '''
         if layer.__class__.__name__ == 'TimeDistributed':
             return self.find_trainable_layer(layer.layer)
         return layer
 
         
     def get_trainable_layers(self):
-        """Returns a list of layers that have weights."""
+        '''
+        Returns a list of layers that have weights.
+        '''
         layers = []
         # Loop through all layers
         for l in self.keras_model.layers:
@@ -1318,431 +1748,6 @@ class MaskRCNN():
                     format(" " * indent, ind, layer.name, layer.__class__.__name__))                
                 pass
         return   
-        
-           
-    def train(self, 
-              train_dataset, 
-              val_dataset, 
-              learning_rate, 
-              layers            = None,
-              losses            = None,
-              epochs            = 0,
-              epochs_to_run     = 0,
-              batch_size        = 0, 
-              steps_per_epoch   = 0,
-              min_lr            = 0):
-        '''
-        Train the model.
-        train_dataset, 
-        val_dataset:    Training and validation Dataset objects.
-        
-        learning_rate:  The learning rate to train with
-        
-        layers:         Allows selecting wich layers to train. It can be:
-                        - A regular expression to match layer names to train
-                        - One of these predefined values:
-                        heads: The RPN, classifier and mask heads of the network
-                        all: All the layers
-                        3+: Train Resnet stage 3 and up
-                        4+: Train Resnet stage 4 and up
-                        5+: Train Resnet stage 5 and up
-        
-        losses:         List of losses to monitor.
-        
-        epochs:         Number of training epochs. Note that previous training epochs
-                        are considered to be done already, so this actually determines
-                        the epochs to train in total rather than in this particaular
-                        call.
-        
-        epochs_to_run:  Number of epochs to run, will update the 'epochs parm.                        
-                        
-        '''
-        assert self.mode == "training", "Create model in training mode."
-        
-        if batch_size == 0 :
-            batch_size = self.config.BATCH_SIZE
-        if epochs_to_run > 0 :
-            epochs = self.epoch + epochs_to_run
-        if steps_per_epoch == 0:
-            steps_per_epoch = self.config.STEPS_PER_EPOCH
-        if min_lr == 0:
-            min_lr = self.config.MIN_LR
-            
-            
-        # use Pre-defined layer regular expressions
-        # if layers in self.layer_regex.keys():
-            # layers = self.layer_regex[layers]
-        print(layers)
-        # train_regex_list = []
-        # for x in layers:
-            # print( ' layers ias : ',x)
-            # train_regex_list.append(x)
-        train_regex_list = [self.layer_regex[x] for x in layers]
-        print(train_regex_list)
-        layers = '|'.join(train_regex_list)        
-        print('layers regex :', layers)
-        
-
-            
-        
-        # Data generators
-        train_generator = data_generator(train_dataset, self.config, shuffle=True,
-                                         batch_size=batch_size)
-        val_generator = data_generator(val_dataset, self.config, shuffle=True,
-                                        batch_size=batch_size,
-                                        augment=False)
-
-        # my_callback = MyCallback()
-
-        # Callbacks
-        ## call back for model checkpoint was originally (?) loss. chanegd to val_loss (which is default) 2-5-18
-        callbacks = [
-              keras.callbacks.TensorBoard(log_dir=self.log_dir,
-                                          histogram_freq=0,
-                                          batch_size=32,
-                                          write_graph=True,
-                                          write_grads=False,
-                                          write_images=True,
-                                          embeddings_freq=0,
-                                          embeddings_layer_names=None,
-                                          embeddings_metadata=None)
-
-            , keras.callbacks.ModelCheckpoint(self.checkpoint_path, 
-                                              mode = 'auto', 
-                                              period = 1, 
-                                              monitor='val_loss', 
-                                              verbose=1, 
-                                              save_best_only = True, 
-                                              save_weights_only=True)
-                                            
-            , keras.callbacks.ReduceLROnPlateau(monitor='val_loss', 
-                                                mode     = 'auto', 
-                                                factor   = self.config.REDUCE_LR_FACTOR,   
-                                                cooldown = self.config.REDUCE_LR_COOLDOWN,
-                                                patience = self.config.REDUCE_LR_PATIENCE,
-                                                min_lr   = self.config.MIN_LR, 
-                                                verbose  = 1)                                            
-                                                
-            , keras.callbacks.EarlyStopping(monitor='val_loss', 
-                                                mode      = 'auto', 
-                                                min_delta = 0.00001, 
-                                                patience  = self.config.EARLY_STOP_PATIENCE, 
-                                                verbose   = 1)                                            
-            # , my_callback
-        ]
-
-        # Train
-
-        self.set_trainable(layers)
-        self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)
-        
-        log("Starting at epoch   {} of {} epochs. LR={}\n".format(self.epoch, epochs, learning_rate))
-        log("Steps per epochs    {} ".format(steps_per_epoch))
-        log("Batch size          {} ".format(batch_size))
-        log("Checkpoint Path:    {} ".format(self.checkpoint_path))
-        log("Weight Decay:       {} ".format(self.config.WEIGHT_DECAY       ))
-        log("VALIDATION_STEPS    {} ".format(self.config.VALIDATION_STEPS   ))
-        log("REDUCE_LR_FACTOR    {} ".format(self.config.REDUCE_LR_FACTOR   ))
-        log("REDUCE_LR_COOLDOWN  {} ".format(self.config.REDUCE_LR_COOLDOWN ))
-        log("REDUCE_LR_PATIENCE  {} ".format(self.config.REDUCE_LR_PATIENCE ))
-        log("MIN_LR              {} ".format(self.config.MIN_LR             ))
-        log("EARLY_STOP_PATIENCE {} ".format(self.config.EARLY_STOP_PATIENCE))        
-        
-        self.keras_model.fit_generator(
-            train_generator,
-            initial_epoch=self.epoch,
-            epochs=epochs,
-            steps_per_epoch=steps_per_epoch,
-            callbacks=callbacks,
-            validation_data=next(val_generator),
-            validation_steps=self.config.VALIDATION_STEPS,
-            max_queue_size=100,
-            workers=1,                                  # max(self.config.BATCH_SIZE // 2, 2),
-            use_multiprocessing=False
-        )
-        self.epoch = max(self.epoch, epochs)
-
-        print('Final : self.epoch {}   epochs {}'.format(self.epoch, epochs))
-
-        
-    def train_in_batches(self, 
-              train_dataset, val_dataset, 
-              learning_rate, 
-              layers            = None,
-              losses            = None,              
-              epochs            = 0,
-              epochs_to_run     = 1, 
-              batch_size        = 0, 
-              steps_per_epoch   = 0,
-              min_LR            = 0.00001):
-              
-        '''
-        Train the model.
-        train_dataset, 
-        val_dataset:    Training and validation Dataset objects.
-        
-        learning_rate:  The learning rate to train with
-        
-        epochs:         Number of training epochs. Note that previous training epochs
-                        are considered to be done already, so this actually determines
-                        the epochs to train in total rather than in this particaular
-                        call.
-                        
-        layers:         Allows selecting wich layers to train. It can be:
-                        - A regular expression to match layer names to train
-                        - One of these predefined values:
-                        heads: The RPN, classifier and mask heads of the network
-                        all: All the layers
-                        3+: Train Resnet stage 3 and up
-                        4+: Train Resnet stage 4 and up
-                        5+: Train Resnet stage 5 and up
-        '''
-        assert self.mode == "training", "Create model in training mode."
-        
-        if batch_size == 0 :
-            batch_size = self.config.BATCH_SIZE
-        if epochs_to_run > 0 :
-            epochs = self.epoch + epochs_to_run
-        if steps_per_epoch == 0:
-            steps_per_epoch = self.config.STEPS_PER_EPOCH
-            
-        # use Pre-defined layer regular expressions
-        # if layers in self.layer_regex.keys():
-            # layers = self.layer_regex[layers]
-        print(layers)
-        # train_regex_list = []
-        # for x in layers:
-            # print( ' layers ias : ',x)
-            # train_regex_list.append(x)
-        train_regex_list = [self.layer_regex[x] for x in layers]
-        print(train_regex_list)
-        layers = '|'.join(train_regex_list)        
-        print('layers regex :', layers)
-        
-        
-        # Data generators
-        train_generator = data_generator(train_dataset, self.config, shuffle=True,
-                                         batch_size=batch_size)
-        val_generator   = data_generator(val_dataset, self.config, shuffle=True,
-                                         batch_size=batch_size,
-                                         augment=False)
-       
-        epochs = self.epoch + epochs_to_run
-        
-        from tensorflow.python.platform import gfile
-        if not gfile.IsDirectory(self.log_dir):
-            log('Creating checkpoint folder')
-            gfile.MakeDirs(self.log_dir)
-        else:
-            log('Checkpoint folder already exists')
-        
-        self.set_trainable(layers)            
-        self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)        
-
-
-        log("Starting at epoch {} of {} epochs. LR={}\n".format(self.epoch, epochs, learning_rate))
-        log("Steps per epochs {} ".format(steps_per_epoch))
-        log("    Last epoch completed : {} ".format(self.epoch))
-        log("    Starting from epoch  : {} for {} epochs".format(self.epoch, epochs_to_run))
-        log("    Learning Rate        : {} ".format(learning_rate))
-        log("    Steps per epoch      : {} ".format(steps_per_epoch))
-        log("    Batch Size           : {} ".format(batch_size))
-        log("    Checkpoint Folder    : {} ".format(self.checkpoint_path))
-
-        
-        # copied from \keras\engine\training.py
-        # def _get_deduped_metrics_names(self):
-        ## get metrics from keras_model.metrics_names
-        out_labels = self.get_deduped_metrics_names()
-        print(' ====> out_labels : ', out_labels)
-
-        ## setup Progress Bar callback
-        callback_metrics = out_labels + ['val_' + n for n in out_labels]
-        print(' Callback metrics monitored by progbar')
-        pp.pprint(callback_metrics)
-        
-        progbar = keras.callbacks.ProgbarLogger(count_mode='steps')
-        progbar.set_model(self.keras_model)
-        progbar.set_params({
-            'epochs': epochs,
-            'steps': steps_per_epoch,
-            'verbose': 1,
-            'do_validation': False,
-            'metrics': callback_metrics,
-        })
-        
-        progbar.set_model(self.keras_model) 
-
-        ## setup Checkpoint callback
-        chkpoint = keras.callbacks.ModelCheckpoint(self.checkpoint_path, 
-                                                   monitor='val_loss', verbose=1, save_best_only = True, save_weights_only=True)
-        chkpoint.set_model(self.keras_model)
-
-        progbar.on_train_begin()
-        epoch_idx = self.epoch
-
-        if epoch_idx >= epochs:
-            print('Final epoch {} has already completed - Training will not proceed'.format(epochs))
-        else:
-            while epoch_idx < epochs :
-                progbar.on_epoch_begin(epoch_idx)
-                
-                for steps_index in range(steps_per_epoch):
-                    batch_logs = {}
-                    # print(' self.epoch {}   epochs {}  step {} '.format(self.epoch, epochs, steps_index))
-                    batch_logs['batch'] = steps_index
-                    batch_logs['size']  = batch_size
-                    progbar.on_batch_begin(steps_index, batch_logs)
-
-                    train_batch_x, train_batch_y = next(train_generator)
-                    
-                    outs = self.keras_model.train_on_batch(train_batch_x, train_batch_y)
-                    print(' outs: ', outs)
-                    if not isinstance(outs, list):
-                        outs = [outs]
-                    for l, o in zip(out_labels, outs):
-                        batch_logs[l] = o
-    
-                    progbar.on_batch_end(steps_index, batch_logs)
-                    
-                    # print(outs)
-                progbar.on_epoch_end(epoch_idx, {})
-                # if (epoch_idx % 10) == 0:
-                chkpoint.on_epoch_end(epoch_idx  , batch_logs)
-                epoch_idx += 1
-
-            # if epoch_idx != self.epoch:
-            # chkpoint.on_epoch_end(epoch_idx -1, batch_logs)
-            self.epoch = max(epoch_idx - 1, epochs)
-
-            print('Final : self.epoch {}   epochs {}'.format(self.epoch, epochs))
-        # end if (else)
-
-
-        
-    def compile(self, learning_rate, momentum, losses):
-        '''
-        Gets the model ready for training. Adds losses, regularization, and
-        metrics. Then calls the Keras compile() function.
-        '''
-        assert isinstance(losses, list) , "A loss function must be defined as the objective"
-        # Optimizer object
-        print('\n')
-        print(' Compile Model :')
-        print('----------------')
-        print('    losses        : ', losses)
-        print('    learning rate : ', learning_rate)
-        print('    momentum      : ', momentum )
-        print()
-        optimizer = keras.optimizers.SGD(lr=learning_rate, momentum=momentum, clipnorm=5.0)
-        # optimizer= tf.train.GradientDescentOptimizer(learning_rate, momentum)
-        # optimizer = keras.optimizers.RMSprop(lr=learning_rate, rho=0.9, epsilon=None, decay=0.0)
-        # optimizer = keras.optimizers.Adagrad(lr=learning_rate, epsilon=None, decay=0.0)
-        # optimizer = keras.optimizers.Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
-        # optimizer = keras.optimizers.Nadam(lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
-
-
-        ##------------------------------------------------------------------------
-        ## Add Losses
-        ## These are the losses aimed for minimization
-        ## Normally Keras expects the same number of losses as outputs. Since we 
-        ## are returning more outputs , we go deep and set the losses in the base
-        ## layers () 
-        ##------------------------------------------------------------------------    
-        print()
-        # First, clear previously set losses to avoid duplication
-        self.keras_model._losses = []
-        self.keras_model._per_input_losses = {}
-
-        # loss_names = [  "rpn_class_loss", "rpn_bbox_loss", "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss" ]
-        # loss_names = [ "fcn_loss", "fcn_norm_loss" ]
-
-        print(' Add losses:')
-        print('----------------')
-        print('    losses: ', losses)
-        print('    keras_model.losses           :', self.keras_model.losses)
-
-        print()
-        loss_names = losses              
-        for name in loss_names:
-            layer = self.keras_model.get_layer(name)
-            print('    Loss: {}  Related Layer is : {}'.format(name, layer.name))
-            if layer.output in self.keras_model.losses:
-                print('      ',layer.output,' is in self.keras_model.losses, and wont be added to list')
-                continue
-            print('      >> Add add loss for ', layer.output, ' to list of losses...')
-            self.keras_model.add_loss(tf.reduce_mean(layer.output, keepdims=True))
-            
-        print()    
-        print('Keras model.losses : ') 
-        print('---------------------') 
-        for ls in self.keras_model.losses:
-            print('  ',ls, '   name:',ls.name )
-        
-        print()    
-        print('Keras_model._losses:' ) 
-        print('---------------------' ) 
-        for ls in self.keras_model._losses:
-            print('  ',ls, '   name:',ls.name )
-
-        print()    
-        print('Keras_model._per_input_losses:')
-        print('------------------------------')
-        for ls in self.keras_model._per_input_losses:
-            print('  ',ls, '   name:',type(ls))
-        pp.pprint(self.keras_model._per_input_losses)
-            
-            
-        ## Add L2 Regularization as loss to list of losses
-        # Skip gamma and beta weights of batch normalization layers.
-        reg_losses = [keras.regularizers.l2(self.config.WEIGHT_DECAY)(w) / tf.cast(tf.size(w), tf.float32)
-                      for w in self.keras_model.trainable_weights
-                      if 'gamma' not in w.name and 'beta' not in w.name]
-        print()    
-        print('L2 Regularization losses:')
-        print('-------------------------')
-        for ls in reg_losses:
-            print('  ',ls, '   name:',ls.name )
-
-        self.keras_model.add_loss(tf.add_n(reg_losses))
-
-        print()
-        print('    Final list of keras_model.losses ') 
-        print('    -------------------------------- ') 
-        pp.pprint(self.keras_model.losses)
-        
-        
-
-        ##------------------------------------------------------------------------    
-        ## Compile
-        ##------------------------------------------------------------------------   
-        print()
-        print (' Length of Keras_Model.outputs:', len(self.keras_model.outputs))
-        self.keras_model.compile(optimizer=optimizer, 
-                                 loss=[None] * len(self.keras_model.outputs))
-
-        ##------------------------------------------------------------------------    
-        ## Add metrics for losses
-        ##------------------------------------------------------------------------    
-        print()
-        print(' Add Metrics :')
-        print('--------------')                                 
-        print (' Initial Keras metric_names:', self.keras_model.metrics_names)                                 
-
-        for name in loss_names:
-            if name in self.keras_model.metrics_names:
-                print('      ' , name , 'is already in in self.keras_model.metrics_names')
-                continue
-            layer = self.keras_model.get_layer(name)
-            print('    Loss name : {}  Related Layer is : {}'.format(name, layer.name))
-            self.keras_model.metrics_names.append(name)
-            self.keras_model.metrics_tensors.append(tf.reduce_mean(layer.output, keepdims=True))
-            print('      >> Add metric ', name, ' with metric tensor: ', layer.output.name, ' to list of metrics ...')
-        print (' Final Keras metric_names:') 
-        pp.pprint(self.keras_model.metrics_names)                                 
-        print()
-        return
-
 
     def compile_only(self, learning_rate, layers):
         '''
@@ -1806,3 +1811,5 @@ class MaskRCNN():
             print(' layer: {:2d}    output : {:40s}   Type: {:15s}   Shape: {}'.format( i, x.name, x.dtype.name, x.shape) )
         
         return
+        
+"""           
