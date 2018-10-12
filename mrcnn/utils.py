@@ -114,7 +114,7 @@ def stack_tensors_3d(x):
 
 
 ###############################################################################
-## Data Formatting
+## Image Data Formatting
 ###############################################################################
 
 def compose_image_meta(image_id, image_shape, window, active_class_ids):
@@ -182,6 +182,9 @@ def unmold_image(normalized_images, config):
     return (normalized_images + config.MEAN_PIXEL).astype(np.uint8)
 
 
+##------------------------------------------------------------------------------------------
+## Resize image such that it complies with the shape expected by the NN (config.IMAGE_SHAPE)
+##------------------------------------------------------------------------------------------
 def resize_image(image, min_dim=None, max_dim=None, padding=False):
     '''
     Resizes an image keeping the aspect ratio.
@@ -206,20 +209,28 @@ def resize_image(image, min_dim=None, max_dim=None, padding=False):
     h, w = image.shape[:2]
     window = (0, 0, h, w)
     scale = 1
-
+    # print(' Resize Image: h: {}, w: {}, min_dim: {}, max_dim: {}'.format(h,w,min_dim,max_dim))
+    
     # Scale?
     if min_dim:
         # Scale up but not down
         scale = max(1, min_dim / min(h, w))
+        # print(' Scale based on min_dim is :', scale)
+        
     # Does it exceed max dim?
     if max_dim:
         image_max = max(h, w)
+        # print(' Round(image_max * scale) > max_dim :  {} *{} = {} >? {}'.format(image_max,scale,image_max*scale, max_dim)) 
         if round(image_max * scale) > max_dim:
             scale = max_dim / image_max
+            # print(' Scale based on max_dim is :', scale)
+            
     # Resize image and mask
     if scale != 1:
-        image = scipy.misc.imresize(
-            image, (round(h * scale), round(w * scale)))
+        image = scipy.misc.imresize(image, (round(h * scale), round(w * scale)))
+    
+    # print(' Finalized scale is : ', scale)
+    # print(' Resized image shape is :', image.shape)
     # Need padding?
     if padding:
         # Get new height and width
@@ -231,12 +242,57 @@ def resize_image(image, min_dim=None, max_dim=None, padding=False):
         padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
         image = np.pad(image, padding, mode='constant', constant_values=0)
         window = (top_pad, left_pad, h + top_pad, w + left_pad)
+
+        # print(' Padding:  top: {}  bottom: {} left: {} right:{} '.format(top_pad, bottom_pad,left_pad,right_pad))
+            
     return image, window, scale, padding
-	
+
+
 ###############################################################################
-##  Bounding Boxes
+##  Bounding Box utility functions
 ###############################################################################
 
+##------------------------------------------------------------------------------------------
+##  Convert bounding box coordinates from NN shape back to original image coordinates
+##------------------------------------------------------------------------------------------
+def boxes_to_image_domain(boxes, image_meta):
+    '''
+    convert the coordinates of a bounding box from resized back to original img coordinates
+    
+    Input:  
+    ------
+       boxes        box in NN input coordiantes
+       image_meta   image meta-data structure 
+       
+    Return:
+    -------
+        boxes       bounding box in image domain coordinates
+       
+    '''
+    image_id    = image_meta[0]
+    image_shape = image_meta[1:4]
+    window      = image_meta[4:8]
+    
+    # Compute scale and shift to translate coordinates to image domain.
+    h_scale = image_shape[0] / (window[2] - window[0])
+    w_scale = image_shape[1] / (window[3] - window[1])
+    scale   = min(h_scale, w_scale)
+    shift   = window[:2]  # y, x
+    scales = np.array([scale, scale, scale, scale])
+    shifts = np.array([shift[0], shift[1], shift[0], shift[1]])
+
+    # Translate bounding boxes to image domain
+    boxes = np.multiply(boxes - shifts, scales).astype(np.int32)
+    print(' boxes_to_image_domain() ')
+    print('    Original image shape : {}   Image window info: {} '.format(image_shape, window))
+    print('    Adjustment scale     : {}   Adjustment shift : {} '.format(scales, shift))
+    print('    Adjusted boxes shape : {} '.format(boxes.shape))
+    return boxes
+
+
+##------------------------------------------------------------------------------------------
+##  Compute bounding boxes from masks.
+##------------------------------------------------------------------------------------------
 def extract_bboxes(mask):
     '''
     Compute bounding boxes from masks.
@@ -268,6 +324,9 @@ def extract_bboxes(mask):
     return boxes.astype(np.int32)
 
 
+##------------------------------------------------------------------------------------------
+##  Compute IoU between a box and an array of boxes  
+##------------------------------------------------------------------------------------------
 def compute_iou(box, boxes, box_area, boxes_area):
     """
     Calculates IoU of the given box with the array of the given boxes.
@@ -286,10 +345,17 @@ def compute_iou(box, boxes, box_area, boxes_area):
     x2 = np.minimum(box[3], boxes[:, 3])
     intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
     union = box_area + boxes_area[:] - intersection[:]
+    # print(' Intersection: \n', intersection)
+    # print(' Union       : \n', union)
+    # if union == 0 :
+        # print('Warning!! Union is 0')
     iou = intersection / union  
     return iou
 
 
+##------------------------------------------------------------------------------------------
+##  Compute IoU between two arrays of bounding boxes 
+##------------------------------------------------------------------------------------------
 def compute_overlaps(boxes1, boxes2):
     """
     Computes IoU overlaps between two sets of boxes.
@@ -310,14 +376,18 @@ def compute_overlaps(boxes1, boxes2):
     return overlaps
 
 
+##------------------------------------------------------------------------------------------
+##  Apply non maximal suppression on a set of bounding boxes 
+##------------------------------------------------------------------------------------------
 def non_max_suppression(boxes, scores, threshold):
     '''
-    Identify bboxes with an IoU > Threshold for suppression
-    
+    Identify bboxes with an IoU > Threshold for suppression    
     Performs non-maximum supression and returns indicies of kept boxes.
-    boxes: [N, (y1, x1, y2, x2)]. Notice that (y2, x2) lays outside the box.
-    scores: 1-D array of box scores.
-    threshold: Float. IoU threshold to use for filtering.
+    Input:
+    ------
+    boxes:          [N, (y1, x1, y2, x2)]. Notice that (y2, x2) lays outside the box.
+    scores:         1-D array of box scores.
+    threshold:      Float. IoU threshold to use for filtering.
     '''
     assert boxes.shape[0] > 0
     if boxes.dtype.kind != "f":
@@ -360,10 +430,49 @@ def non_max_suppression(boxes, scores, threshold):
     return np.array(pick, dtype=np.int32)
 
     
-###############################################################################
-##  Bounding box refinement - APPLY BBOX DELTAS
-###############################################################################  
-def apply_box_deltas(boxes, deltas):
+##------------------------------------------------------------------------------------------
+##  Bounding box refinement - apply delta bbox refinement - single bbox
+##------------------------------------------------------------------------------------------
+def apply_box_delta(box, delta):
+    """
+    13-09-2018
+    Applies the given delta to the given box.
+    
+    boxes:          [y1, x1, y2, x2]. 
+                    Note that (y2, x2) is outside the box.
+    deltas:         [dy, dx, log(dh), log(dw)]
+    """
+    box    = box.astype(np.float32)
+    
+    # Convert to y, x, h, w
+    height   = box[2] - box[0]
+    width    = box[3] - box[1]
+    center_y = box[0] + 0.5 * height
+    center_x = box[1] + 0.5 * width
+    # print(' first   height: {}  width: {} center x/y : {}/{}'.format(height, width, center_x, center_y))
+
+    # Apply deltas
+    center_y += delta[0] * height
+    center_x += delta[1] * width
+    height   *= np.exp(delta[2])
+    width    *= np.exp(delta[3])
+    # print(' second   height: {}  width: {} center x/y : {}/{}'.format(height, width, center_x, center_y))
+    
+    # Convert back to y1, x1, y2, x2
+    y1 = center_y - 0.5 * height
+    x1 = center_x - 0.5 * width
+    y2 = y1 + height
+    x2 = x1 + width
+
+    # print(' third   y1/x1: {}/{}  y2/x2 : {}/{}'.format(y1,x1,y2,x2))
+    
+    return np.array([y1, x1, y2, x2])
+
+
+##------------------------------------------------------------------------------------------
+##  Bounding box refinement - apply delta bbox refinement - numpy version
+##------------------------------------------------------------------------------------------
+def apply_box_deltas_np(boxes, deltas):
     """
     Applies the given deltas to the given boxes.
     boxes:          [N, (y1, x1, y2, x2)]. 
@@ -394,6 +503,9 @@ def apply_box_deltas(boxes, deltas):
     return np.stack([y1, x1, y2, x2], axis=1)
 
     
+##------------------------------------------------------------------------------------------
+##  Bounding box refinement - apply delta bbox refinement - tensorflow version
+##------------------------------------------------------------------------------------------
 def apply_box_deltas_tf(boxes, deltas):
     """
     Applies the given deltas to the given boxes.
@@ -423,38 +535,44 @@ def apply_box_deltas_tf(boxes, deltas):
     x2 = x1 + width
     return tf.stack([y1, x1, y2, x2], axis=-1)
 
-###############################################################################
-## box_refinement_graph - GENERATE BBOX DELTAS
-###############################################################################
-def box_refinement_graph(box, gt_box):
-    """
-    Compute refinement needed to transform box to gt_box.
-    (tensorflow version)
-    box and gt_box:     [N, (y1, x1, y2, x2)]
-    """
-    box         = tf.cast(box, tf.float32)
-    gt_box      = tf.cast(gt_box, tf.float32)
 
-    height      = box[:, 2] - box[:, 0]
-    width       = box[:, 3] - box[:, 1]
-    center_y    = box[:, 0] + 0.5 * height
-    center_x    = box[:, 1] + 0.5 * width
+##------------------------------------------------------------------------------------------
+##  box_refinement - Compute Bbox delta refinement - single box
+##------------------------------------------------------------------------------------------
+def box_refinement(box, gt_box):
+    """
+    Compute refinement needed to transform ONE bounding box to gt_box.
+     
+    box   :     [y1, x1, y2, x2]
+    gt_box:     [y1, x1, y2, x2]
+          
+                (y2, x2) is  assumed to be outside the box
+    """
+    box         = box.astype(np.float32)
+    gt_box      = gt_box.astype(np.float32)
 
-    gt_height   = gt_box[:, 2] - gt_box[:, 0]
-    gt_width    = gt_box[:, 3] - gt_box[:, 1]
-    gt_center_y = gt_box[:, 0] + 0.5 * gt_height
-    gt_center_x = gt_box[:, 1] + 0.5 * gt_width
+    height      = box[2] - box[0]
+    width       = box[3] - box[1]
+    center_y    = box[0] + 0.5 * height
+    center_x    = box[1] + 0.5 * width
+
+    gt_height   = gt_box[2] - gt_box[0]
+    gt_width    = gt_box[3] - gt_box[1]
+    gt_center_y = gt_box[0] + 0.5 * gt_height
+    gt_center_x = gt_box[1] + 0.5 * gt_width
 
     dy          = (gt_center_y - center_y) / height
     dx          = (gt_center_x - center_x) / width
-    dh          = tf.log(gt_height / height)
-    dw          = tf.log(gt_width / width)
+    dh          = np.log(gt_height / height)
+    dw          = np.log(gt_width / width)
 
-    result = tf.stack([dy, dx, dh, dw], axis=1)
-    return result
+    return np.array([dy, dx, dh, dw])
 
 
-def box_refinement(box, gt_box):
+##------------------------------------------------------------------------------------------
+##  box_refinement - Compute Bbox delta refinement - numpy version 
+##------------------------------------------------------------------------------------------
+def box_refinement_np(box, gt_box):
     """
     Compute refinement needed to transform box to gt_box.
     (Non tensorflow version)
@@ -481,16 +599,68 @@ def box_refinement(box, gt_box):
 
     return np.stack([dy, dx, dh, dw], axis=1)
 
-###############################################################################
-##  Bounding box clipping
-###############################################################################
+    
+##------------------------------------------------------------------------------------------
+##  box_refinement - Compute Bbox delta refinement - tensorflow version 
+##------------------------------------------------------------------------------------------
+def box_refinement_graph(box, gt_box):
+    """
+    Compute refinement needed to transform box to gt_box.  (tensorflow version)
+    
+    box   :     [N, (y1, x1, y2, x2)]
+    gt_box:     [N, (y1, x1, y2, x2)]
+    """
+    box         = tf.cast(box, tf.float32)
+    gt_box      = tf.cast(gt_box, tf.float32)
 
+    height      = box[:, 2] - box[:, 0]
+    width       = box[:, 3] - box[:, 1]
+    center_y    = box[:, 0] + 0.5 * height
+    center_x    = box[:, 1] + 0.5 * width
+
+    gt_height   = gt_box[:, 2] - gt_box[:, 0]
+    gt_width    = gt_box[:, 3] - gt_box[:, 1]
+    gt_center_y = gt_box[:, 0] + 0.5 * gt_height
+    gt_center_x = gt_box[:, 1] + 0.5 * gt_width
+
+    dy          = (gt_center_y - center_y) / height
+    dx          = (gt_center_x - center_x) / width
+    dh          = tf.log(gt_height / height)
+    dw          = tf.log(gt_width / width)
+
+    result = tf.stack([dy, dx, dh, dw], axis=1)
+    return result
+
+
+
+##------------------------------------------------------------------------------------------
+##  clip_to_window - - numpy version 
+##------------------------------------------------------------------------------------------
+def clip_to_window_np(window, boxes):
+    '''
+    window: (y1, x1, y2, x2). The window in the image we want to clip to.
+    boxes : [N, (y1, x1, y2, x2)]
+    '''
+    new_boxes = np.zeros_like(boxes)
+    print('clip_to_window_np()')
+    print('     boxes.shape: ', boxes.shape)
+    print('     window     : ', window)
+    new_boxes[:, 0] = np.maximum(np.minimum(boxes[:, 0], window[2]), window[0])
+    new_boxes[:, 1] = np.maximum(np.minimum(boxes[:, 1], window[3]), window[1])
+    new_boxes[:, 2] = np.maximum(np.minimum(boxes[:, 2], window[2]), window[0])
+    new_boxes[:, 3] = np.maximum(np.minimum(boxes[:, 3], window[3]), window[1])
+    return new_boxes
+    
+##------------------------------------------------------------------------------------------
+##  clip_to_window - - tensorflow version 
+##------------------------------------------------------------------------------------------
 def clip_to_window_tf(window, boxes):
     '''
     window: (y1, x1, y2, x2). The window in the image we want to clip to.
-    boxes: [N, (y1, x1, y2, x2)]
+    boxes:  [N, (y1, x1, y2, x2)]
     '''
     window = tf.cast(window, tf.float32) 
+
     num_images = tf.shape(boxes)[0]
     num_rois   = tf.shape(boxes)[1]
     
@@ -506,41 +676,11 @@ def clip_to_window_tf(window, boxes):
     tmp1 = tf.where(boxes < high_vals , boxes,  high_vals)
     tmp2 = tf.where( tmp1 > low_vals  , tmp1 ,  low_vals )
     return tmp2
-    
+        
+        
 ###############################################################################
-##  Miscellenous Graph Functions
+## Mask Operations 
 ###############################################################################
-
-def trim_zeros_graph(boxes, name=None):
-    """
-    Often boxes are represented with matricies of shape [N, 4] and
-    are padded with zeros. This removes zero boxes by summing the coordinates
-    of boxes, converting 0 to False and <> 0 ti True and creating a boolean mask
-    
-    boxes:      [N, 4] matrix of boxes.
-    non_zeros:  [N] a 1D boolean mask identifying the rows to keep
-    """
-    # sum tf.abs(boxes) across axis 1 (sum all cols for each row) and cast to boolean.
-    non_zeros = tf.cast(tf.reduce_sum(tf.abs(boxes), axis=1), tf.bool)
-    
-    # extract non-zero rows from boxes
-    boxes = tf.boolean_mask(boxes, non_zeros, name=name)
-    return boxes, non_zeros
-
-def batch_pack_graph(x, counts, num_rows):
-    """
-    Picks different number of values from each row in x depending on the values in counts.
-    """
-    outputs = []
-    for i in range(num_rows):
-        outputs.append(x[i, :counts[i]])
-    return tf.concat(outputs, axis=0)
-    
-
-###############################################################################
-## Masks
-###############################################################################
-
 def resize_mask(mask, scale, padding):
     """Resizes a mask using the given scale and padding.
     Typically, you get the scale and padding from resize_image() to
@@ -628,6 +768,37 @@ def unmold_mask(mask, bbox, image_shape):
     full_mask[y1:y2, x1:x2] = mask
     return full_mask
 
+	
+
+###############################################################################
+##  Miscellenous Graph Functions
+###############################################################################
+
+def trim_zeros_graph(boxes, name=None):
+    """
+    Often boxes are represented with matricies of shape [N, 4] and
+    are padded with zeros. This removes zero boxes by summing the coordinates
+    of boxes, converting 0 to False and <> 0 ti True and creating a boolean mask
+    
+    boxes:      [N, 4] matrix of boxes.
+    non_zeros:  [N] a 1D boolean mask identifying the rows to keep
+    """
+    # sum tf.abs(boxes) across axis 1 (sum all cols for each row) and cast to boolean.
+    non_zeros = tf.cast(tf.reduce_sum(tf.abs(boxes), axis=1), tf.bool)
+    
+    # extract non-zero rows from boxes
+    boxes = tf.boolean_mask(boxes, non_zeros, name=name)
+    return boxes, non_zeros
+
+def batch_pack_graph(x, counts, num_rows):
+    """
+    Picks different number of values from each row in x depending on the values in counts.
+    """
+    outputs = []
+    for i in range(num_rows):
+        outputs.append(x[i, :counts[i]])
+    return tf.concat(outputs, axis=0)
+    
 
 ###############################################################################
 ## Pyramid Anchors
@@ -701,6 +872,7 @@ def generate_pyramid_anchors(anchor_scales, anchor_ratios, feature_shapes, featu
         with the same order of the given scales. So, anchors of scale[0] come
         first, then anchors of scale[1], and so on.
     """
+    
     # Anchors
     # [anchor_count, (y1, x1, y2, x2)]
     # print('\n>>> Generate pyramid anchors ')
@@ -726,7 +898,6 @@ def generate_pyramid_anchors(anchor_scales, anchor_ratios, feature_shapes, featu
 ###############################################################################
 ##  Miscellaneous
 ###############################################################################
-
 def compute_ap(gt_boxes, gt_class_ids,
                pred_boxes, pred_class_ids, pred_scores,
                iou_threshold=0.5):
@@ -853,3 +1024,71 @@ def write_zip_stdout(filepath=None,filenm=None,stdout=stdout):
         f_obj.write(comp_stdout)
         f_obj.close()    
     return
+
+    
+def get_predicted_mrcnn_deltas(m_class, m_bbox, verbose= False):
+    '''
+    return  MRCNN_BBOX deltas corresponding to the max predicted MRCNN_CLASS
+    extract predicted refinements for highest predicted class
+    
+    m_class:      [Batch_Size, #predictions, # classes ]
+                    Predicted class scores (returned in mrcnn_class)
+    m_bbox :      [Batch_Size, #predictions, # classes, 4 (dy, dx, log(dh), log(dw))]
+                    Predicted refinements (returned in mrcnn_bbox)
+                    
+    Returns:
+    predicted_classes  [ Batch_size, # Predictions] : class_id predidcted
+
+    predicted_deltas   [Batch_Size, #predictions, 4 (dy, dx, log(dh), log(dw))]
+                        delta matching predicted class_id
+    '''
+#     pred_scores  = np.max(mrcnn_class,axis = -1)
+    
+    predicted_classes = np.argmax(m_class,axis = -1)
+    row,col = np.indices(predicted_classes.shape)
+    predicted_deltas = m_bbox[row,col,predicted_classes]
+
+    if verbose:
+        print('mrcnn_class shape:', m_class.shape)
+        print('mrcnn_bbox shape :', m_bbox.shape)
+        print('predicted_classes:', predicted_classes.shape)
+#         print('predicted_classes[1]:\n',predicted_classes[1])
+        print('predicted_deltas :', predicted_deltas.shape)
+#     print('row: ',row.shape, row)
+#     print('col: ',col.shape, col)
+#     print(mrcnn_bbox[row,col,predicted_classes].shape)
+    
+    return predicted_classes, predicted_deltas    
+    
+
+def byclass_to_byimage_np(in_array, seqid_column):    
+    ''' 
+    convert a by class tensor shaped  [batch_size, num_classes, num_bboxes, columns ] to 
+            a by image tensor shaped  [batch_size, num_bboxes, columns]
+    '''
+    #     np_sum = np.sum(np.abs(model_gt_heatmap_scores[:,:,:,0:4]), axis=-1)
+    #     print(np_sum.shape)
+    #     a,b,c = np.where(np_sum > 0)
+    a,b,c = np.where(in_array[...,seqid_column]>0)
+
+    output = np.zeros((in_array.shape[0],in_array.shape[-2],in_array.shape[-1]))
+#     print(' output shape is ',output.shape)
+#     print(a.shape, b.shape,c.shape)
+    
+    for img, cls , box in zip(a, b,c):
+#         print( img,cls, box, 200 - in_array[img, cls, box,6].astype(int))
+        output[img, 200 - in_array[img, cls, box,6].astype(int)] = in_array[img, cls, box]
+
+    return output
+
+def byclass_to_byimage_tf(in_array, seqid_column):    
+    ''' 
+    convert a by class tensor shaped  [batch_size, num_classes, num_bboxes, columns ] to 
+            a by image tensor shaped  [batch_size, num_bboxes, columns]
+    '''
+    aa = tf.reshape(in_array, [in_array.shape[0], -1, in_array.shape[-1]])
+    _ , sort_inds = tf.nn.top_k(tf.abs(aa[:,:,seqid_column]), k= in_array.shape[2])
+    batch_grid, bbox_grid = tf.meshgrid(tf.range(in_array.shape[0]), tf.range(in_array.shape[2]),indexing='ij')
+    gather_inds = tf.stack([batch_grid, sort_inds],axis = -1)
+    output = tf.gather_nd(aa, gather_inds )
+    return output    

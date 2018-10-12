@@ -19,28 +19,34 @@
 universe         = vanilla 
 
 executable  = /users/students/r0653928/anaconda3/envs/TF35/bin/python
-initialdir  = /users/students/r0653928/projs/mrcnn2
-Arguments   = "train_newshapes_fcn.py --epochs 100 --steps_in_epoch 100 --last_epoch 0 --batch_size 2 --lr 0.01 --logs_dir mrcnn_newshape_train_logs  --model last"
+initialdir  = /users/students/r0653928/projs/mrcnn3
+Arguments   = "train_fcn.py   \
+  --epochs          500   \
+  --steps_in_epoch   12   \
+  --last_epoch     4524   \
+  --batch_size       16   \
+  --val_steps         4   \
+  --lr           1.0e-8   \
+  --opt          rmsprop  \    
+  --logs_dir     train_fcn_rmsprop  \
+  --model    /esat/tiger/joramas/mscStudentsData/kbardool/models/train_mrcnn/mrcnn20180621T1554/mask_rcnn_shapes_1119.h5 \
+  --fcn_model    last"
 
-#Arguments      = "train_dev.py --input_weight_path /esat/tiger/joramas/mscStudentsData/kbardool/projs/frcnn/vgg16_weights_tf_dim_ordering_tf_kernels.h5 --path  ../../MLDatasets "
-#Arguments       = "train_dev.py --input_weight_path ./new_model_frcnn_18.hdf5 --output_weight_path ./new_model_frcnn_19.hdf5 --path  ../../MLDatasets --num_epochs 10 --hf --vf --rot"
-
-
-notification     = error
+Notification     = error
 RequestCpus      = 1
 RequestMemory    = 32G
 Request_GPUs     = 1
-+RequestWalltime = 72000 
-         
++RequestWalltime = 272000          
 Requirements = ( machineowner == "Visics" ) && ( CUDAGlobalMemoryMb > 12000 ) && (CUDACapability >=3.5)
-
 NiceUser = true
- 
 Queue 1
 
 
-#Output = /users/students/r0653928/projs/frcnn/output.out
-#Error  = /users/students/r0653928/projs/frcnn/errors.err
-#Log    = /users/students/r0653928/projs/frcnn/logfile.log
-### Requirements = machine == "monkey.esat.kuleuven.be"
+## epochs          epochs    steps in epoch   batch sz     val_steps    LR           opt
+#  3358 -- 4024    5000 (f)        12             8            2        1.0e-6 (?)   rmsprop
+#  4024 -- 4524     500 (s)        12             2            1        1.0e-8       ""
+#  4524 --          500            12            16            4        1.0e-8       rmsprop
+#
+#
+#
 ### Rank = machine == "monkey.east.kuleuven.be"

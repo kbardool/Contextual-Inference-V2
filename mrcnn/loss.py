@@ -172,7 +172,7 @@ def mrcnn_class_loss_graph(target_class_ids, pred_class_logits, active_class_ids
     
     active_class_ids:       [batch, num_classes]. Has a value of 1 for
                             classes that are in the dataset of the image, and 0
-                            for classes that are not in the dataset.
+                            for classes that are not in the dataset. 
     '''
     print('\n>>> mrcnn_class_loss_graph ' )
     print('    target_class_ids  size :', target_class_ids.shape)
@@ -210,7 +210,7 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
 
     target_bbox:        [batch, num_rois, (dy, dx, log(dh), log(dw))]
     target_class_ids:   [batch, num_rois]. Integer class IDs.
-    pred_bbox:          [batch, num_rois, num_classes, (dy, dx, log(dh), log(dw))]
+    pred_bbox:          [batch, num_rois, num_classes,  4: (dy, dx, log(dh), log(dw))]
     
     '''
     print('\n>>> mrcnn_bbox_loss_graph ' )
@@ -219,6 +219,10 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
     print('    target_bbox size       :', target_bbox.shape)    
     
     # Reshape to merge batch and roi dimensions for simplicity.
+    # target_class_ids:  reshaped into [ (batch * num_rois) ]
+    # target_bbox     :  reshaped into [ (batch * num_rois) , 4]
+    # pred_bbox       :  reshaped into [ (batch * num_rois) , num_classes, 4]
+    
     target_class_ids = KB.reshape(target_class_ids, (-1,))
     target_bbox      = KB.reshape(target_bbox, (-1, 4))
     pred_bbox        = KB.reshape(pred_bbox, (-1, KB.int_shape(pred_bbox)[2], 4))

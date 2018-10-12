@@ -626,8 +626,7 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
             #-----------------------------------------------------------------------           
             # RPN Targets
             #-----------------------------------------------------------------------            
-            rpn_match, rpn_bbox = build_rpn_targets(image.shape, anchors,
-                                                    gt_class_ids, gt_boxes, config)
+            rpn_match, rpn_bbox = build_rpn_targets(image.shape, anchors, gt_class_ids, gt_boxes, config)
 
             #-----------------------------------------------------------------------           
             # IF random_rois <> 0 then we generate random  proposals 

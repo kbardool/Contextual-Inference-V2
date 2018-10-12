@@ -42,7 +42,7 @@ from pycocotools import mask as maskUtils
 
 from   mrcnn.config import Config
 import mrcnn.utils as utils
-import mrcnn.model as modellib
+# import mrcnn.model as modellib
 import mrcnn.dataset as dataset
 
 
@@ -69,6 +69,14 @@ class CocoConfig(Config):
     # Number of classes (including background)
     NUM_CLASSES = 1 + 80  # COCO has 80 classes
 
+    
+class CocoInferenceConfig(CocoConfig):
+    # Set batch size to 1 since we'll be running inference on
+    # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
+    GPU_COUNT = 1
+    IMAGES_PER_GPU = 1
+    DETECTION_MIN_CONFIDENCE = 0
+	
 
 ############################################################
 #  COCO Dataset Class extension
@@ -87,26 +95,25 @@ class CocoDataset(dataset.Dataset):
         return_coco: If True, returns the COCO object.
         """
         # Path
-        image_dir = os.path.join(dataset_dir, "train2014" if subset == "train"
-                                 else "val2014")
+        image_dir = os.path.join(dataset_dir, "train2014" if subset == "train" else "val2014")
 
-#        image_dir = os.path.join(dataset_dir, "train2017" if subset == "train"
-#                                 else "val2017")
+#       image_dir = os.path.join(dataset_dir, "train2017" if subset == "train" lse "val2017")
         
         # Create COCO object
         json_path_dict = {
-            "train" :   "annotations/instances_train2014.json",
-            "val"   :   "annotations/instances_val2014.json",
+            "train"  :  "annotations/instances_train2014.json",
+            "val"    :  "annotations/instances_val2014.json",
             "minival":  "annotations/instances_minival2014.json",
-            "val35k":   "annotations/instances_valminusminival2014.json",
+            "val35k" :  "annotations/instances_valminusminival2014.json",
+            "test"   :  "annotations/image_info_test2014.json"
         }
         coco = COCO(os.path.join(dataset_dir, json_path_dict[subset]))
-
+        
         # Load all classes or a subset?
         if not class_ids:
             # All classes
             class_ids = sorted(coco.getCatIds())
-
+        
         # All images or a subset?
         if class_ids:
             image_ids = []
@@ -117,6 +124,11 @@ class CocoDataset(dataset.Dataset):
         else:
             # All images
             image_ids = list(coco.imgs.keys())
+            
+        print(' image dir        : ', image_dir) 
+        print(' json_path_dir    : ', os.path.join(dataset_dir, json_path_dict[subset]))
+        print(' number of images : ', len(image_ids))
+        # print(' ClassIds     :', class_ids)
 
         # Add classes
         for i in class_ids:

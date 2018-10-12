@@ -93,19 +93,23 @@ def fpn_classifier_graph(rois, feature_maps, image_shape, pool_size, num_classes
                         
     '''
     print('\n>>> FPN Classifier Graph ')
-    print('     rois shape          :', rois.get_shape())
-    print('     No of feature_maps  :', len(feature_maps))
+    print('     INPUT: rois shape          :', rois.get_shape())
+    print('     INPUT: No of feature_maps  :', len(feature_maps))
     for item in feature_maps:
         print('        feature_maps shape  :', item.get_shape())
-    print('     input_shape         :', image_shape)
-    print('     pool_size           :', pool_size)
+    print('     INPUT: image_shape         :', image_shape)
+    print('     INPUT: pool_size           :', pool_size)
+    print('     INPUT: num_classes         :', num_classes)
     
     # ROI Pooling
     # Shape: [batch, num_boxes, pool_height, pool_width, channels]
+    
     x = PyramidROIAlign([pool_size, pool_size], image_shape, name="roi_align_classifier")([rois] + feature_maps)
     print('     roi_align_classifier output shape is : ' ,x.get_shape(),  x.shape)
     
     # Two 1024 FC layers (implemented with Conv2D for consistency)
+    # TimeDistributed applies the Conv2D layer to each slice of the batch input
+    
     x = KL.TimeDistributed(KL.Conv2D(1024, (pool_size, pool_size), padding="valid"), name="mrcnn_class_conv1")(x)
     print('     mrcnn_class_conv1    output shape is : ' ,x.get_shape())
     x = KL.TimeDistributed(BatchNorm(axis=3), name='mrcnn_class_bn1')(x)
@@ -125,25 +129,31 @@ def fpn_classifier_graph(rois, feature_maps, image_shape, pool_size, num_classes
     print('     pool_squeeze(Shared) output shape is : ' , shared.get_shape())
 
     # Classifier head
-    x = KL.TimeDistributed(KL.Dense(num_classes))(shared)
-    mrcnn_class_logits = KL.Lambda(lambda x: KB.identity(x, name = 'mrcnn_class_logits'), name='mrcnn_class_logits')(x)
+    mrcnn_class_logits = KL.TimeDistributed(KL.Dense(num_classes), name = 'mrcnn_class_logits')(shared)
+    # x = KL.TimeDistributed(KL.Dense(num_classes, name = 'mrcnn_class_logits'))(shared)
+    # mrcnn_class_logits = KL.Lambda(lambda x: KB.identity(x, name = 'mrcnn_class_logits'), name='mrcnn_class_logits')(x)
     
     
-    x = KL.TimeDistributed(KL.Activation("softmax"))(mrcnn_class_logits)
-    mrcnn_probs        = KL.Lambda(lambda x: KB.identity(x, name = 'mrcnn_class'), name='mrcnn_class')(x)
-    
+    mrcnn_probs = KL.TimeDistributed(KL.Activation("softmax"), name = 'mrcnn_class')(mrcnn_class_logits)
+    # x = KL.TimeDistributed(KL.Activation("softmax"))(mrcnn_class_logits)
+    # mrcnn_probs        = KL.Lambda(lambda x: KB.identity(x, name = 'mrcnn_class'), name='mrcnn_class')(x)
+    print('\n\n')
     print('     mrcnn_class_logits   output shape is : ' , mrcnn_class_logits.get_shape())    
     print('     mrcnn_class_probs    output shape is : ' , mrcnn_probs.get_shape())    
 
     # BBox head
     # [batch, boxes, num_classes * (dy, dx, log(dh), log(dw))]
     x = KL.TimeDistributed(KL.Dense(num_classes * 4, activation='linear'),name='mrcnn_bbox_fc')(shared)
-    print('   mrcnn_bbox_fc        output shape is : ' , x.get_shape())    
+    print('     mrcnn_bbox_fc        output shape is : ' , x.get_shape())
+    
     # Reshape to [batch, boxes, num_classes, (dy, dx, log(dh), log(dw))]
     s = KB.int_shape(x)
-    x = KL.Reshape((s[1], num_classes, 4) )(x)
-    mrcnn_bbox = KL.Lambda(lambda x: KB.identity(x, name = 'mrcnn_bbox'), name="mrcnn_bbox_regression") (x)
-    print('   mrcnn_bbox           output shape is : ' , mrcnn_bbox.get_shape())    
+     
+    mrcnn_bbox = KL.Reshape((s[1], num_classes, 4), name="mrcnn_bbox")(x)
+    # mrcnn_bbox = KL.Lambda(lambda x: KB.identity(x, name = 'mrcnn_bbox'), name="mrcnn_bbox_regression") (x)
+    print('     mrcnn_bbox_fc        reshaped output : ' , x.get_shape())    
+    print('     mrcnn_bbox           output shape is : ' , mrcnn_bbox.get_shape())    
+    
     return mrcnn_class_logits, mrcnn_probs, mrcnn_bbox
 
     

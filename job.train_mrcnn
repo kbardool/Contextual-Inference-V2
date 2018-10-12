@@ -15,25 +15,34 @@
 #-------------------------------------------------------
 # RUN MRCNN on NEWSHAPES
 #-------------------------------------------------------
-universe         = vanilla 
+universe        = vanilla 
 
 executable      = /users/students/r0653928/anaconda3/envs/TF35/bin/python
 initialdir      = /users/students/r0653928/projs/mrcnn3
 
+Arguments       =  train_mrcnn.py           \
+	--epochs 1000 	            \
+	--steps_in_epoch 128 	    \
+	--last_epoch 1198 	        \
+	--batch_size 32         	\
+	--lr 0.01 		            \
+	--opt sgd 		            \
+	--logs_dir train_mrcnn      \
+	--model /esat/tiger/joramas/mscStudentsData/kbardool/models/train_mrcnn/shapes20180621T1554/mask_rcnn_shapes_1119.h5
+
+
+notification     = error
+RequestCpus      = 1
+RequestMemory    = 8G
+Request_GPUs     = 1
++RequestWalltime = 372000 
+         
+Requirements = ( machineowner == "Visics" ) && ( CUDAGlobalMemoryMb > 8192 ) && (CUDACapability >=3.5)
+NiceUser = true 
+Queue 1
+
 ## --input_weight_path  ../frcnn/vgg16_weights_tf_dim_ordering_tf_kernels.h5  \
-
-Arguments       = " train_mrcnn.py \
-                    --epochs 1000  \
-                    --steps_in_epoch 128 \
-                    --last_epoch 1198 \
-                    --batch_size 32 \
-                    --lr 0.01 \
-                    --logs_dir train_mrcnn \
-                    --model /home/kbardool/models/train_mrcnn/shapes20180621T1554/mask_rcnn_shapes_1119.h5 \
-                  "
-
-
-#Arguments "train_dev.py \
+# Arguments = "train_dev.py \
 #   --config_filename ./config_2012.pickle  \
 #   --voc_version voc2012  \
 #   --input_weight_path  ./model_frcnn_2012_1.hdf5 \
@@ -41,16 +50,5 @@ Arguments       = " train_mrcnn.py \
 #   --path  ../../MLDatasets  \
 #   --num_epochs 30  \
 #   --hf  --vf --rot "
-
-notification     = error
-RequestCpus      = 1
-RequestMemory    = 8G
-Request_GPUs     = 1
-+RequestWalltime = 72000 
-         
-Requirements = ( machineowner == "Visics" ) && ( CUDAGlobalMemoryMb > 8192 ) && (CUDACapability >=3.5)
-NiceUser = true 
-Queue 1
-
 ### Requirements = machine == "monkey.esat.kuleuven.be"
 ### Rank = machine == "monkey.east.kuleuven.be"

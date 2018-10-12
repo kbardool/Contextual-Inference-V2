@@ -33,25 +33,12 @@ import keras.models as KM
 
 import mrcnn.utils            as utils
 import mrcnn.loss             as loss
-from   mrcnn.datagen          import data_generator
+from   mrcnn.datagen_mod      import data_generator
 from   mrcnn.utils            import log
 from   mrcnn.utils            import parse_image_meta_graph, parse_image_meta
 
-from   mrcnn.RPN_model        import build_rpn_model
-from   mrcnn.resnet_model     import resnet_graph
-
-from   mrcnn.chm_layer        import CHMLayer
-from   mrcnn.chm_inf_layer    import CHMLayerInference
-from   mrcnn.proposal_layer   import ProposalLayer
-
-from   mrcnn.fcn_layer         import fcn_graph
-from   mrcnn.fcn_scoring_layer import FCNScoringLayer
-from   mrcnn.detect_layer      import DetectionLayer  
-from   mrcnn.detect_tgt_layer_mod import DetectionTargetLayer_mod
-
 from   mrcnn.fpn_layers       import fpn_graph, fpn_classifier_graph, fpn_mask_graph
 from   mrcnn.callbacks        import MyCallback
-from   mrcnn.batchnorm_layer  import BatchNorm
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 from distutils.version import LooseVersion
@@ -70,7 +57,7 @@ class ModelBase():
     The actual Keras model is in the keras_model property.
     """
 
-    def __init__(self):
+    def __init__(self, mode, model_dir):
         """
         mode: Either "training" or "inference"
         config: A Sub-class of the Config class
@@ -78,41 +65,12 @@ class ModelBase():
         """
         print('>>> Initialize ModelBase model ')
 
-        # self.mode      = mode
+        self.mode      = mode
         # self.config    = config
-        # self.model_dir = model_dir
-        # self.set_log_dir()
-        # # Pre-defined layer regular expressions
-        # self.layer_regex = {
-            # # ResNet from a specific stage and up
-            # "res3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
-            # "res4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
-            # "res5+": r"(res5.*)|(bn5.*)",
+        self.model_dir = model_dir
 
-            # # fcn only 
-            # "fcn" : r"(fcn\_.*)",
-            # # fpn
-            # "fpn" : r"(fpn\_.*)",
-            # # rpn
-            # "rpn" : r"(rpn\_.*)",
-            # # rpn
-            # "mrcnn" : r"(mrcnn\_.*)",
-
-            # # all layers but the backbone
-            # "heads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            # # all layers but the backbone
-            # "allheads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)|(fcn\_.*)",
-          
-            # # From a specific Resnet stage and up
-            # "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            # "4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            # "5+": r"(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            # # All layers
-            # "all": ".*",
-        # }
-        
-
-        # self.keras_model = self.build(mode=mode, config=config, FCN_layers = FCN_layers)
+        print('   Mode: ', mode)
+        print('   Model dir : ',model_dir)
 
         print('>>> ModelBase initialiation complete')
 
@@ -130,7 +88,7 @@ class ModelBase():
         '''    
         # Which weights to start with?
         print('-----------------------------------------------')
-        print(' Load FCN model with init parm: [',init_with,']')
+        print(' Load Model with init parm: [',init_with,']')
         # print(' find last chkpt :', model.find_last())
         if exclude is not None:
             print(' Exclude layers: ')
@@ -140,14 +98,8 @@ class ModelBase():
        
         ## 1- look for a specific weights file 
         ## Load trained weights (fill in path to trained weights here)
-        # model_path  = 'E:\\Models\\mrcnn_logs\\shapes20180428T1819\\mask_rcnn_shapes_5784.h5'
-        # print(' model_path : ', model_path )
 
-        # print("Loading weights from ", model_path)
-        # model.load_weights(model_path, by_name=True)    
-        # print('Load weights complete')
-
-        # ## 2- look for last checkpoint file in a specific folder (not working correctly)
+        ## 2- look for last checkpoint file in a specific folder (not working correctly)
         # model.config.LAST_EPOCH_RAN = 5784
         # model.model_dir = 'E:\\Models\\mrcnn_logs\\shapes20180428T1819'
         # last_model_found = model.find_last()
@@ -155,27 +107,28 @@ class ModelBase():
         # # loc= model.load_weights(model.find_last()[1], by_name=True)
         # # print('Load weights complete :', loc)
 
-
         ## 3- Use init_with keyword
         ## Which weights to start with?
         # init_with = "last"  # imagenet, coco, or last
 
         if init_with == "imagenet":
         #     loc=model.load_weights(model.get_imagenet_weights(), by_name=True)
-            loc=self.load_weights(RESNET_MODEL_PATH, by_name=True)
+            loc=self.load_weights(self.config.RESNET_MODEL_PATH, by_name=True)
         elif init_with == "init":
             print(' ---> init')
             # Load weights trained on MS COCO, but skip layers that 
             # are different due to the different number of classes
             # See README for instructions to download the COCO weights
-            loc=self.load_weights(VGG16_MODEL_PATH, by_name=True, exclude = exclude)
+            loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude)
         elif init_with == "coco":
             print(' ---> coco')
             # Load weights trained on MS COCO, but skip layers that 
             # are different due to the different number of classes
             # See README for instructions to download the COCO weights
-            loc=self.load_weights(COCO_MODEL_PATH, by_name=True,
-                               exclude=["mrcnn_class_logits", "mrcnn_bbox_fc", "mrcnn_bbox", "mrcnn_mask"])
+            # loc=self.load_weights(self.config.COCO_MODEL_PATH, by_name=True, exclude = exclude)
+            loc=self.load_weights(self.config.COCO_MODEL_PATH, by_name=True, exclude = exclude)
+            # exclude=["mrcnn_class_logits"])  # ,"mrcnn_bbox_fc", "mrcnn_bbox", "mrcnn_mask"])
+
         elif init_with == "last":
             print(' ---> last')
             # Load the last model you trained and continue training, placing checkpouints in same folder
@@ -185,57 +138,20 @@ class ModelBase():
         else:
             assert init_with != "", "Provide path to trained weights"
             print(" ---> Explicit weight file")
-            loc = self.load_weights(init_with, by_name=True, exclude = exclude, new_folder= new_folder)    
+            loc = self.load_weights(init_with, by_name=True, exclude = exclude, new_folder= new_folder)  
+
+
+        print(" load_model_weights() : MODEL Load weight file COMPLETE    ")
         return     
-
-
-        
-    def find_last(self):
-        '''
-        Finds the last checkpoint file of the last trained model in the
-        model directory.
-        
-        Returns:
-        --------
-            log_dir: The directory where events and weights are saved
-            checkpoint_path: the path to the last checkpoint file
-        '''
-        
-        # Get directory names. Each directory corresponds to a model
-        
-        print('>>> find_last checkpoint in : ', self.model_dir)
-        dir_names = next(os.walk(self.model_dir))[1]
-        key = self.config.NAME.lower()
-        print(' Key :',key)
-        dir_names = filter(lambda f: f.startswith(key), dir_names)
-        dir_names = sorted(dir_names)
-        if not dir_names:
-            return None, None
-        
-        # Pick last directory
-        dir_name = os.path.join(self.model_dir, dir_names[-1])
-        
-        # Find the last checkpoint
-        checkpoints = next(os.walk(dir_name))[2]
-        checkpoints = filter(lambda f: f.startswith("fcn"), checkpoints)
-        checkpoints = sorted(checkpoints)
-        if not checkpoints:
-            return dir_name, None
-        checkpoint = os.path.join(dir_name, checkpoints[-1])
-        
-        # log("    find_last info:   dir_name: {}".format(dir_name))
-        # log("    find_last info: checkpoint: {}".format(checkpoint))
-
-        return dir_name, checkpoint
 
         
     def load_weights(self, filepath, by_name=False, exclude=None, new_folder = False):
-        """
+        '''
         Modified version of the correspoding Keras function with
         the addition of multi-GPU support and the ability to exclude
         some layers from loading.
         exlude: list of layer names to excluce
-        """
+        '''
         import h5py
 
         from keras.engine import topology
@@ -245,11 +161,15 @@ class ModelBase():
 
         if h5py is None:
             raise ImportError('`load_weights` requires h5py.')
-        
+        import inspect
         f = h5py.File(filepath, mode='r')
+        pp.pprint(f.__dict__)
+        # pp.pprint([i for i in dir(f) if not inspect.ismethod(i)])
+        
         if 'layer_names' not in f.attrs and 'model_weights' in f:
+            print('im here')
             f = f['model_weights']
-
+            
         # In multi-GPU training, we wrap the model. Get layers
         # of the inner model because they have the weights.
         keras_model = self.keras_model
@@ -260,35 +180,39 @@ class ModelBase():
         # print('--------------------------------')
         # print(' List of all Layers in Model    ')
         # print('--------------------------------')
-        # print('\n\n')
-        
-        # for idx,layer in enumerate(layers):
+        # for idx,layer in enumerate(layers): 
             # print('>layer {} : name : {:40s}  type: {}'.format(idx,layer.name,layer))
             
         # Exclude some layers
         if exclude:
             layers = filter(lambda l: l.name not in exclude, layers)
             
-        print('   --------------------------------------' )       
-        print('    layers to load (not in exclude list) ' )
-        print('   --------------------------------------' )
-        for idx,layer in enumerate(layers):
-            print('    >layer {} : name : {:40s}  type: {}'.format(idx,layer.name,layer))
-        print('\n\n')
-            
+        # print('--------------------------------------' )       
+        # print(' layers to load (not in exclude list) ' )
+        # print('--------------------------------------' )
+        # for idx,layer in enumerate(layers):
+            # print('>layer {} : name : {:40s}  type: {}'.format(idx,layer.name,layer))
+        # print('\n\n')
+        
         if by_name:
             topology.load_weights_from_hdf5_group_by_name(f, layers)
         else:
             topology.load_weights_from_hdf5_group(f, layers)
+            
         if hasattr(f, 'close'):
             f.close()
-        
+            
         # Update the log directory
-        self.set_log_dir(filepath, new_folder)
-        print('   Load weights complete : ',filepath)        
+        print('   Weights file loaded: {} '.format(filepath))        
+        print('   Weights file loaded: {} '.format(filepath), file = sys.__stdout__)
+
+        if self.mode == 'training':
+            self.set_log_dir(filepath, new_folder)
+            
+        # print(" load_weights() :  MODEL Load weight file COMPLETE    ")
+
         return(filepath)
 
-        
     def set_log_dir(self, model_path=None, new_folder = False):
         '''
         Sets the model log directory and epoch counter.
@@ -342,24 +266,78 @@ class ModelBase():
 
         self.log_dir = os.path.join(self.model_dir, "{}{:%Y%m%dT%H%M}".format(self.config.NAME.lower(), now))
 
-        # Path to save after each epoch. Include placeholders that get filled by Keras.
-        self.checkpoint_path = os.path.join(self.log_dir, "fcn_{}_*epoch*.h5".format(self.config.NAME.lower()))
+        ##--------------------------------------------------------------------------------
+        ## Create checkpoint folder if it doesn't exists
+        ##--------------------------------------------------------------------------------
+        from tensorflow.python.platform import gfile
+        print('  set_log_dir(): self.log_dir : {} '.format(self.log_dir), file = sys.__stdout__)
+        if not gfile.IsDirectory(self.log_dir):
+            print('  Creating checkpoint folder : {}'.format(self.log_dir), file = sys.__stdout__)
+            gfile.MakeDirs(self.log_dir)
+        else:
+            print('  Checkpoint folder already exists: {}'.format(self.log_dir), file = sys.__stdout__)
+
             
+        # Path to save after each epoch. Include placeholders that get filled by Keras.
+        self.checkpoint_path = os.path.join(self.log_dir, "{}_*epoch*.h5".format(self.config.NAME.lower()))
         self.checkpoint_path = self.checkpoint_path.replace("*epoch*", "{epoch:04d}")
         
         log('  set_log_dir(): self.Checkpoint_path: {} '.format(self.checkpoint_path))
         log('  set_log_dir(): self.log_dir        : {} '.format(self.log_dir))
         log('  set_log_dir(): Last completed epoch (self.epoch): {} '.format(self.epoch))
 
+        return
+        
 
         
+    def find_last(self):
+        '''
+        Finds the last checkpoint file of the last trained model in the
+        model directory.
+        
+        Returns:
+        --------
+            log_dir: The directory where events and weights are saved
+            checkpoint_path: the path to the last checkpoint file
+        '''
+        
+        # Get directory names. Each directory corresponds to a model
+        
+        print('>>> find_last checkpoint in : ', self.model_dir)
+        dir_names = next(os.walk(self.model_dir))[1]
+        key = self.config.NAME.lower()
+        print(' Key : >',key,'<')
+        dir_names = list(filter(lambda f: f.startswith(key), dir_names))
+        print(' Dir names: ', dir_names)
+        dir_names = sorted(dir_names)
+        if not dir_names:
+            return None, None
+        
+        # Pick last directory
+        dir_name = os.path.join(self.model_dir, dir_names[-1])
+
+        # Find the last checkpoint
+        checkpoints = next(os.walk(dir_name))[2]
+        checkpoints = filter(lambda f: f.startswith(key), checkpoints)
+        checkpoints = sorted(checkpoints)
+        if not checkpoints:
+            return dir_name, None
+        checkpoint = os.path.join(dir_name, checkpoints[-1])
+        
+        # log("    find_last info:   dir_name: {}".format(dir_name))
+        # log("    find_last info: checkpoint: {}".format(checkpoint))
+
+        return dir_name, checkpoint
+
+        
+        
     def save_model(self, filepath, filename = None, by_name=False, exclude=None):
-        """
+        '''
         Modified version of the correspoding Keras function with
         the addition of multi-GPU support and the ability to exclude
         some layers from loading.
         exlude: list of layer names to excluce
-        """
+        '''
         print('>>> save_model_architecture()')
 
         model_json = self.keras_model.to_json()
@@ -379,10 +357,10 @@ class ModelBase():
 
         
     def get_imagenet_weights(self):
-        """
+        '''
         Downloads ImageNet trained weights from Keras.
         Returns path to weights file.
-        """
+        '''
         from keras.utils.data_utils import get_file
         TF_WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.2/'\
                                  'resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5'
@@ -395,12 +373,12 @@ class ModelBase():
 
         
     def ancestor(self, tensor, name, checked=None):
-        """Finds the ancestor of a TF tensor in the computation graph.
+        '''Finds the ancestor of a TF tensor in the computation graph.
         tensor: TensorFlow symbolic tensor.
         name: Name of ancestor tensor to find
         checked: For internal use. A list of tensors that were already
                  searched to avoid loops in traversing the graph.
-        """
+        '''
         checked = checked if checked is not None else []
         # Put a limit on how deep we go to avoid very long loops
         if len(checked) > 500:
@@ -424,7 +402,7 @@ class ModelBase():
 
         
     def run_graph(self, images, outputs):
-        """Runs a sub-set of the computation graph that computes the given
+        '''Runs a sub-set of the computation graph that computes the given
         outputs.
 
         outputs: List of tuples (name, tensor) to compute. The tensors are
@@ -432,7 +410,7 @@ class ModelBase():
 
         Returns an ordered dict of results. Keys are the names received in the
         input and values are Numpy arrays.
-        """
+        '''
         model = self.keras_model
 
         # Organize desired outputs into an ordered dict
@@ -474,17 +452,17 @@ class ModelBase():
 
       
     def find_trainable_layer(self, layer):
-        """If a layer is encapsulated by another layer, this function
+        '''If a layer is encapsulated by another layer, this function
         digs through the encapsulation and returns the layer that holds
         the weights.
-        """
+        '''
         if layer.__class__.__name__ == 'TimeDistributed':
             return self.find_trainable_layer(layer.layer)
         return layer
 
         
     def get_trainable_layers(self):
-        """Returns a list of layers that have weights."""
+        '''Returns a list of layers that have weights.'''
         layers = []
         # Loop through all layers
         for l in self.keras_model.layers:

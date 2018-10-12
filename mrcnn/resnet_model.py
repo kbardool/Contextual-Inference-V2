@@ -122,9 +122,12 @@ def conv_block(input_tensor, kernel_size, filters, stage, block,
 
 def resnet_graph(input_image, architecture, stage5=False):
     assert architecture in ["resnet50", "resnet101"]
-
-    print('\n>>> Resnet Graph ')
+    print()
+    print('----------------------------')
+    print('>>> Resnet Graph ')
+    print('----------------------------')
     print('     Input_image shape :', input_image.shape)
+    
     # Stage 1 : Convolutional Layer 1
     #   zero pad image 3 x 3 
     #   apply 2D convolution of 64 filters with kernal size of 7 x 7 stride 2 x 2

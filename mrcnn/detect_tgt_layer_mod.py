@@ -7,14 +7,6 @@ Version of Detection_Target_layer without MASK processing
 
 import os
 import sys
-# import glob
-# import random
-# import math
-# import datetime
-# import itertools
-# import json
-# import re
-# import logging
 import numpy as np
 import tensorflow as tf
 # from collections import OrderedDict
@@ -38,7 +30,7 @@ def overlaps_graph_mod(boxes1, boxes2):
     boxes1 - proposals :  [batch_size,  proposal_counts, 4 (y1, x1, y2, x2)] <-- Region proposals
     boxes2 - gt_boxes  :  [batch_size, max_gt_instances, 4 (y1, x1, y2, x2)] <-- input_normlzd_gt_boxes
     
-    proposal_counts : 1000 or 2000 based on training or inference
+    proposal_counts : 2000 (training) or 1000 (inference)
     max_gt_instances: 100
     
     returns :
@@ -49,13 +41,14 @@ def overlaps_graph_mod(boxes1, boxes2):
                             row:  number of non_zero proposals 
                             cols: number of non_zero gt_bboxes
     '''
-    # 1. Tile boxes2 and repeat boxes1. This allows us to compare every boxes1 against every boxes2 without loops.
-    #    TF doesn't have an equivalent to np.repeat() so simulate it using tf.tile() and tf.reshape.
+    ##------------------------------------------------------------------------------------------------------------
+    ## 1. Tile boxes2 and repeat boxes1. This allows us to compare every boxes1 against every boxes2 without loops.
+    ##    TF doesn't have an equivalent to np.repeat() so simulate it using tf.tile() and tf.reshape.
+    ##------------------------------------------------------------------------------------------------------------
     
     # print('\t>>> detection_targets_graph - calculate Overlaps_graph')    
     # print('\t     overlaps_graph: shape of boxes1 before reshape: ',tf.shape(boxes1).eval())  # (?,?)
     # print('\t     overlaps_graph: shape of boxes2 before reshape: ',tf.shape(boxes1).eval())  # (?,?)
-    
     # tf.expand_dims(boxes1, 1) : makes b1:[1, batch_size, proposal_count_sz, 4] 
     
     b1 = tf.reshape(tf.tile(tf.expand_dims(boxes1, 1), [1, 1, tf.shape(boxes2)[0]]), [-1, 4])
@@ -64,7 +57,9 @@ def overlaps_graph_mod(boxes1, boxes2):
     # print('\t     overlaps_graph: shape of boxes2 after reshape: ',tf.shape(b2).eval())  # (?,4)
 
 
-    # 2. Compute intersections
+    ##------------------------------------------------------------------------------------------------------------
+    ## 2. Compute intersections
+    ##------------------------------------------------------------------------------------------------------------
     b1_y1, b1_x1, b1_y2, b1_x2 = tf.split(b1, 4, axis=1)
     b2_y1, b2_x1, b2_y2, b2_x2 = tf.split(b2, 4, axis=1)
     
@@ -76,15 +71,20 @@ def overlaps_graph_mod(boxes1, boxes2):
     x2 = tf.minimum(b1_x2, b2_x2)
     intersection = tf.maximum(x2 - x1, 0) * tf.maximum(y2 - y1, 0)
 
-    # 3. Compute unions
+    ##------------------------------------------------------------------------------------------------------------
+    ## 3. Compute unions
+    ##------------------------------------------------------------------------------------------------------------
     b1_area = (b1_y2 - b1_y1) * (b1_x2 - b1_x1)
     b2_area = (b2_y2 - b2_y1) * (b2_x2 - b2_x1)
     union = b1_area + b2_area - intersection
     
-    # 4. Compute IoU and reshape to [boxes1, boxes2]
+    ##------------------------------------------------------------------------------------------------------------
+    ## 4. Compute IoU and reshape to [boxes1, boxes2]
+    ##------------------------------------------------------------------------------------------------------------
     iou = intersection / union
     overlaps = tf.reshape(iou, [tf.shape(boxes1)[0], tf.shape(boxes2)[0]])
     # print('\t     Overlaps_graph(): Shape of output overlaps', tf.shape(overlaps), overlaps.get_shape())
+    
     return overlaps
 
 
@@ -117,8 +117,8 @@ def detection_targets_graph_mod(proposals, gt_class_ids, gt_boxes,  config):
                             only contains POSTITIVE exmaples
                             
     target_bbox_deltas:     [TRAIN_ROIS_PER_IMAGE, NUM_CLASSES, (dy, dx, log(dh), log(dw))]
-                            Class-specific bbox refinments between the  POSITIVE examples
-                            (in target_gt_bboxes) and their ground truth counter parts (in output_rois)
+                            Class-specific bbox refinements between the POSITIVE examples
+                            (in target_gt_bboxes) and their ground_truth counterparts (in output_rois)
     
     target_gt_bboxes        [TRAIN_ROIS_PER_IMAGE, (y1, x1, y2, x2)]                   
     (roi_gt_bboxes)         Ground Truth bbox coordinates - Only for POSITIVE examples
@@ -131,30 +131,31 @@ def detection_targets_graph_mod(proposals, gt_class_ids, gt_boxes,  config):
 
     ''' 
     # Assertions
-    asserts = [
-        tf.Assert(tf.greater(tf.shape(proposals)[0], 0), [proposals], name="roi_assertion"),
-    ]
+    asserts = [ tf.Assert(tf.greater(tf.shape(proposals)[0], 0), [proposals], name="roi_assertion") ]
     
     with tf.control_dependencies(asserts):
         proposals = tf.identity(proposals)
+    
     # print('>>> detection_targets_graph ')
     # print('     propsals.shape        :',  proposals.shape, proposals.get_shape(), KB.int_shape(proposals) )
     # print('     gt_boxes.shape        :',  gt_boxes.shape ,    KB.int_shape(gt_boxes)   )
     # print('     gt_class_ids.shape    :',  gt_class_ids.shape, KB.int_shape(gt_class_ids))
     # print('     gt_masks.shape        :',  gt_masks.shape ,    KB.int_shape(gt_masks)   )
 
-    # Remove zero padding   
-    # non_zeros returns indicies to valid bboxes, which we use to index gt_class_ids, and gt_masks
+    ##------------------------------------------------------------------------------------------
+    ## Remove zero padding   
+    ##   'non_zeros' returns indicies to valid bboxes, and used to index gt_class_ids, and gt_masks
+    ##------------------------------------------------------------------------------------------
     proposals, _        = utils.trim_zeros_graph(proposals, name="trim_proposals")
     gt_boxes, non_zeros = utils.trim_zeros_graph(gt_boxes , name="trim_gt_boxes")
     gt_class_ids        = tf.boolean_mask(gt_class_ids, non_zeros, name="trim_gt_class_ids")
     # gt_masks            = tf.gather(gt_masks, tf.where(non_zeros)[:, 0], axis=2,name="trim_gt_masks")
 
-    #------------------------------------------------------------------------------------------
-    # Handle COCO crowds
-    # A crowd box in COCO is a bounding box around several instances. Exclude
-    # them from training. A crowd box is given a negative class ID.
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
+    ## Handle COCO crowds
+    ##   A crowd box in COCO is a bounding box around several instances. Exclude these from 
+    ##   training. A crowd box is given a negative class ID.
+    ##------------------------------------------------------------------------------------------
     # tf.where : returns the coordinates of true elements of  the specified conditon.
     #            The coordinates are returned in a 2-D tensor where the first dimension (rows) 
     #            represents the number of true elements, and the second dimension (columns) 
@@ -173,49 +174,51 @@ def detection_targets_graph_mod(proposals, gt_class_ids, gt_boxes,  config):
     #            dimensions, you can remove specific size 1 dimensions by specifying axis.
     #------------------------------------------------------------------------------------------
     
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     ##  Separate GT boxes and masks by 'crowd' and 'non-crowd' classifications
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     crowd_ix        = tf.where(gt_class_ids < 0)[:, 0]
     non_crowd_ix    = tf.where(gt_class_ids > 0)[:, 0]
     crowd_boxes     = tf.gather(gt_boxes, crowd_ix)
     # crowd_masks     = tf.gather(gt_masks, crowd_ix, axis=2)
+    
     gt_class_ids    = tf.gather(gt_class_ids, non_crowd_ix)
     gt_boxes        = tf.gather(gt_boxes, non_crowd_ix)
     # gt_masks        = tf.gather(gt_masks, non_crowd_ix, axis=2)
 
 
-    #------------------------------------------------------------------------------------------
-    # Compute overlaps with crowd boxes [anchors, crowds]
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
+    ## Compute overlaps with crowd boxes [anchors, crowds]
+    ##------------------------------------------------------------------------------------------
     crowd_overlaps  = overlaps_graph_mod(proposals, crowd_boxes)
     crowd_iou_max   = tf.reduce_max(crowd_overlaps, axis=1)
     no_crowd_bool   = (crowd_iou_max < 0.001)
 
 
-    #------------------------------------------------------------------------------------------
-    # Compute overlaps matrix [proposals, gt_boxes] - The IoU between 
-    # proposals and gt_boxes (non-crowd gt boxes, designated by classId < 0 in Coco)
-    # overlaps is 
-    # compute max of elements across axis 1 of overlaps tensor. 
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
+    ## Compute 
+    ## * overlaps matrix [proposals, gt_boxes] : 
+    ##    The IoU between proposals and gt_boxes (non-crowd gt boxes, designated by classId < 0 in Coco)
+    ## * roi_iou_max returns the Maximum overlap between each RoI and all gt_boxes  
+    ##    The value represents the best overlap an RoI can obtain.  
+    ##------------------------------------------------------------------------------------------
     overlaps        = overlaps_graph_mod(proposals, gt_boxes)
     roi_iou_max     = tf.reduce_max(overlaps, axis=1)
     # print('     overlaps.shape        :',  overlaps.shape, KB.int_shape(overlaps)   )
 
-    #------------------------------------------------------------------------------------------
-    ## 1. Determine indices of postive ROI propsal boxes
-    #------------------------------------------------------------------------------------------
-    #    Identify ROI proposal boxes that have an IoU >= 05 overlap with some gt_box, and store 
-    #    indices into positive_indices
+    ##------------------------------------------------------------------------------------------
+    ## 1. Determine indices of positive ROI propsal boxes
+    ##    Identify ROI proposal boxes that have an IoU >= 0.5 overlap with some gt_box, and store 
+    ##    indices into positive_indices
+    ##------------------------------------------------------------------------------------------
     positive_roi_bool     = (roi_iou_max >= 0.5)
     positive_indices      = tf.where(positive_roi_bool)[:, 0]
 
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     ## 2. Determine indices of negative ROI proposal boxes
-    #------------------------------------------------------------------------------------------
-    #    those with < 0.5 with every GT box and are not crowds bboxes 
-    # the where creates a array with shape [# of answers, 1] so we use [:, 0] after
+    ##    those with < 0.5 with every GT box and are not crowds bboxes 
+    ##    the where creates a array with shape [# of answers, 1] so we use [:, 0] after
+    ##------------------------------------------------------------------------------------------
     ## current method
     negative_indices      = tf.where(tf.logical_and(roi_iou_max < 0.5, no_crowd_bool))[:, 0]
 
@@ -227,51 +230,51 @@ def detection_targets_graph_mod(proposals, gt_class_ids, gt_boxes,  config):
     # negative_nonzero_bool = tf.logical_and(negative_nonzero_bool, no_crowd_bool)
     # negative_indices2     = tf.where(negative_nonzero_bool) [:, 0]
 
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     ## 3. Subsample positive ROIs based on ROI_POSITIVE_RATIO
-    #------------------------------------------------------------------------------------------
-    #    Aim for 33% positive (config.ROI_POSITIVE_RATIO = 0.33)
-    #    Positive ROIs   33% of config.TRAIN_ROIS_PER_IMAGE ~  11
+    ##    Aim for 33% positive (config.ROI_POSITIVE_RATIO = 0.33)
+    ##    Positive ROIs   33% of config.TRAIN_ROIS_PER_IMAGE ~  11
+    ##------------------------------------------------------------------------------------------
     positive_count        = int(config.TRAIN_ROIS_PER_IMAGE * config.ROI_POSITIVE_RATIO)
     positive_indices      = tf.random_shuffle(positive_indices)[:positive_count]
     positive_count        = tf.shape(positive_indices)[0]
     
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     ## 4. Add Negative ROIs. Add enough to maintain positive:negative ratio
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     #     negative_count = int((positive_count / config.ROI_POSITIVE_RATIO) - positive_count)
     r = 1.0 / config.ROI_POSITIVE_RATIO
     negative_count        = tf.cast(r * tf.cast(positive_count, tf.float32), tf.int32) - positive_count
     negative_indices      = tf.random_shuffle(negative_indices)[:negative_count]
     
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     ## 5.   Gather selected positive and negative ROIs
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     positive_rois         = tf.gather(proposals, positive_indices)
     negative_rois         = tf.gather(proposals, negative_indices)
 
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     ## 6.   Assign positive ROIs to GT boxes.
-    #------------------------------------------------------------------------------------------
-    #      roi_gt_box_assignment shows for each positive overlap, which class has the maximum overlap
+    ##      roi_gt_box_assignment shows for each positive_overlap, which class has the maximum overlap
+    ##------------------------------------------------------------------------------------------
     positive_overlaps     = tf.gather(overlaps, positive_indices)
     roi_gt_box_assignment = tf.argmax(positive_overlaps, axis=1)
     roi_gt_boxes          = tf.gather(gt_boxes    , roi_gt_box_assignment)
     roi_gt_class_ids      = tf.gather(gt_class_ids, roi_gt_box_assignment)
     # print('     shape of positive overlaps is :', positive_overlaps.get_shape())
 
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     ## 7.   Compute bbox delta (between the selected positive RPN proposals and corrspoing gt bboxes)
-    #------------------------------------------------------------------------------------------
-    # calculate refinement (difference b/w positive rois and gt_boxes) for positive ROIs
+    ##      calculate refinement (difference b/w positive rois and gt_boxes) for positive ROIs
+    ##------------------------------------------------------------------------------------------
     roi_gt_deltas  = utils.box_refinement_graph(positive_rois, roi_gt_boxes)
     roi_gt_deltas /= config.BBOX_STD_DEV
 
     #------------------------------------------------------------------------------------------
-    ## 8.  prepare gt_masks 
-    #------------------------------------------------------------------------------------------
-    #      transpose gt_masks from [h, w, N] to [N, height, width] and add 4th dim at end [N, height, width, 1]
-    #      Pick the right mask for each ROI
+    # 8.  prepare gt_masks 
+    #-------------------------------------------------------------------------------------------
+    #  transpose gt_masks from [h, w, N] to [N, height, width] and add 4th dim at end [N, height, width, 1]
+    #  Pick the right mask for each ROI
     # transposed_masks = tf.expand_dims(tf.transpose(gt_masks, [2, 0, 1]), -1)
     # roi_masks = tf.gather(transposed_masks, roi_gt_box_assignment)
 
@@ -304,11 +307,11 @@ def detection_targets_graph_mod(proposals, gt_class_ids, gt_boxes,  config):
     # binary cross entropy loss.
     # masks = tf.round(masks)
 
-    #------------------------------------------------------------------------------------------
+    ##------------------------------------------------------------------------------------------
     ## 9. Prepare final outputs
-    # Append negative ROIs and pad bbox roi_gt_deltas and masks that
-    # are not used for negative ROIs with zeros.
-    #------------------------------------------------------------------------------------------
+    ##    Append negative ROIs and pad bbox roi_gt_deltas and masks that are not used for 
+    ##    negative ROIs with zeros.
+    ##------------------------------------------------------------------------------------------
     rois             = tf.concat([positive_rois, negative_rois], axis=0)
     N                = tf.shape(negative_rois)[0]
     P                = tf.maximum(config.TRAIN_ROIS_PER_IMAGE - tf.shape(rois)[0], 0)
@@ -398,8 +401,8 @@ class DetectionTargetLayer_mod(KE.Layer):
         names = ["output_rois", "target_class_ids", "target_bbox_deltas", "roi_gt_boxes"]
         
         outputs = utils.batch_slice([proposals, gt_class_ids, gt_boxes],             # inputs 
-                                    lambda w, x, y: detection_targets_graph_mod(w, x, y, self.config),        # batch function 
-                                    self.config.IMAGES_PER_GPU,                                                 # batch_size, name
+                                    lambda w, x, y: detection_targets_graph_mod(w, x, y, self.config), # batch function 
+                                    self.config.IMAGES_PER_GPU,                                        # batch_size, name
                                     names=names)                  
                    
         print('\n    Detection Target Layer : return ', type(outputs) , len(outputs))                    
@@ -411,14 +414,12 @@ class DetectionTargetLayer_mod(KE.Layer):
     def compute_output_shape(self, input_shape):
         return [
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),                                                        # rois boxes
-            (None, self.config.TRAIN_ROIS_PER_IMAGE),                                                                                          # gt class_ids
+            (None, self.config.TRAIN_ROIS_PER_IMAGE),                                                           # gt class_ids
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),                                                        # roi/gt deltas
-            # (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.MASK_SHAPE[0], self.config.MASK_SHAPE[1]),     # masks
+            # (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.MASK_SHAPE[0], self.config.MASK_SHAPE[1]),   # masks
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4)                                                         # roi_gt_bboxes
 
         ]
 
     def compute_mask(self, inputs, mask=None):
         return [None, None, None,  None]
-
-

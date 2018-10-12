@@ -40,6 +40,9 @@ class Dataset(object):
         self.source_class_ids = {}
 
     def add_class(self, source, class_id, class_name):
+        '''
+        Add class to dataset obj class_info attribute
+        '''
         assert "." not in source, "Source name cannot contain a dot"
         # Does the class exist already?
         for info in self.class_info:
@@ -54,6 +57,10 @@ class Dataset(object):
         })
 
     def add_image(self, source, image_id, path, **kwargs):
+        """
+        Add image info to dataset obj image_info attribute
+        """
+
         image_info = {
             "id": image_id,
             "source": source,
@@ -66,7 +73,8 @@ class Dataset(object):
          
         
     def image_reference(self, image_id):
-        """Return a link to the image in its source Website or details about
+        """
+        Return a link to the image in its source Website or details about
         the image that help looking it up or debugging it.
 
         Override for your dataset, but pass to this function
@@ -75,7 +83,8 @@ class Dataset(object):
         return ""
 
     def prepare(self, class_map=None):
-        """Prepares the Dataset class for use.
+        """
+        Prepares the Dataset class for use.
 
         TODO: class map is not supported yet. When done, it should handle mapping
               classes from different datasets to the same class ID.
