@@ -7,17 +7,22 @@ Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
 
-import sys
-import os
-import math
-import zlib
-import random
+import os, sys, math, zlib, argparse, random, platform, pprint
 import numpy as np
 import tensorflow as tf
 import scipy.misc
 import skimage.color
 import skimage.io
-import pprint
+import keras.backend as K
+import keras
+from distutils.version import LooseVersion
+if LooseVersion(keras.__version__) >= LooseVersion('2.2.0'):
+    from keras.engine.saving import load_attributes_from_hdf5_group as _load_attributes_from_hdf5_group
+    from keras.engine.saving import preprocess_weights_for_loading
+else:
+    from keras.engine.topology import _load_attributes_from_hdf5_group, preprocess_weights_for_loading
+
+
 pp = pprint.PrettyPrinter(indent=2, width=100)
 
 ### Batch Slicing -------------------------------------------------------------------
@@ -1092,3 +1097,378 @@ def byclass_to_byimage_tf(in_array, seqid_column):
     gather_inds = tf.stack([batch_grid, sort_inds],axis = -1)
     output = tf.gather_nd(aa, gather_inds )
     return output    
+    
+    
+##----------------------------------------------------------------------------------------------
+## Load weights from hdf5 file
+##----------------------------------------------------------------------------------------------
+
+def load_weights_from_hdf5_group(f, layers, reshape=False):
+    """Implements topological (order-based) weight loading.
+
+    # Arguments
+        f: A pointer to a HDF5 group.
+        layers: a list of target layers.
+        reshape: Reshape weights to fit the layer when the correct number
+            of values are present but the shape does not match.
+
+    # Raises
+        ValueError: in case of mismatch between provided layers
+            and weights file.
+    """
+    ## from keras.engine.topology import _load_attributes_from_hdf5_group
+    
+    if 'keras_version' in f.attrs:
+        original_keras_version = f.attrs['keras_version'].decode('utf8')
+    else:
+        original_keras_version = '1'
+    if 'backend' in f.attrs:
+        original_backend = f.attrs['backend'].decode('utf8')
+    else:
+        original_backend = None
+
+    filtered_layers = []
+    for layer in layers:
+        weights = layer.weights
+        if weights:
+            filtered_layers.append(layer)
+
+    layer_names = _load_attributes_from_hdf5_group(f, 'layer_names')
+    filtered_layer_names = []
+    for name in layer_names:
+        g = f[name]
+        weight_names = _load_attributes_from_hdf5_group(g, 'weight_names')
+        if weight_names:
+            filtered_layer_names.append(name)
+    layer_names = filtered_layer_names
+    if len(layer_names) != len(filtered_layers):
+        raise ValueError('You are trying to load a weight file '
+                         'containing ' + str(len(layer_names)) +
+                         ' layers into a model with ' +
+                         str(len(filtered_layers)) + ' layers.')
+
+    # We batch weight value assignments in a single backend call
+    # which provides a speedup in TensorFlow.
+    weight_value_tuples = []
+    for k, name in enumerate(layer_names):
+        g = f[name]
+        weight_names = _load_attributes_from_hdf5_group(g, 'weight_names')
+        weight_values = [np.asarray(g[weight_name]) for weight_name in weight_names]
+        layer = filtered_layers[k]
+        symbolic_weights = layer.weights
+        weight_values = preprocess_weights_for_loading(layer,
+                                                       weight_values,
+                                                       original_keras_version,
+                                                       original_backend,
+                                                       reshape=reshape)
+        if len(weight_values) != len(symbolic_weights):
+            raise ValueError('Layer #' + str(k) +
+                             ' (named "' + layer.name +
+                             '" in the current model) was found to '
+                             'correspond to layer ' + name +
+                             ' in the save file. '
+                             'However the new layer ' + layer.name +
+                             ' expects ' + str(len(symbolic_weights)) +
+                             ' weights, but the saved weights have ' +
+                             str(len(weight_values)) +
+                             ' elements.')
+        weight_value_tuples += zip(symbolic_weights, weight_values)
+    K.batch_set_value(weight_value_tuples)
+
+
+##----------------------------------------------------------------------------------------------
+## Load weights from hdf5 file
+##----------------------------------------------------------------------------------------------
+def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False,
+                                         reshape=False):
+    """Implements name-based weight loading.
+
+    (instead of topological weight loading).
+
+    Layers that have no matching name are skipped.
+
+    # Arguments
+        f: A pointer to a HDF5 group.
+        layers: A list of target layers.
+        skip_mismatch: Boolean, whether to skip loading of layers
+            where there is a mismatch in the number of weights,
+            or a mismatch in the shape of the weights.
+        reshape: Reshape weights to fit the layer when the correct number
+            of values are present but the shape does not match.
+
+    # Raises
+        ValueError: in case of mismatch between provided layers
+            and weights file and skip_mismatch=False.
+    """
+    ## import keras.backend as K
+    ## from keras.engine.topology import _load_attributes_from_hdf5_group, preprocess_weights_for_loading
+   
+    # print(" Load weights from hd5 by name ")
+    # print("==============================================")
+    # print(" Layers passed to load_weights_from_hd5_group ")
+    # print("==============================================")
+    # for idx,layer in enumerate(layers):
+        # print(' {:4d}   {:25s}   {} '.format(idx,layer.name, layer))
+        
+    if 'keras_version' in f.attrs:
+        original_keras_version = f.attrs['keras_version'].decode('utf8')
+    else:
+        original_keras_version = '1'
+    if 'backend' in f.attrs:
+        original_backend = f.attrs['backend'].decode('utf8')
+    else:
+        original_backend = None
+
+    # New file format.
+    layer_names = _load_attributes_from_hdf5_group(f, 'layer_names')
+    
+    
+    # print("=========================================")
+    # print(" Layer names loaded from hd5 file:       ")
+    # print("=========================================")
+    # for idx,layer in enumerate(layer_names):
+        # print(' {:4d}  {} '.format(idx, layer ))
+
+    # Reverse index of layer name to list of layers with name.
+    index = {}
+    for layer in layers:
+        if layer.name:
+            index.setdefault(layer.name, []).append(layer)
+
+    # print("=========================================")
+    # print(" Reverese Index:")
+    # print("=========================================")
+    # for key  in index.keys():
+        # print(' {:.<30s}     {}'.format(key, index[key]))
+        
+    print("=============================================================")
+    print(" List Model layers and matching hd5 layers, if present :     ")
+    print("=============================================================")
+    for idx, layer in enumerate(layers):
+        hdf5_layer = layer_names.count(layer.name) 
+        print(' {:4d}  {:.<30s}  {} '.format(idx, layer.name, hdf5_layer ))
+            
+
+    print("=============================================================")
+    print(" List hd5 layers and matching layers from Model, if present :")
+    print("=============================================================")
+    for idx, name in enumerate(layer_names):
+        mdl_layer_name = index.get(name, []) 
+        print(' {:4d}  {:.<30s}  {} '.format(idx, name, mdl_layer_name[0].name   if mdl_layer_name else '!!! NotFound !!!'))
+            
+    # We batch weight value assignments in a single backend call
+    # which provides a speedup in TensorFlow.
+    weight_value_tuples = []
+    
+    
+    ## layer_names  : layers names from hdf5 file
+    ## weight_names : weight names from hdf5 file
+    
+    for k, name in enumerate(layer_names):
+        g = f[name]
+        weight_names = _load_attributes_from_hdf5_group(g, 'weight_names')
+        weight_values = [np.asarray(g[weight_name]) for weight_name in weight_names]
+        
+        model_layers = index.get(name,[])
+        if not model_layers:
+            print('\n{:3d} {:25s} *** No corresponding layers found in model ***'.format(k,name))
+            print(' {} Weights     : {}'.format(' '*28,weight_names))
+            for i in range(len(weight_values)):
+                print('{}  {} {:35s}  hdf5 Weights: {}'.format(' '*30, i, weight_names[i], weight_values[i].shape))
+        else:
+            print('\n{:3d} {:25s} Model Layer Name/Type : {} '.format(k,name, [ (i.name, i) for i in model_layers]))
+            print(' {} Weights     : {}'.format(' '*28,weight_names))
+        
+        
+        for layer in index.get(name, []):
+            symbolic_weights = layer.weights
+            print(' '*30, 'Symbolic Weights from Model')
+            for i in range(len(symbolic_weights)):
+                print('{}  {} {}  '.format(' '*30, i, symbolic_weights[i].shape))
+                
+                
+            weight_values = preprocess_weights_for_loading(
+                layer,
+                weight_values,
+                original_keras_version,
+                original_backend,
+                reshape=reshape)
+                
+            print('{} len weight_values: {}   len symbolic_weights: {}'.format(' '*30,len(weight_values), len(symbolic_weights)))
+            
+            if len(weight_values) != len(symbolic_weights):
+                print('      Skipping loading of weights for layer {}'.format(layer.name) +
+                              ' due to mismatch in number of weights' +
+                              ' ({} vs {}).'.format(len(symbolic_weights), len(weight_values)))
+
+                if skip_mismatch:
+                    warnings.warn('Skipping loading of weights for layer {}'.format(layer.name) +
+                                  ' due to mismatch in number of weights' +
+                                  ' ({} vs {}).'.format(len(symbolic_weights), len(weight_values)))
+                    continue
+                else:
+                    raise ValueError('Layer #' + str(k) +
+                                     ' (named "' + layer.name +
+                                     '") expects ' +
+                                     str(len(symbolic_weights)) +
+                                     ' weight(s), but the saved weights' +
+                                     ' have ' + str(len(weight_values)) +
+                                     ' element(s).')
+            
+            # Set values.
+            for i in range(len(weight_values)):
+                print('{} i: {}  hdf5 weight shape: {}   symb wgt shp: {}'.format(' '*30,i, weight_values[i].shape,
+                                                     K.int_shape(symbolic_weights[i])))
+                if skip_mismatch:
+                    if K.int_shape(symbolic_weights[i]) != weight_values[i].shape:
+                        print('{}  {} {:35s}  Weight MISMATCH {}'.format(' '*30, i, weight_names[i],weight_values[i].shape))
+                        warnings.warn('Skipping loading of weights for layer {}'.format(layer.name) +
+                                      ' due to mismatch in shape' +
+                                      ' ({} vs {}).'.format(
+                                          symbolic_weights[i].shape,
+                                          weight_values[i].shape))
+                        continue
+                        
+                print('{}  {} {:35s}  hdf5 Weights: {}  Symbolic Wghts: {}'.format(' '*30,
+                                    i, weight_names[i], weight_values[i].shape, symbolic_weights[i].shape))
+                weight_value_tuples.append((symbolic_weights[i],
+                                            weight_values[i]))
+    print('Wrap it up...')
+    K.batch_set_value(weight_value_tuples)
+
+##------------------------------------------------------------------------------------
+## Parse command line arguments
+##  
+## Example:
+## train-shapes_gpu --epochs 12 --steps-in-epoch 7 --last_epoch 1234 --logs_dir mrcnn_logs
+## args = parser.parse_args("train --dataset E:\MLDatasets\coco2014 --model mask_rcnn_coco.h5 --limit 10".split())
+##------------------------------------------------------------------------------------
+def command_line_parser():
+    parser = argparse.ArgumentParser(description='Train Mask R-CNN on MS COCO.')
+
+    # parser.add_argument("command",
+                        # metavar="<command>",
+                        # help="'train' or 'evaluate' on MS COCO")
+    # parser.add_argument('--dataset', required=True,
+                        # metavar="/path/to/coco/",
+                        # help='Directory of the MS-COCO dataset')
+    # parser.add_argument('--limit', required=False,
+                        # default=500,
+                        # metavar="<image count>",
+                        # help='Images to use for evaluation (defaults=500)')
+                        
+    parser.add_argument('--model', required=False,
+                        default='last',
+                        metavar="/path/to/weights.h5",
+                        help="MRCNN model weights file: 'coco' , 'init' , or Path to weights .h5 file ")
+
+    parser.add_argument('--fcn_arch', required=False,
+                        choices=['fcn32', 'fcn16', 'fcn8'],
+                        default='fcn32', type=str.upper, 
+                        metavar="/path/to/weights.h5",
+                        help="FCN Architecture : fcn32, fcn16, or fcn8")
+
+    parser.add_argument('--fcn_model', required=False,
+                        default='last',
+                        metavar="/path/to/weights.h5",
+                        help="FCN model weights file: 'init' , or Path to weights .h5 file ")
+
+    parser.add_argument('--mrcnn_logs_dir', required=True,
+                        default='train_mrcnn',
+                        metavar="/path/to/logs/",
+                        help='MRCNN Logs and checkpoints directory (default=logs/)')
+
+    parser.add_argument('--fcn_logs_dir', required=True,
+                        default='train_fcn',
+                        metavar="/path/to/logs/",
+                        help='FCN Logs and checkpoints directory (default=logs/)')
+
+    parser.add_argument('--last_epoch', required=False,
+                        default=0,
+                        metavar="<last epoch ran>",
+                        help='Identify last completed epcoh for tensorboard continuation')
+                        
+    parser.add_argument('--epochs', required=False,
+                        default=1,
+                        metavar="<epochs to run>",
+                        help='Number of epochs to run (default=3)')
+                        
+    parser.add_argument('--steps_in_epoch', required=False,
+                        default=1,
+                        metavar="<steps in each epoch>",
+                        help='Number of batches to run in each epochs (default=5)')
+
+    parser.add_argument('--val_steps', required=False,
+                        default=1,
+                        metavar="<val steps in each epoch>",
+                        help='Number of validation batches to run at end of each epoch (default=1)')
+                        
+    parser.add_argument('--batch_size', required=False,
+                        default=5,
+                        metavar="<batch size>",
+                        help='Number of data samples in each batch (default=5)')                    
+
+    parser.add_argument('--lr', required=False,
+                        default=0.001,
+                        metavar="<learning rate>",
+                        help='Learning Rate (default=0.001)')
+
+    parser.add_argument('--opt', required=False,
+                        default='adagrad', type = str.upper,
+                        metavar="<optimizer>",
+                        help='Optimizatoin Method: SGD, RMSPROP, ADAGRAD, ...')
+                        
+    parser.add_argument('--sysout', required=False,
+                        default='screen', type=str.upper,
+                        metavar="<sysout>",
+                        help="sysout destination: 'screen' or 'file'")
+
+    parser.add_argument('--new_log_folder', required=False,
+                        default=False, action='store_true',
+                        help="put logging/weights files in new folder: True or False")
+
+    return parser
+    
+    
+    
+class Paths(object):
+    def __init__(self, fcn_training_folder   = "train_fcn_coco", 
+                       mrcnn_training_folder = "train_mrcnn_coco"):
+        print(">>> Initialize Paths")
+        syst = platform.system()
+        if syst == 'Windows':
+            # Root directory of the project
+            print(' windows ' , syst)
+            # WINDOWS MACHINE ------------------------------------------------------------------
+            self.DIR_ROOT          = "F:\\"
+            self.DIR_TRAINING   = os.path.join(self.DIR_ROOT, 'models')
+            self.DIR_DATASET    = os.path.join(self.DIR_ROOT, 'MLDatasets')
+            self.DIR_PRETRAINED = os.path.join(self.DIR_ROOT, 'PretrainedModels')
+        elif syst == 'Linux':
+            print(' Linx ' , syst)
+            # LINUX MACHINE ------------------------------------------------------------------
+            self.DIR_ROOT       = os.getcwd()
+            self.DIR_TRAINING   = os.path.expanduser('~/models')
+            self.DIR_DATASET    = os.path.expanduser('~/MLDatasets')
+            self.DIR_PRETRAINED = os.path.expanduser('~/PretrainedModels')
+        else :
+            raise Error('unreconized system ')
+
+        self.MRCNN_TRAINING_PATH   = os.path.join(self.DIR_TRAINING  , mrcnn_training_folder)
+        self.FCN_TRAINING_PATH     = os.path.join(self.DIR_TRAINING  , fcn_training_folder)
+        self.COCO_DATASET_PATH     = os.path.join(self.DIR_DATASET   , "coco2014")
+        self.COCO_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED, "mask_rcnn_coco.h5")
+        self.RESNET_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED, "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
+        self.VGG16_MODEL_PATH      = os.path.join(self.DIR_PRETRAINED, "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5")
+        self.FCN_VGG16_MODEL_PATH  = os.path.join(self.DIR_PRETRAINED, "fcn_vgg16_weights_tf_dim_ordering_tf_kernels.h5")
+        return 
+        
+    def display(self):
+        """Display Paths values."""
+        print("\nPaths:")
+        print("-------------------------")
+        for a in dir(self):
+            if not a.startswith("__") and not callable(getattr(self, a)):
+                print("{:30} {}".format(a, getattr(self, a)))
+        print("\n")
+        

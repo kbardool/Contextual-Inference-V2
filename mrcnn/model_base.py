@@ -7,19 +7,9 @@ Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
 
-import os
-import sys
-import glob
-import random
-import math
-import datetime
-import itertools
-import json
-import re
-import logging
+import os, sys, glob, random, math, datetime, itertools, json, re, logging, pprint
 from   collections import OrderedDict
 import numpy as np
-import pprint
 import scipy.misc
 import tensorflow as tf
 
@@ -33,17 +23,18 @@ import keras.models as KM
 
 import mrcnn.utils            as utils
 import mrcnn.loss             as loss
-from   mrcnn.datagen_mod      import data_generator
+from   mrcnn.datagen          import data_generator
 from   mrcnn.utils            import log
 from   mrcnn.utils            import parse_image_meta_graph, parse_image_meta
 
-from   mrcnn.fpn_layers       import fpn_graph, fpn_classifier_graph, fpn_mask_graph
+# from   mrcnn.fpn_layers       import fpn_graph, fpn_classifier_graph, fpn_mask_graph
 from   mrcnn.callbacks        import MyCallback
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 from distutils.version import LooseVersion
 assert LooseVersion(tf.__version__) >= LooseVersion("1.3.0")
 assert LooseVersion(keras.__version__) >= LooseVersion('2.0.8')
+
 pp = pprint.PrettyPrinter(indent=4, width=100)
 tf.get_variable_scope().reuse_variables()
 
@@ -57,7 +48,7 @@ class ModelBase():
     The actual Keras model is in the keras_model property.
     """
 
-    def __init__(self, mode, model_dir):
+    def __init__(self, mode, config):
         """
         mode: Either "training" or "inference"
         config: A Sub-class of the Config class
@@ -66,19 +57,20 @@ class ModelBase():
         print('>>> Initialize ModelBase model ')
 
         self.mode      = mode
-        # self.config    = config
-        self.model_dir = model_dir
+        self.config    = config
+        self.model_dir = config.TRAINING_PATH
+        # self.set_log_dir()        
 
-        print('   Mode: ', mode)
-        print('   Model dir : ',model_dir)
+
+        print('   Mode      : ', self.mode)
+        print('   Model dir : ', self.model_dir)
 
         print('>>> ModelBase initialiation complete')
 
     
     ##------------------------------------------------------------------------------------    
     ## LOAD MODEL
-    ##------------------------------------------------------------------------------------        
-        
+    ##------------------------------------------------------------------------------------                
     def load_model_weights(self,init_with = None, exclude = None, new_folder = False):
         '''
         methods to load weights
@@ -114,14 +106,22 @@ class ModelBase():
         if init_with == "imagenet":
         #     loc=model.load_weights(model.get_imagenet_weights(), by_name=True)
             loc=self.load_weights(self.config.RESNET_MODEL_PATH, by_name=True)
+            
         elif init_with == "init":
-            print(' ---> init')
+            print(' ---> init :', self.config.VGG16_MODEL_PATH)
             # Load weights trained on MS COCO, but skip layers that 
             # are different due to the different number of classes
             # See README for instructions to download the COCO weights
+            
             loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude)
+            
+        elif init_with == "vgg16":
+            print(' ---> vgg16 :', self.config.VGG16_MODEL_PATH)
+            loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude)
+            
         elif init_with == "coco":
-            print(' ---> coco')
+            print(' ---> coco :', self.config.COCO_MODEL_PATH)
+            ## use pretrained coco weights file:  "mask_rcnn_coco.h5"
             # Load weights trained on MS COCO, but skip layers that 
             # are different due to the different number of classes
             # See README for instructions to download the COCO weights
@@ -141,10 +141,15 @@ class ModelBase():
             loc = self.load_weights(init_with, by_name=True, exclude = exclude, new_folder= new_folder)  
 
 
-        print(" load_model_weights() : MODEL Load weight file COMPLETE    ")
+        print('==========================================')
+        print( self.config.NAME.upper(), " MODEL Load weight file COMPLETE    ")
+        print('==========================================')
         return     
 
         
+    ##----------------------------------------------------------------------------------------------
+    ## Load weights file
+    ##----------------------------------------------------------------------------------------------                    
     def load_weights(self, filepath, by_name=False, exclude=None, new_folder = False):
         '''
         Modified version of the correspoding Keras function with
@@ -154,8 +159,8 @@ class ModelBase():
         '''
         import h5py
 
-        from keras.engine import topology
-        log('   >>> load_weights() from : {}'.format(filepath))
+        # from keras.engine import topology
+        log('>>> load_weights() from : {}'.format(filepath))
         if exclude:
             by_name = True
 
@@ -163,7 +168,7 @@ class ModelBase():
             raise ImportError('`load_weights` requires h5py.')
         import inspect
         f = h5py.File(filepath, mode='r')
-        pp.pprint(f.__dict__)
+
         # pp.pprint([i for i in dir(f) if not inspect.ismethod(i)])
         
         if 'layer_names' not in f.attrs and 'model_weights' in f:
@@ -195,9 +200,11 @@ class ModelBase():
         # print('\n\n')
         
         if by_name:
-            topology.load_weights_from_hdf5_group_by_name(f, layers)
+            # topology.load_weights_from_hdf5_group_by_name(f, layers)
+            utils.load_weights_from_hdf5_group_by_name(f, layers)
         else:
-            topology.load_weights_from_hdf5_group(f, layers)
+            # topology.load_weights_from_hdf5_group(f, layers)
+            utils.load_weights_from_hdf5_group(f, layers)
             
         if hasattr(f, 'close'):
             f.close()
@@ -213,6 +220,10 @@ class ModelBase():
 
         return(filepath)
 
+
+    ##----------------------------------------------------------------------------------------------
+    ##  set checkpoint directory 
+    ##----------------------------------------------------------------------------------------------                    
     def set_log_dir(self, model_path=None, new_folder = False):
         '''
         Sets the model log directory and epoch counter.
@@ -250,8 +261,8 @@ class ModelBase():
                 now = datetime.datetime(int(regex_match.group(1)), int(regex_match.group(2)), int(regex_match.group(3)),
                                         int(regex_match.group(4)), int(regex_match.group(5)))
                 last_checkpoint_epoch = int(regex_match.group(6)) + 1
-                # print('    set_log_dir: self.epoch set to {}  (Next epoch to run)'.format(self.epoch))
-                # print('    set_log_dir: tensorboard path: {}'.format(self.tb_dir))
+                print('    set_log_dir: self.epoch set to {}  (Next epoch to run)'.format(self.epoch))
+                print('    set_log_dir: tensorboard path: {}'.format(self.tb_dir))
                 if last_checkpoint_epoch > 0 and  self.config.LAST_EPOCH_RAN > last_checkpoint_epoch: 
                     self.epoch = self.config.LAST_EPOCH_RAN
                 else :
@@ -262,6 +273,7 @@ class ModelBase():
         # Set directory for training logs
         # if new_folder = True or appropriate checkpoint filename was not found, generate new folder
         if new_folder or self.config.NEW_LOG_FOLDER:
+            print('NewFolder: {}  config.NEW_LOG_FOLDER: {} '.format(new_folder, self.config.NEW_LOG_FOLDER))
             now = datetime.datetime.now()
 
         self.log_dir = os.path.join(self.model_dir, "{}{:%Y%m%dT%H%M}".format(self.config.NAME.lower(), now))
@@ -270,12 +282,12 @@ class ModelBase():
         ## Create checkpoint folder if it doesn't exists
         ##--------------------------------------------------------------------------------
         from tensorflow.python.platform import gfile
-        print('  set_log_dir(): self.log_dir : {} '.format(self.log_dir), file = sys.__stdout__)
+        print('   set_log_dir(): set checkpoint folder to : {} '.format(self.log_dir), file = sys.__stdout__)
         if not gfile.IsDirectory(self.log_dir):
-            print('  Creating checkpoint folder : {}'.format(self.log_dir), file = sys.__stdout__)
+            print('   Checkpoint folder (new): {}'.format(self.log_dir), file = sys.__stdout__)
             gfile.MakeDirs(self.log_dir)
         else:
-            print('  Checkpoint folder already exists: {}'.format(self.log_dir), file = sys.__stdout__)
+            print('   Checkpoint folder (existing): {}'.format(self.log_dir), file = sys.__stdout__)
 
             
         # Path to save after each epoch. Include placeholders that get filled by Keras.
@@ -290,6 +302,9 @@ class ModelBase():
         
 
         
+    ##----------------------------------------------------------------------------------------------
+    ## Search for last checkpoint folder and weight file
+    ##----------------------------------------------------------------------------------------------                    
     def find_last(self):
         '''
         Finds the last checkpoint file of the last trained model in the
@@ -313,24 +328,43 @@ class ModelBase():
         if not dir_names:
             return None, None
         
-        # Pick last directory
-        dir_name = os.path.join(self.model_dir, dir_names[-1])
-
-        # Find the last checkpoint
-        checkpoints = next(os.walk(dir_name))[2]
-        checkpoints = filter(lambda f: f.startswith(key), checkpoints)
-        checkpoints = sorted(checkpoints)
-        if not checkpoints:
-            return dir_name, None
-        checkpoint = os.path.join(dir_name, checkpoints[-1])
         
-        # log("    find_last info:   dir_name: {}".format(dir_name))
-        # log("    find_last info: checkpoint: {}".format(checkpoint))
+        ## Loop over folders to find most recent foder with a valid weights file 
+        for search_dir in dir_names[-1::-1]:
+            dir_name = os.path.join(self.model_dir, search_dir)
+            # Find the last checkpoint in this dir
+            
+            checkpoints = next(os.walk(dir_name))[2]
+            checkpoints = filter(lambda f: f.startswith(key), checkpoints)
+
+            checkpoints = sorted(checkpoints)
+            print(' Folder: ' ,dir_name, ' Checkpoints: ', checkpoints)
+            if not checkpoints:
+                continue
+                # return dir_name, None
+            checkpoint = os.path.join(dir_name, checkpoints[-1])
+            break
+                
+        # old method
+        # dir_name = os.path.join(self.model_dir, dir_names[-1])
+        # Find the last checkpoint
+        # checkpoints = next(os.walk(dir_name))[2]
+        # checkpoints = filter(lambda f: f.startswith(key), checkpoints)
+        # checkpoints = sorted(checkpoints)
+        # if not checkpoints:
+            # return dir_name, None
+        # checkpoint = os.path.join(dir_name, checkpoints[-1])
+        
+        log("    find_last():   dir_name: {}".format(dir_name))
+        log("    find_last(): checkpoint: {}".format(checkpoint))
 
         return dir_name, checkpoint
 
         
         
+    ##----------------------------------------------------------------------------------------------
+    ##
+    ##----------------------------------------------------------------------------------------------                    
     def save_model(self, filepath, filename = None, by_name=False, exclude=None):
         '''
         Modified version of the correspoding Keras function with
@@ -339,6 +373,7 @@ class ModelBase():
         exlude: list of layer names to excluce
         '''
         print('>>> save_model_architecture()')
+        # self.keras_model.save_model(model, filepath, overwrite=True, include_optimizer=True):
 
         model_json = self.keras_model.to_json()
         full_filepath = os.path.join(filepath, filename)
@@ -356,6 +391,9 @@ class ModelBase():
         return(filepath)
 
         
+    ##----------------------------------------------------------------------------------------------
+    ##
+    ##----------------------------------------------------------------------------------------------                    
     def get_imagenet_weights(self):
         '''
         Downloads ImageNet trained weights from Keras.
@@ -370,8 +408,10 @@ class ModelBase():
                                 md5_hash='a268eb855778b3df3c7506639542a6af')
         return weights_path
 
-
         
+    ##----------------------------------------------------------------------------------------------
+    ##
+    ##----------------------------------------------------------------------------------------------                    
     def ancestor(self, tensor, name, checked=None):
         '''Finds the ancestor of a TF tensor in the computation graph.
         tensor: TensorFlow symbolic tensor.
@@ -401,6 +441,9 @@ class ModelBase():
         return None
 
         
+    ##----------------------------------------------------------------------------------------------
+    ##
+    ##----------------------------------------------------------------------------------------------                    
     def run_graph(self, images, outputs):
         '''Runs a sub-set of the computation graph that computes the given
         outputs.
@@ -451,6 +494,9 @@ class ModelBase():
         return outputs_np
 
       
+    ##----------------------------------------------------------------------------------------------
+    ##
+    ##----------------------------------------------------------------------------------------------                    
     def find_trainable_layer(self, layer):
         '''If a layer is encapsulated by another layer, this function
         digs through the encapsulation and returns the layer that holds
@@ -460,7 +506,9 @@ class ModelBase():
             return self.find_trainable_layer(layer.layer)
         return layer
 
-        
+    ##----------------------------------------------------------------------------------------------
+    ## Get Trainable Layers    
+    ##----------------------------------------------------------------------------------------------                    
     def get_trainable_layers(self):
         '''Returns a list of layers that have weights.'''
         layers = []
@@ -477,7 +525,10 @@ class ModelBase():
         return layers
 
 
-    def set_trainable(self, layer_regex, keras_model=None, indent=0, verbose=0):
+    ##----------------------------------------------------------------------------------------------
+    ## Set Trainable Layers    
+    ##----------------------------------------------------------------------------------------------            
+    def set_trainable(self, layer_regex, keras_model=None, indent=0, verbose=1):
         '''
         Sets model layers as trainable if their names match the given
         regular expression.
@@ -537,7 +588,51 @@ class ModelBase():
         return   
         
         
+    ##----------------------------------------------------------------------------------------------
+    ## Setup optimizaion method 
+    ##----------------------------------------------------------------------------------------------            
+    def set_optimizer(self):
+        print('    learning rate : ', self.config.LEARNING_RATE)
+        print('    momentum      : ', self.config.LEARNING_MOMENTUM)
+        print()
+
+        opt = self.config.OPTIMIZER
+        if   opt == 'ADAGRAD':
+            optimizer = keras.optimizers.Adagrad(lr=self.config.LEARNING_RATE, epsilon=None, decay=0.01)                                 
+        elif opt == 'SGD':
+            optimizer = keras.optimizers.SGD(lr=self.config.LEARNING_RATE, 
+                                             momentum=self.config.LEARNING_MOMENTUM, clipnorm=5.0)
+        elif opt == 'RMSPROP':                                 
+            optimizer = keras.optimizers.RMSprop(lr=self.config.LEARNING_RATE, rho=0.9, epsilon=None, decay=0.0)
+        elif opt == 'ADAM':
+            optimizer = keras.optimizers.Adam(lr=self.config.LEARNING_RATE, 
+                                              beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
+        elif opt == 'NADAM':
+            optimizer = keras.optimizers.Nadam(lr=self.config.LEARNING_RATE,
+                                              beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
+        else:
+            print('ERROR: Invalid optimizer specified:',opt)
+            if debug:
+                write_stdout(self.log_dir, '_sysout', sys.stdout )        
+                sys.stdout = sys.__stdout__
+            print('\n  Run information written to ', self.log_dir+'_sysout.out')
+            print('  ERROR: Invalid optimizer specified:',opt)
+            sys.exit('  Execution Terminated')
+
+        # optimizer= tf.train.GradientDescentOptimizer(learning_rate, momentum)
+        # optimizer= tf.train.GradientDescentOptimizer(learning_rate, momentum)
+        # optimizer = keras.optimizers.SGD(lr=learning_rate, momentum=momentum, clipnorm=5.0)
+        # optimizer = keras.optimizers.RMSprop(lr=learning_rate, rho=0.9, epsilon=None, decay=0.0)
+        # optimizer = keras.optimizers.Adagrad(lr=learning_rate, epsilon=None, decay=0.01)
+        # optimizer = keras.optimizers.Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
+        # optimizer = keras.optimizers.Nadam(lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
+
         
+        return optimizer
+        
+    ##----------------------------------------------------------------------------------------------
+    ## Compile Model 
+    ##----------------------------------------------------------------------------------------------
     def compile_only(self, learning_rate, layers):
         '''
         Compile the model without adding loss info
@@ -570,6 +665,9 @@ class ModelBase():
         return
         
         
+    ##----------------------------------------------------------------------------------------------
+    ## 
+    ##----------------------------------------------------------------------------------------------
     def get_deduped_metrics_names(self):
         out_labels = self.keras_model.metrics_names
 
@@ -584,6 +682,9 @@ class ModelBase():
             deduped_out_labels.append(new_label)
         return deduped_out_labels        
 
+    ##----------------------------------------------------------------------------------------------
+    ## 
+    ##----------------------------------------------------------------------------------------------
     def layer_info(self):
         print('\n')
         print(' Inputs:') 
@@ -600,3 +701,6 @@ class ModelBase():
             print(' layer: {:2d}    output name: {:40s}   Type: {:15s}   Shape: {}'.format( i, x.name, x.dtype.name, x.shape) )
         
         return
+        
+        
+            

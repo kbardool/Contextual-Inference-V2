@@ -9,9 +9,11 @@ Written by Kevin Bardool
 
 import os, sys, glob, random, math, datetime, itertools, json, re, logging
 # from collections import OrderedDict
-# from scipy.stats import  multivariate_normal
 import numpy as np
+from scipy.stats import  multivariate_normal
+# import scipy.misc
 import tensorflow as tf
+# import keras
 import keras.backend as KB
 import keras.layers as KL
 import keras.engine as KE
@@ -24,103 +26,83 @@ import pprint
 ##-----------------------------------------------------------------------------------------------------------
 ## build_predictions 
 ##-----------------------------------------------------------------------------------------------------------              
-def build_predictions_inference(detected_rois, config):  
+def build_predictions(detected_rois, config):  
+
     batch_size      = config.BATCH_SIZE
     num_classes     = config.NUM_CLASSES
     h, w            = config.IMAGE_SHAPE[:2]
-    # num_rois        = config.DETECTION_MAX_INSTANCES 
-    num_rois        = KB.int_shape(detected_rois)[1]
-
+    num_rois        = config.DETECTION_MAX_INSTANCES 
     num_cols        = KB.int_shape(detected_rois)[-1]
     det_per_class   = config.DETECTION_PER_CLASS
-
+    
     print()
     print('  > build_predictions Inference mode ()')
-    print('    config image shape     : ', config.IMAGE_SHAPE, 'h:',h,'w:',w)
-    print('    Detection Max Instacnes: ', config.DETECTION_MAX_INSTANCES)
-    print('    num_rois               : ', num_rois )
-    print('    num_cols               : ', num_cols )
-    print('    detected_rois.shape    : ', KB.int_shape(detected_rois))
+    print('    config image shape  : ', config.IMAGE_SHAPE, 'h:',h,'w:',w)
+    print('    num_rois            : ', num_rois )
+    print('    num_cols            : ', num_cols )
+    print('    detected_rois.shape : ', KB.int_shape(detected_rois))
 
-    ##-------------------------------------------------------------------------------------
-    ## Build a meshgrid for image id and bbox to use in gathering of bbox delta information 
-    ##   indexing = 'ij' provides matrix indexing conventions
-    ##-------------------------------------------------------------------------------------
+# with sess.as_default():
+    #---------------------------------------------------------------------------
+    # Build a meshgrid for image id and bbox to use in gathering of bbox delta information 
+    #   indexing = 'ij' provides matrix indexing conventions
+    #---------------------------------------------------------------------------
     batch_grid, bbox_grid = tf.meshgrid( tf.range(batch_size, dtype=tf.int32),
                                          tf.range(num_rois, dtype=tf.int32), indexing = 'ij' )
-    print('    batch_grid: ', KB.int_shape(batch_grid))
-    # print( batch_grid.eval())
-    print('    bbox_grid : ', KB.int_shape(bbox_grid))
-    # print( bbox_grid.eval())
-    # print(detected_rois)
-    # print(detected_rois.eval()[0,:75])
-
+#     print('    batch_grid: ', KB.int_shape(batch_grid))
+#     print('    bbox_grid : ', KB.int_shape(bbox_grid))
+#     print( batch_grid.eval())
+#     print( bbox_grid.eval())
+#     print(detected_rois)
+#     print(detected_rois.eval()[0,:15])
     #---------------------------------------------------------------------------
     # column -2 contains the prediceted class 
     #  (NOT USED)   pred_classes_exp = tf.to_float(tf.expand_dims(pred_classes ,axis=-1))    
     #---------------------------------------------------------------------------
-    pred_classes = tf.to_int32(detected_rois[...,4])
+    pred_classes = tf.to_int32(detected_rois[...,-2])
     # print(pred_classes.eval())
 
-    ##------------------------------------------------------------------------------------
-    ##  Build Pred_Scatter: tensor of bounding boxes by Image / Class
-    ##------------------------------------------------------------------------------------
-    ## sequence id is used to preserve the order of rois as passed to this routine
-    ##  This may be important in the post matching process but for now it's not being used.
-    ## 22-09-18 : We need to use this sequence as the sort process based on score will cause
-    ##            mismatch between the bboxes from output_rois and roi_gt_bboxes
-    ##------------------------------------------------------------------------------------
-    sequence = tf.ones_like(pred_classes, dtype = tf.int32) * (bbox_grid[...,::-1] + 1) 
-    sequence = tf.to_float(tf.expand_dims(sequence, axis = -1))   
-    print('    shape of sequence      : ', sequence.shape)
-    pred_array  = tf.concat([ detected_rois, sequence], axis=-1, name = 'pred_array')
-     
+    #---------------------------------------------------------------------------
+    #  stack batch_grid and bbox_grid - resulting array [0,0] ~ [0,99]
+    #---------------------------------------------------------------------------    
+    gather_ind   = tf.stack([batch_grid , bbox_grid],axis = -1)
+    print('    gather_ind :', KB.int_shape(gather_ind))
+#     print(gather_ind.eval())
+    
+    #-----------------------------------------------------------------------------------------------
+    #  stack batch_grid, pred_classes, and bbox_grid - resulting array [0,cls_id, 0] ~ [0,cls_id / 0,99]
+    #-----------------------------------------------------------------------------------------------
     scatter_ind = tf.stack([batch_grid , pred_classes, bbox_grid],axis = -1)
-    pred_scatt  = tf.scatter_nd(scatter_ind, pred_array, [batch_size, num_classes, num_rois, num_cols + 1])
-    print('    pred_array      : ', pred_array.shape)  
-    # print(pred_array.eval())    
-    print('    scatter_ind     : ', scatter_ind.shape)
-    # print(scatter_ind.eval())
-    print('    pred_scatter    : ', pred_scatt.get_shape())
-    # print(pred_scatt.eval()[0,57,:20,:])        
-
-    ##--------------------------------------------------------------------------------------------
-    ##  Apply a per class score normalization using the score column (COLUMN 5)
-    ##  
-    ##--------------------------------------------------------------------------------------------
-    normalizer   = tf.reduce_max(pred_scatt[...,5], axis = -1, keepdims=True)
-    normalizer   = tf.where(normalizer < 1.0e-15,  tf.ones_like(normalizer), normalizer)
-    norm_score   = tf.expand_dims(pred_scatt[...,5]/normalizer, axis = -1)
-    pred_scatt   = tf.concat([pred_scatt, norm_score],axis = -1)   
-    print('    - Add normalized score --\n')
-    print('    normalizer             : ', normalizer.shape)  
-    print('    norm_score             : ', norm_score.shape)
-    print('    pred_scatter           : ', pred_scatt.get_shape())
-    # print(pred_scatt.eval()[0,57,:20,:])
-
-    ##------------------------------------------------------------------------------------
-    ## Sort pred_scatt in each class dimension based on sequence number, to push valid  
-    ##      to top for each class dimension
-    ##
-    ## 22-09-2018: sort is now based on sequence which was added as last column
-    ##             (previously sort was on bbox scores)
-    ##------------------------------------------------------------------------------------
-    _, sort_inds = tf.nn.top_k(pred_scatt[...,6], k=pred_scatt.shape[2])
+#     print('scatter_ind :', KB.int_shape(scatter_ind))
+#     print(scatter_ind.eval())
     
-    # build indexes to gather rows from pred_scatter based on sort order    
-    class_grid, batch_grid, roi_grid = tf.meshgrid(tf.range(num_classes),tf.range(batch_size), tf.range(num_rois))
+    #-----------------------------------------------------------------------------------------------
+    #  scatter detected_rois rows by class_id into pred_scatt  
+    #-----------------------------------------------------------------------------------------------    
+    pred_scatter  = tf.scatter_nd(scatter_ind, detected_rois, [batch_size, num_classes, num_rois, num_cols])
+    print('    pred_scatter :', KB.int_shape(pred_scatter))
+#     print(pred_scatter.eval()[0,57,:20,:])
     
+    #------------------------------------------------------------------------------------
+    ## sort pred_scatter in each class dimension based on sequence number (last column)
+    #------------------------------------------------------------------------------------
+    _, sort_inds = tf.nn.top_k(pred_scatter[...,-1], k=pred_scatter.shape[2])
+    print('    sort_inds : ', KB.int_shape(sort_inds))
+#     print(sort_inds.eval()[0,57,:20])
+    
+    #------------------------------------------------------------------------------------
+    # build indexes to gather rows from pred_scatter based on sort order (sort_inds)
+    #------------------------------------------------------------------------------------
+    class_grid, batch_grid, roi_grid = tf.meshgrid(tf.range(num_classes), 
+                                                   tf.range(batch_size), tf.range(num_rois))
     gather_inds  = tf.stack([batch_grid , class_grid, sort_inds],axis = -1)
-    pred_tensor  = tf.gather_nd(pred_scatt, gather_inds[...,:det_per_class,:], name = 'pred_tensor')    
+ 
 
-    print('    sort_inds              : ', sort_inds.shape)
-    print('    class_grid             : ', class_grid.get_shape())
-    print('    batch_grid             : ', batch_grid.get_shape())
-    print('    roi_grid shape         : ', roi_grid.get_shape()) 
-    # print('    roi_grid_exp         : ', roi_grid_exp.get_shape())
-    print('    gather_inds            : ', gather_inds.get_shape())
-    print('    pred_tensor            : ', pred_tensor.get_shape())
-    # print(pred_tensor.eval()[0,1,:])
+#     print(' gather_inds :', KB.int_shape(gather_inds))
+#     print(gather_inds.eval()[0,4,:])
+
+    pred_tensor  = tf.gather_nd(pred_scatter, gather_inds[...,:det_per_class,:], name = 'pred_tensor')    
+    print('     pred_tensor       ', pred_tensor.shape)  
     
     return  pred_tensor    
             
@@ -129,9 +111,10 @@ def build_predictions_inference(detected_rois, config):
 ##  build_heatmap_inference()
 ##
 ##  INPUTS :
-##    pred_tensor        [ batch_size, num_classes, num_bboxes, 7 ] 
-##    
+##    FCN_HEATMAP    [ numn_images x height x width x num classes ] 
+##    PRED_HEATMAP_SCORES 
 ##-----------------------------------------------------------------------------------------------------          
+    
 def build_heatmap_inference(in_tensor, config, names = None):
 
     num_detections  = config.DETECTION_MAX_INSTANCES
@@ -140,32 +123,32 @@ def build_heatmap_inference(in_tensor, config, names = None):
     num_classes     = config.NUM_CLASSES 
     heatmap_scale   = config.HEATMAP_SCALE_FACTOR
     grid_h, grid_w  = config.IMAGE_SHAPE[:2] // heatmap_scale    
+    # rois_per_image  = (in_tensor.shape)[2]    # same as below:
+    rois_per_image  = config.DETECTION_PER_CLASS
+    
+    print('\n ')
+    print('  > build_heatmap_inference() : ', names )
+    print('    orignal in_tensor shape : ', in_tensor.shape)     
     # rois per image is determined by size of input tensor 
     #   detection mode:   config.TRAIN_ROIS_PER_IMAGE 
     #   ground_truth  :   config.DETECTION_MAX_INSTANCES
-    #   strt_cls        = 0 if rois_per_image == 32 else 1
-    # rois_per_image  = config.DETECTION_PER_CLASS
-    rois_per_image  = (in_tensor.shape)[2]  
 
-    print('\n ')
-    print('  > build_heatmap() for ', names )
-    print('    in_tensor shape        : ', in_tensor.shape)       
-    print('    num bboxes per class   : ', rois_per_image )
-    print('    heatmap scale        : ', heatmap_scale, 'Dimensions:  w:', grid_w,' h:', grid_h)
+    # strt_cls        = 0 if rois_per_image == 32 else 1
+    print('    num of bboxes per class is : ', rois_per_image )
 
-    ##-----------------------------------------------------------------------------    
+    #-----------------------------------------------------------------------------    
     ## Stack non_zero bboxes from in_tensor into pt2_dense 
-    ##-----------------------------------------------------------------------------
+    #-----------------------------------------------------------------------------
     # pt2_ind shape is [?, 3]. 
     #    pt2_ind[0] corresponds to image_index 
     #    pt2_ind[1] corresponds to class_index 
     #    pt2_ind[2] corresponds to roi row_index 
-    # pt2_dense shape is [?, 7]
-    #    pt2_dense[0:3]  roi coordinates 
-    #    pt2_dense[4]    is class id 
-    #    pt2_dense[5]    is score from mrcnn    
-    #    pt2_dense[6]    is bbox sequence id    
-    #    pt2_dense[7]    is normalized score (per class)    
+    # pt2_dense shape is [?, 6]
+    #    pt2_dense[0] is image index
+    #    pt2_dense[1:4]  roi cooridnaytes 
+    #    pt2_dense[5]    is class id 
+    #
+    #
     #-----------------------------------------------------------------------------
     pt2_sum = tf.reduce_sum(tf.abs(in_tensor[:,:,:,:4]), axis=-1)
     pt2_ind = tf.where(pt2_sum > 0)
@@ -240,13 +223,13 @@ def build_heatmap_inference(in_tensor, config, names = None):
     ## (2) multiply normalized heatmap by normalized score in in_tensor/ (pt2_dense column 7)
     ##     broadcasting : https://stackoverflow.com/questions/49705831/automatic-broadcasting-in-tensorflow
     ##---------------------------------------------------------------------------------------------    
-    #  Using the double tf.transpose, we dont need this any more    
-    #     scr = tf.expand_dims(tf.expand_dims(pt2_dense[:,7],axis = -1), axis =-1)
+#  Using the double tf.transpose, we dont need this any more    
+#     scr = tf.expand_dims(tf.expand_dims(pt2_dense[:,7],axis = -1), axis =-1)
 
     prob_grid_norm_scaled = tf.transpose(tf.transpose(prob_grid_norm) * pt2_dense[:,7])
     print('    prob_grid_norm_scaled : ', prob_grid_norm_scaled.shape)
-    #     maxes2 = tf.reduce_max(prob_grid_norm_scaled, axis=[-2,-1], keepdims = True)
-    #     print('    shape of maxes2       : ', maxes2.shape)
+#     maxes2 = tf.reduce_max(prob_grid_norm_scaled, axis=[-2,-1], keepdims = True)
+#     print('    shape of maxes2       : ', maxes2.shape)
 
     ##-------------------------------------------------------------------------------------
     ## (3) scatter out the probability distributions based on class 
@@ -318,7 +301,7 @@ def build_heatmap_inference(in_tensor, config, names = None):
     ##  Generate scores using prob_grid and pt2_dense - NEW METHOD
     ##  added 09-21-2018
     ##--------------------------------------------------------------------------------------------
-    scores_from_sum2 = tf.map_fn(build_hm_score,
+    scores_from_sum2 = tf.map_fn(build_hm_score, 
                                  [prob_grid, pt2_dense_scaled, pt2_dense[:,7]], 
                                  dtype = tf.float32, swap_memory = True)
     scores_scattered = tf.scatter_nd(pt2_ind, scores_from_sum2, 
@@ -343,9 +326,10 @@ def build_heatmap_inference(in_tensor, config, names = None):
     # , gauss_heatmap   gauss_heatmap_L2norm    # [gauss_heatmap, gauss_scatt, means, covar]    
  
 
-##-----------------------------------------------------------------------------------------------------------
+    
+##------------------------------------------------------------------------------------------------------------
 ## Build Mask and Score 
-##----------------------------------------------------------------------------------------------------------- 
+##------------------------------------------------------------------------------------------------------------ 
 def build_hm_score(input_list):
     '''
     Inputs:
@@ -391,49 +375,49 @@ def build_hm_score(input_list):
 ##----------------------------------------------------------------------------------------------------------------------          
 class CHMLayerInference(KE.Layer):
     '''
-    Contextual Heatmap Layer - Inference mode
+    Contextual Heatmap Layer  - Inference mode (previously PCILayerTF)    
     Receives the bboxes, their repsective classification and roi_outputs and 
     builds the per_class tensor
 
     Returns:
     -------
-    Returns the following tensors:
+    The CHM Inference layer returns the following tensors:
 
-    pred_tensor :       [batch, NUM_CLASSES, TRAIN_ROIS_PER_IMAGE, 
-                                             (index, class_prob, y1, x1, y2, x2, class_id, old_idx)]
+    pred_tensor :       [batch, NUM_CLASSES, TRAIN_ROIS_PER_IMAGE    , (index, class_prob, y1, x1, y2, x2, class_id, old_idx)]
                                 in normalized coordinates   
     pred_cls_cnt:       [batch, NUM_CLASSES] 
     
-    Note: Returned arrays might be zero padded if not enough target ROIs.
+     Note: Returned arrays might be zero padded if not enough target ROIs.
     
     '''
 
     def __init__(self, config=None, **kwargs):
         super().__init__(**kwargs)
-        print('\n--------------------------------')
-        print('>>>  CHM Inference Layer  ')
-        print('--------------------------------')
+        print('\n>>> CHM Inference  ')
         self.config = config
 
         
     def call(self, inputs):
 
+        print('   > CHM Inference Layer: call ', type(inputs), len(inputs))
         detections = inputs[0]        
-        print('  > CHM Inference Layer: call ', type(inputs), len(inputs))
+        # print('     mrcnn_class.shape    :',  KB.int_shape(mrcnn_class))
+        # print('     mrcnn_bbox.shape     :',  KB.int_shape(mrcnn_bbox)) 
         print('     detections.shape     :',  KB.int_shape(detections)) 
 
-        pred_tensor  = build_predictions_inference(detections, self.config)
-        pr_hm_norm, pr_hm_scores = build_heatmap_inference(pred_tensor, self.config, names = ['pred_heatmap'])
+        # pred_tensor  = build_predictions(detections, self.config)
         # pred_cls_cnt = KL.Lambda(lambda x: tf.count_nonzero(x[:,:,:,-1],axis = -1), name = 'pred_cls_count')(pred_tensor)        
-        print()
-        print('    Output of CHMLayerInference: ')
+        # pr_hm_norm, pr_hm_scores, pr_hm, _  = build_heatmap_inference(pred_tensor, self.config, names = ['pred_heatmap'])
+        pr_hm_norm, pr_hm_scores = build_heatmap_inference(pred_tensor, self.config, names = ['pred_heatmap'])
+
+        print('\n    Output build_heatmap ')
         print('     pred_tensor        : ', pred_tensor.shape  , 'Keras tensor ', KB.is_keras_tensor(pred_tensor) )
+        # print('     pred_cls_cnt shape : ', pred_cls_cnt.shape , 'Keras tensor ', KB.is_keras_tensor(pred_cls_cnt) )
         print('     pred_heatmap_norm  : ', pr_hm_norm.shape   , 'Keras tensor ', KB.is_keras_tensor(pr_hm_norm ))
         print('     pred_heatmap_scores: ', pr_hm_scores.shape , 'Keras tensor ', KB.is_keras_tensor(pr_hm_scores))
-        # print('     pred_cls_cnt shape : ', pred_cls_cnt.shape , 'Keras tensor ', KB.is_keras_tensor(pred_cls_cnt) )
         print('     complete')
 
-        return [ pr_hm_norm , pr_hm_scores, pred_tensor] 
+        return [ pr_hm_norm , pr_hm_scores] 
         
         
     def compute_output_shape(self, input_shape):
@@ -441,9 +425,14 @@ class CHMLayerInference(KE.Layer):
         # return [ (None, self.config.NUM_CLASSES, self.config.DETECTION_MAX_INSTANCES,  6)]                 # pred_tensor
         return [ (None, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1], self.config.NUM_CLASSES)     # pred_heatmap_norm
                , (None, self.config.NUM_CLASSES, self.config.DETECTION_PER_CLASS, 10)                        # pred_heatmap_scores (expanded) 
-               , (None, self.config.NUM_CLASSES, self.config.DETECTION_PER_CLASS,  8)                  # pred_refined_tensor               
-
                ]
+
+        # return [ (None, self.config.IMAGE_SHAPE[0],self.config.IMAGE_SHAPE[1], self.config.NUM_CLASSES)    # pred_heatmap_norm
+               # , (None, self.config.NUM_CLASSES, self.config.DETECTION_MAX_INSTANCES, 11)                  # pred_heatmap_scores (expanded) 
+               # ]
+               # (None, self.config.NUM_CLASSES, self.config.DETECTION_MAX_INSTANCES,  6)                    # pred_tensor
+               # , (None, self.config.IMAGE_SHAPE[0],self.config.IMAGE_SHAPE[1], self.config.NUM_CLASSES)    # pred_heatmap_norm
+
 
 """
 -- moved here 10-14-2018

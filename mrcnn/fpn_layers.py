@@ -137,7 +137,6 @@ def fpn_classifier_graph(rois, feature_maps, image_shape, pool_size, num_classes
     mrcnn_probs = KL.TimeDistributed(KL.Activation("softmax"), name = 'mrcnn_class')(mrcnn_class_logits)
     # x = KL.TimeDistributed(KL.Activation("softmax"))(mrcnn_class_logits)
     # mrcnn_probs        = KL.Lambda(lambda x: KB.identity(x, name = 'mrcnn_class'), name='mrcnn_class')(x)
-    print('\n\n')
     print('     mrcnn_class_logits   output shape is : ' , mrcnn_class_logits.get_shape())    
     print('     mrcnn_class_probs    output shape is : ' , mrcnn_probs.get_shape())    
 

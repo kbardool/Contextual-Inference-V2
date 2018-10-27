@@ -65,7 +65,7 @@ def fcn_graph( feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
 
 
     '''
-    print('\n>>> FCN Layer ')
+    print('\n>>> FCN Layer (without L2 Regularization) ')
     height, width = config.FCN_INPUT_SHAPE[0:2]
     num_classes   = config.NUM_CLASSES
     rois_per_class    = config.TRAIN_ROIS_PER_IMAGE
@@ -92,10 +92,10 @@ def fcn_graph( feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     
     # Block 1    data_format='channels_last',
     
-    x = KL.Conv2D(64, (3, 3), activation='relu', padding='same', name='fcn_block1_conv1', kernel_regularizer=l2(weight_decay))(feature_map)
+    x = KL.Conv2D(64, (3, 3), activation='relu', padding='same', name='fcn_block1_conv1')(feature_map)
     print('   FCN Block 11 shape is : ' ,x.get_shape())
     
-    x = KL.Conv2D(64, (3, 3), activation='relu', padding='same', name='fcn_block1_conv2', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(64, (3, 3), activation='relu', padding='same', name='fcn_block1_conv2')(x)
     print('   FCN Block 12 shape is : ' ,x.get_shape())         
     
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='fcn_block1_pool')(x)
@@ -103,10 +103,10 @@ def fcn_graph( feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     x0 = x
     
     # Block 2
-    x = KL.Conv2D(128, (3, 3), activation='relu', padding='same', name='fcn_block2_conv1', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(128, (3, 3), activation='relu', padding='same', name='fcn_block2_conv1')(x)
     print('   FCN Block 21 shape is : ' , x.get_shape())
     
-    x = KL.Conv2D(128, (3, 3), activation='relu', padding='same', name='fcn_block2_conv2', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(128, (3, 3), activation='relu', padding='same', name='fcn_block2_conv2')(x)
     print('   FCN Block 22 shape is : ' ,x.get_shape())    
     
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='fcn_block2_pool')(x)
@@ -114,34 +114,34 @@ def fcn_graph( feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     x1 = x
     
     # Block 3
-    x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='fcn_block3_conv1', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='fcn_block3_conv1')(x)
     print('   FCN Block 31 shape is : ' ,x.get_shape())            
     
-    x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='fcn_block3_conv2', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='fcn_block3_conv2')(x)
     print('   FCN Block 32 shape is : ' ,x.get_shape())    
     
-    x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='fcn_block3_conv3', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='fcn_block3_conv3')(x)
     print('   FCN Block 33 shape is : ' ,x.get_shape())            
     
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='fcn_block3_pool')(x)
     print('   FCN Block 34 (Max pooling) shape is : ' ,x.get_shape())    
     
     # Block 4
-    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block4_conv1', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block4_conv1')(x)
     print('   FCN Block 41 shape is : ' ,x.get_shape())            
-    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block4_conv2', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block4_conv2')(x)
     print('   FCN Block 42 shape is : ' ,x.get_shape())            
-    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block4_conv3', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block4_conv3')(x)
     print('   FCN Block 43 shape is : ' ,x.get_shape())                
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='fcn_block4_pool')(x)
     print('   FCN Block 44 (Max pooling) shape is : ' ,x.get_shape())    
     
     # Block 5
-    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block5_conv1', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block5_conv1')(x)
     print('   FCN Block 51 shape is : ' ,x.get_shape())                    
-    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block5_conv2', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block5_conv2')(x)
     print('   FCN Block 52 shape is : ' ,x.get_shape())                
-    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block5_conv3', kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='fcn_block5_conv3')(x)
     print('   FCN Block 53 shape is : ' ,x.get_shape())                    
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='fcn_block5_pool')(x)
     print('   FCN Block 54 (Max pooling) shape is : ' ,x.get_shape())    
@@ -152,16 +152,16 @@ def fcn_graph( feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     
     # FC_SIZE = 2048 
     FC_SIZE = 2048
-    x = KL.Conv2D(FC_SIZE, (7, 7), activation='relu', padding='same', name='fcn_fc1',kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(FC_SIZE, (7, 7), activation='relu', padding='same', name='fcn_fc1')(x)
     print('   FCN fully connected 1 (fcn_fc1) shape is : ' ,x.get_shape())        
     x = KL.Dropout(0.5)(x)
-    x = KL.Conv2D(FC_SIZE, (1, 1), activation='relu', padding='same', name='fcn_fc2',kernel_regularizer=l2(weight_decay))(x)
+    x = KL.Conv2D(FC_SIZE, (1, 1), activation='relu', padding='same', name='fcn_fc2')(x)
     print('   FCN fully connected 2 (fcn_fc2) shape is : ' ,x.get_shape())        
     x = KL.Dropout(0.5)(x)
     
     #classifying layer
     x = KL.Conv2D(num_classes, (1, 1), kernel_initializer='he_normal', 
-                  activation='linear', padding='valid', strides=(1, 1),kernel_regularizer=l2(weight_decay),
+                  activation='linear', padding='valid', strides=(1, 1),
                   name='fcn_classify')(x)
 
     
@@ -196,6 +196,7 @@ def fcn_graph( feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     print('    fcn_heatmap       : ', fcn_hm.shape        ,' Keras tensor ', KB.is_keras_tensor(fcn_hm) )
     print('    fcn_heatmap_norm  : ', fcn_hm_norm.shape   ,' Keras tensor ', KB.is_keras_tensor(fcn_hm_norm) )
     print('    fcn_heatmap_L2norm: ', fcn_hm_L2norm.shape ,' Keras tensor ', KB.is_keras_tensor(fcn_hm_L2norm) )
+    print('\n>>> End FCN Layer (without L2 Regularization) ')
 
     return fcn_hm_norm, fcn_hm, fcn_hm_L2norm
 

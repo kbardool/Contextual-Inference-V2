@@ -52,7 +52,7 @@ def normalize(x):
 # Fully Convolutional Network Layer 
 ###############################################################
 # def fcn_layer(context_tensor, num_classes,weight_decay=0., batch_momentum=0.9):
-def fcn_graph(feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
+def fcn32_graph(feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     '''Builds the computation graph of Region Proposal Network.
 
     feature_map:            Contextual Tensor [batch, num_classes, width, depth]
@@ -89,11 +89,11 @@ def fcn_graph(feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     # Block 1    data_format='channels_last',
     
     x = KL.Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv1', 
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(feature_map)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(feature_map)
     print('   FCN Block 11 shape is : ' ,x.get_shape())
     
     x = KL.Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv2', 
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 12 shape is : ' ,x.get_shape())         
     
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block1_pool')(x)
@@ -102,11 +102,11 @@ def fcn_graph(feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     
     # Block 2
     x = KL.Conv2D(128, (3, 3), activation='relu', padding='same', name='block2_conv1', 
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 21 shape is : ' , x.get_shape())
     
     x = KL.Conv2D(128, (3, 3), activation='relu', padding='same', name='block2_conv2',
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 22 shape is : ' ,x.get_shape())    
     
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool')(x)
@@ -115,15 +115,15 @@ def fcn_graph(feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     
     # Block 3
     x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv1',
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 31 shape is : ' ,x.get_shape())            
     
     x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv2', 
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 32 shape is : ' ,x.get_shape())    
     
     x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv3',
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 33 shape is : ' ,x.get_shape())            
     
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool')(x)
@@ -131,26 +131,26 @@ def fcn_graph(feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     
     # Block 4
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv1', 
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 41 shape is : ' ,x.get_shape())            
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv2',
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 42 shape is : ' ,x.get_shape())            
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv3',
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 43 shape is : ' ,x.get_shape())                
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool')(x)
     print('   FCN Block 44 (Max pooling) shape is : ' ,x.get_shape())    
     
     # Block 5
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv1',
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 51 shape is : ' ,x.get_shape())                 
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv2',
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 52 shape is : ' ,x.get_shape())                 
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv3',
-                    kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                    kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN Block 53 shape is : ' ,x.get_shape())                    
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block5_pool')(x)
     print('   FCN Block 54 (Max pooling) shape is : ' ,x.get_shape())    
@@ -162,17 +162,18 @@ def fcn_graph(feature_map , config , weight_decay=0.0002, batch_momentum=0.9):
     # FC_SIZE = 2048 
     FC_SIZE = 4096
     x = KL.Conv2D(FC_SIZE, (7, 7), activation='relu', padding='same', name='fc1',
-                        kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                        kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN fully connected 1 (fcn_fc1) shape is : ' ,x.get_shape())        
     x = KL.Dropout(0.5)(x)
     x = KL.Conv2D(FC_SIZE, (1, 1), activation='relu', padding='same', name='fc2',
-                        kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
+                        kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=l2(weight_decay))(x)
     print('   FCN fully connected 2 (fcn_fc2) shape is : ' ,x.get_shape())        
     x = KL.Dropout(0.5)(x)
     
     #classifying layer
     x = KL.Conv2D(num_classes, (1, 1), kernel_initializer='he_normal',  bias_initializer='zeros', 
-                  activation='linear', padding='valid', strides=(1, 1), name='fcn_classify')(x)
+                  activation='linear', padding='valid', strides=(1, 1),kernel_regularizer=l2(weight_decay),
+                  name='fcn_classify')(x)
 
     
     print('   FCN final conv2d (fcn_classify) shape is : ' , x.get_shape(),' keras_tensor ', KB.is_keras_tensor(x))                      

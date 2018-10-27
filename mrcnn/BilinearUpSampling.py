@@ -9,6 +9,16 @@ def resize_images_bilinear(X, height_factor=1, width_factor=1, target_height=Non
     - [batch, height, width, channels] (for 'channels_last' data_format)
     by a factor of (height_factor, width_factor). Both factors should be
     positive integers.
+    
+    X                   Input tensor
+    
+    target_height       If specified, identifies target height and width post resize  
+    target_width
+    
+    height_factor       If target_height/target_width are not specified, identifies
+    width_factor        factor that image height/width will be multiplied by in resize op.
+    
+    data_format         Identifies format of input tensor: 'default', 'channels_first', 'channels_last'
     '''
     if data_format == 'default':
         data_format = KB.image_data_format()
@@ -22,10 +32,13 @@ def resize_images_bilinear(X, height_factor=1, width_factor=1, target_height=Non
             new_shape = tf.shape(X)[2:]
             new_shape *= tf.constant(np.array([height_factor, width_factor]).astype('int32'))
         
+        # transpose: [batch, channels, height, width] --> [batch, height, width, channels]
         X = permute_dimensions(X, [0, 2, 3, 1])
         X = tf.image.resize_bilinear(X, new_shape, name='fcn_heatmap_channels_first')
+        
+        # transpose: [batch, height, width, channels] --> [batch, channels, height, width]         
         X = permute_dimensions(X, [0, 3, 1, 2])
-    
+
         if target_height and target_width:
             X.set_shape((None, None, target_height, target_width))
         else:
@@ -93,7 +106,10 @@ class BilinearUpSampling2D(Layer):
         
         self.data_format = data_format
         self.input_spec = [InputSpec(ndim=4)]
-        print('\n>>> BilinearUpSampling2D layer' )
+        print()
+        print('-------------------------------' )
+        print('>>> BilinearUpSampling2D layer ' )
+        print('-------------------------------' )
         print('     data_format : ', self.data_format)
         print('     size        : ', self.size   )
         print('     target_size : ', self.target_size)
@@ -102,7 +118,7 @@ class BilinearUpSampling2D(Layer):
         # super(BilinearUpSampling2D, self).__init__(**kwargs)
         super().__init__(**kwargs)
 
-    def compute_output_shape(self, input_shape):
+    def compute_output_shape(self, input_shape): 
         print('     BilinearUpSampling2D. compute_output_shape()' )    
         if self.data_format == 'channels_first':
             width = int(self.size[0] * input_shape[2] if input_shape[2] is not None else None)

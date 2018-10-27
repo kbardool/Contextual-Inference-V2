@@ -21,6 +21,10 @@ import matplotlib.patches as patches
 import matplotlib.lines as lines
 from   matplotlib.patches import Polygon
 from   matplotlib import cm
+from   mpl_toolkits.mplot3d import Axes3D
+from   matplotlib.ticker import LinearLocator, FormatStrFormatter
+
+
 import IPython.display
 
 import mrcnn.utils as utils
@@ -731,16 +735,36 @@ def display_weight_stats(model):
             table.append([
                 weight_name + alert,
                 str(w.shape),
-                "{:+9.4f}".format(w.min()),
-                "{:+10.4f}".format(w.max()),
-                "{:+9.4f}".format(w.std()),
+                "{:+9.7f}".format(w.min()),
+                "{:+10.7f}".format(w.max()),
+                "{:+9.7f}".format(w.std()),
             ])
     display_table(table)
 
-from matplotlib import pyplot as plt 
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
+
+
+##----------------------------------------------------------------------
+## display_weight_histograms
+##----------------------------------------------------------------------    
+def display_weight_histograms(model, width= 10, height=3, bins =50):
+    LAYER_TYPES = ['Conv2D', 'Dense', 'Conv2DTranspose']
+    # Get layers
+    layers = model.get_trainable_layers()
+    layers = list(filter(lambda l: l.__class__.__name__ in LAYER_TYPES, layers))
+    # Display Histograms
+    fig, ax = plt.subplots(len(layers), 2, 
+                           figsize=( width, height * len(layers)),
+                           gridspec_kw={"hspace":1})
+                           
+    for l, layer in enumerate(layers):
+        weights = layer.get_weights()
+        for w, weight in enumerate(weights):
+            tensor = layer.weights[w]
+            ax[l, w].set_title(tensor.name)
+            _ = ax[l, w].hist(weight[w].flatten(), bins)   # second parm is number of bins
+    
+    
+    
 
 ##----------------------------------------------------------------------
 ## display_gt_bboxes
@@ -1214,7 +1238,7 @@ def plot_3d_heatmap_all_classes( Z, image_idx, width = 12, columns = 6, title = 
 
 
 ##----------------------------------------------------------------------
-## plot one gauss_scatter for one image and ALL CLASSES
+## plot one gauss heatmap scatter for one image and ALL CLASSES
 ##----------------------------------------------------------------------       
 
 def plot_3d_gaussian( heatmap, title = 'My figure', width = 10, height = 10, zlim = 1.05 ):

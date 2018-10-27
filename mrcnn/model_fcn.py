@@ -10,19 +10,9 @@ Written by Waleed Abdulla
 ## L2 normalization layers (import fcn_layer_no_L2)
 ##
 ##
-import os
-import sys
-import glob
-import random
-import math
-import datetime
-import itertools
-import json
-import re
-import logging
-from collections import OrderedDict
+import os, sys, glob, random, math, datetime, itertools, json, re, logging, pprint
+from   collections import OrderedDict
 import numpy as np
-import pprint
 import scipy.misc
 import tensorflow as tf
 
@@ -36,24 +26,15 @@ import keras.models as KM
 
 import mrcnn.utils            as utils
 import mrcnn.loss             as loss
-from   mrcnn.datagen_mod      import data_generator
-from   mrcnn.utils            import log, parse_image_meta_graph, parse_image_meta, write_stdout
-from   mrcnn.model_base       import ModelBase
-from   mrcnn.RPN_model        import build_rpn_model
-
-from   mrcnn.chm_layer        import CHMLayer
-from   mrcnn.chm_layer_inf    import CHMLayerInference
-from   mrcnn.proposal_layer   import ProposalLayer
-
-from   mrcnn.fcn_layer_no_L2         import fcn_graph
-from   mrcnn.fcn_scoring_layer       import FCNScoringLayer
-from   mrcnn.detect_layer            import DetectionLayer  
-from   mrcnn.detect_tgt_layer_mod    import DetectionTargetLayer_mod
-
-from   mrcnn.fpn_layers       import fpn_graph, fpn_classifier_graph, fpn_mask_graph
-from   mrcnn.callbacks        import get_layer_output_1,get_layer_output_2
-from   mrcnn.callbacks        import MyCallback
-from   mrcnn.batchnorm_layer  import BatchNorm
+from   mrcnn.datagen               import data_generator
+from   mrcnn.utils                 import log, parse_image_meta_graph, parse_image_meta, write_stdout
+from   mrcnn.model_base            import ModelBase
+from   mrcnn.fcn32_layer           import fcn32_graph
+from   mrcnn.fcn16_layer           import fcn16_graph
+from   mrcnn.fcn8_layer            import fcn8_graph
+# from   mrcnn.fcn_layer_no_L2       import fcn_graph
+from   mrcnn.fcn_scoring_layer     import FCNScoringLayer
+# from   mrcnn.batchnorm_layer       import BatchNorm
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 from distutils.version import LooseVersion
@@ -98,71 +79,94 @@ class FCN(ModelBase):
     The actual Keras model is in the keras_model property.
     """
 
-    def __init__(self, mode, config, model_dir):
+    def __init__(self, mode, arch, config):
         """
         mode: Either "training" or "inference"
         config: A Sub-class of the Config class
         model_dir: Directory to save training logs and trained weights
         """
         assert mode in ['training', 'inference']
-        super().__init__(mode, model_dir)
-        print('>>> Initialize FCN model, mode: ',mode)
+        assert arch in ['FCN32', 'FCN16', 'FCN8']
+        super().__init__(mode, config)
 
-        # self.mode      = mode
-        self.config    = config
-        # self.model_dir = model_dir
+        print('>>> Initialize FCN model, mode: ',mode, 'architecture: ', arch)
+        if mode == 'training':
+            self.set_log_dir()
         
-        # Not needed as we cll this later when we load model weights
-        self.set_log_dir()
-        
+        self.arch = arch
+        if arch == 'FCN32':
+            print('arch set to FCN32')
+            self.fcn_graph = fcn32_graph
+            print(self.fcn_graph)
+        elif arch == 'FCN16':
+            print('arch set to FCN16')
+            self.fcn_graph = fcn16_graph
+            print(self.fcn_graph)
+        else:
+            print('arch set to FCN8')
+            self.fcn_graph = fcn8_graph
+            print(self.fcn_graph)
+            
         # Pre-defined layer regular expressions
         self.layer_regex = {
-            # ResNet from a specific stage and up
-            "res3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
-            "res4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
-            "res5+": r"(res5.*)|(bn5.*)",
+            # "res5+": r"(res5.*)|(bn5.*)",
             # fcn only 
             "fcn" : r"(fcn\_.*)",
-            # fpn
-            "fpn" : r"(fpn\_.*)",
-            # rpn
-            "rpn" : r"(rpn\_.*)",
-            # rpn
-            "mrcnn" : r"(mrcnn\_.*)",
-            # all layers but the backbone
-            "heads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            # all layers but the backbone
-            "allheads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)|(fcn\_.*)",
-          
-            # From a specific Resnet stage and up
-            "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            "4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            "5+": r"(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
+            # fcn and fc2
+            "fc2+" : r"(fcn\_.*)|(fc2.*)",
+            # fcn, fc2, fc1
+            "fc1+" : r"(fcn\_.*)|(fc2*)|(fc1*)",
+            # block5
+            "block5" : r"(block5\_.*)",
+            # block5+
+            "block5+" : r"(block5\_.*)|(fcn\_.*)|(fc2*)|(fc1*)",
+            # block4
+            "block4" : r"(block4\_.*)",
+            # block4+
+            "block4+" : r"(block4\_.*)|(block5\_.*)|(fcn\_.*)|(fc2*)|(fc1*)",
+            # -- mrcnn
+            # "mrcnn" : r"(mrcnn\_.*)",
+            # -- all layers but the backbone
+            # "heads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
+            # -- all layers but the backbone
+            # "allheads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)|(fcn\_.*)",
+            # -- ResNet from a specific stage and up
+            # "res3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
+            # "res4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
+            # -- From a specific Resnet stage and up
+            # "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
+            # "4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
+            # "5+": r"(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             # All layers
-            "all": ".*",
+            # "all": ".*",
         }
         
-
         self.keras_model = self.build(mode=mode, config=config  )
 
         print('>>> FCN initialization complete. mode: ',mode) 
-
+        return
     
+    
+    ##------------------------------------------------------------------------------------    
+    ## Build Model 
+    ##------------------------------------------------------------------------------------                    
     def build(self, mode, config, FCN_layers = True):
         '''
-        Build MODIFIED Mask R-CNN architecture (NO MASK PROCESSING)
-            input_shape: The shape of the input image.
-            mode: Either "training" or "inference". The inputs and
-                outputs of the model differ accordingly.
+        Build FCN architecture 
+            input_shape: The shape of the input heatmap from MRCNN.
+            mode:        Either "training" or "inference". The inputs and
+                         outputs of the model differ accordingly.
         '''
         assert mode in ['training', 'inference']
 
         # Image size must be dividable by 2 multiple times
-        h, w = config.IMAGE_SHAPE[:2]
+        h, w = config.FCN_INPUT_SHAPE[:2]
+        
         if h / 2**6 != int(h / 2**6) or w / 2**6 != int(w / 2**6):
             raise Exception("Image size must be dividable by 2 at least 6 times "
                             "to avoid fractions when downscaling and upscaling."
                             "For example, use 256, 320, 384, 448, 512, ... etc. ")
+        
         num_classes = config.NUM_CLASSES
         num_bboxes  = config.DETECTION_MAX_INSTANCES   # 100
         num_bboxes  = config.TRAIN_ROIS_PER_IMAGE      # 32
@@ -175,137 +179,87 @@ class FCN(ModelBase):
         # input_image      = KL.Input(shape=config.IMAGE_SHAPE.tolist(), name="input_image")
         # input_image_meta = KL.Input(shape=[None], name="input_image_meta")
 
-        pr_hm_norm   = KL.Input(shape=[h,w, num_classes], name="input_pr_hm_norm" , dtype=tf.float32 )
+        pr_hm        = KL.Input(shape=[h,w, num_classes], name="input_pr_hm_norm" , dtype=tf.float32 )
         pr_hm_scores = KL.Input(shape=[num_classes, num_bboxes, 11], name="input_pr_hm_scores", dtype=tf.float32)
         
         if mode == "training":
 
-            gt_hm_norm   = KL.Input(shape=[h,w, num_classes], name="input_gt_hm_norm"  , dtype=tf.float32)
-            gt_hm_scores = KL.Input(shape=[num_classes, num_bboxes, 11], name="input_gt_hm_scores", dtype=tf.float32)
+            gt_hm        = KL.Input(shape=[ h,w, num_classes], name="input_gt_hm_norm"  , dtype=tf.float32)
+            gt_hm_scores = KL.Input(shape=[ num_classes, num_bboxes, 11], name="input_gt_hm_scores", dtype=tf.float32)
            
         ## End if mode == 'training'
         
         ##----------------------------------------------------------------------------                
-        ## Training Mode Layers
+        ## FCN Training Mode Layers
         ##----------------------------------------------------------------------------                
         if mode == "training":
-            ##------------------------------------------------------------------------
-            ##  FCN Network Head
-            ##------------------------------------------------------------------------
-            if FCN_layers :
-                print('\n')
-                print('---------------------------------------------------')
-                print('    Adding  FCN layers')
-                print('---------------------------------------------------')
-            
-                fcn_hm_norm, fcn_hm,  _ = fcn_graph(pr_hm_norm, config)
+            print('\n')
+            print('---------------------------------------------------')
+            print('   Arch: ',self.arch, ' Adding  FCN layers')
+            print('---------------------------------------------------')
+        
+            fcn_hm = self.fcn_graph(pr_hm , config)
+            # fcn_hm_scores = FCNScoringLayer(config, name='fcn_scoring') ([fcn_hm , pr_hm_scores, gt_hm_scores])
 
-                print('   fcn_heatmap      : ', KB.int_shape(fcn_hm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm) )        
-                print('   fcn_heatmap_norm : ', KB.int_shape(fcn_hm_norm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm_norm) )        
-                         
-                fcn_hm_scores = FCNScoringLayer(config, name='fcn_scoring') ([fcn_hm_norm, pr_hm_scores])
-                
-                ##------------------------------------------------------------------------
-                ##  Loss layer definitions
-                ##------------------------------------------------------------------------
-                print('\n')
-                print('---------------------------------------------------')
-                print('    building Loss Functions ')
-                print('---------------------------------------------------')
-                # print(' gt_deltas         :', KB.is_keras_tensor(gt_deltas)      , KB.int_shape(gt_deltas        ))
-                # print(' target_class_ids  :', KB.is_keras_tensor(target_class_ids), KB.int_shape(target_class_ids ))
-                
-                fcn_norm_loss  = KL.Lambda(lambda x: loss.fcn_norm_loss_graph(*x),  name="fcn_norm_loss") \
-                                 ([gt_hm_scores, fcn_hm_scores])
-                # fcn_score_loss = KL.Lambda(lambda x: loss.fcn_loss_graph(*x), name="fcn_loss") \
-                                # ([gt_hm, fcn_hm_norm])
-                                
+            print('   fcn_heatmap      : ', KB.int_shape(fcn_hm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm) )        
+            # print('   fcn_heatmap_norm : ', KB.int_shape(fcn_hm_norm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm_norm) )        
+            
+            ##------------------------------------------------------------------------
+            ##  Loss layer definitions
+            ##------------------------------------------------------------------------
+            print('\n')
+            print('---------------------------------------------------')
+            print('    building Loss Functions ')
+            print('---------------------------------------------------')
+            # print(' gt_deltas         :', KB.is_keras_tensor(gt_deltas)      , KB.int_shape(gt_deltas        ))
+            # print(' target_class_ids  :', KB.is_keras_tensor(target_class_ids), KB.int_shape(target_class_ids ))
+            
+            # fcn_norm_loss  = KL.Lambda(lambda x: loss.fcn_norm_loss_graph(*x),  name="fcn_norm_loss") \
+                             # ([gt_hm_scores, fcn_hm_scores])
+            fcn_heatmap_loss = KL.Lambda(lambda x: loss.fcn_heatmap_loss_graph(*x), name="fcn_heatmap_loss") \
+                            ([gt_hm, fcn_hm])
+                            
             # Model Inputs 
-            inputs  = [ pr_hm_norm, pr_hm_scores, gt_hm_norm, gt_hm_scores]
-            outputs = [fcn_hm_norm, fcn_hm_scores, fcn_hm, fcn_norm_loss]
+            inputs  = [pr_hm, pr_hm_scores, gt_hm, gt_hm_scores]
+            # outputs = [fcn_hm_norm, fcn_hm_scores, fcn_hm, fcn_norm_loss]
+            outputs = [fcn_hm, fcn_heatmap_loss]
 
         # end if Training
         ##----------------------------------------------------------------------------                
-        ##    Inference Mode
+        ## FCN Inference Mode Layers
         ##----------------------------------------------------------------------------                
         else:
-            ##------------------------------------------------------------------------
-            ##  FPN Layer
-            ##------------------------------------------------------------------------
-            # Network Heads
-            # Proposal classifier and BBox regressor heads
-            # mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
-                # fpn_classifier_graph(rpn_proposal_rois, mrcnn_feature_maps, config.IMAGE_SHAPE,
-                                     # config.POOL_SIZE, config.NUM_CLASSES)
-
-            ##------------------------------------------------------------------------
-            ##  Detetcion Layer
-            ##------------------------------------------------------------------------
-            #  Generate detection targets
-            #    generated RPNs + mrcnn predictions ----> Target ROIs
-            #
-            # output is [batch, num_detections, (y1, x1, y2, x2, class_id, score)] in image coordinates
-            #------------------------------------------------------------------------           
-            # detections = DetectionLayer(config, name="mrcnn_detection")\
-                                        # ([rpn_proposal_rois, mrcnn_class, mrcnn_bbox, input_image_meta])
-            # print('<<<  shape of DETECTIONS : ', KB.int_shape(detections), ' Keras tensor ', KB.is_keras_tensor(detections) )                         
-            
-            # Convert boxes to normalized coordinates
-            # TODO: let DetectionLayer return normalized coordinates to avoid unnecessary conversions
-            # h, w = config.IMAGE_SHAPE[:2]
-            # detection_boxes = KL.Lambda(lambda x: x[..., :4] / np.array([h, w, h, w]))(detections)
-            # print('<<<  shape of DETECTION_BOXES : ', KB.int_shape(detection_boxes),
-                  # ' Keras tensor ', KB.is_keras_tensor(detection_boxes) )                         
-
-            ##------------------------------------------------------------------------
-            ##  FPN Mask Layer
-            ##------------------------------------------------------------------------
-            # Create masks for detections
-            # mrcnn_mask = fpn_mask_graph(detection_boxes,
-                                        # mrcnn_feature_maps,
-                                        # config.IMAGE_SHAPE,
-                                        # config.MASK_POOL_SIZE,
-                                        # config.NUM_CLASSES)
-
-            ##---------------------------------------------------------------------------
-            ## CHM Inference Layer(s) to generate contextual feature maps using outputs from MRCNN 
-            ##----------------------------------------------------------------------------         
-            # pr_hm_norm,  pr_hm_scores, pr_tensor, pr_hm =\
-                                     # CHMLayerInference(config, name = 'cntxt_layer' ) ([detections])
-                                
-            # print('<<<  shape of pred_tensor   : ', pr_tensor.shape, ' Keras tensor ', KB.is_keras_tensor(pr_tensor) )                         
-                                        
-            ##------------------------------------------------------------------------
-            ## FCN Network Head
-            ##------------------------------------------------------------------------
             print('---------------------------------------------------')
-            print('    Adding  FCN layers')
+            print('   Arch: ',self.arch, ' Adding  FCN layers')
             print('---------------------------------------------------')
                     
-            fcn_hm_norm, fcn_hm,  _ = fcn_graph(pr_hm_norm, config)
+            fcn_hm = self.fcn_graph(pr_hm, config)
             # fcn_heatmap_norm = fcn_graph(pred_heatmap, config)
             print('   fcn_heatmap      : ', KB.int_shape(fcn_hm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm) )        
-            print('   fcn_heatmap_norm : ', KB.int_shape(fcn_hm_norm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm_norm) )        
 
-            fcn_hm_scores = FCNScoringLayer(config, name='fcn_scoring') ([fcn_hm_norm, pr_hm_scores])            
+            # fcn_hm_scores = FCNScoringLayer(config, name='fcn_scoring') ([fcn_hm_norm, pr_hm_scores])            
             # fcn_hm_norm = fcn_graph(pr_hm, config)
             # print('   fcn_heatmap_norm  shape is : ', KB.int_shape(fcn_hm_norm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm_norm) )        
 
-            inputs = [ pr_hm_norm, pr_hm_scores]                                        
+            inputs = [ pr_hm, pr_hm_scores]                                        
             # inputs  = [ input_image, input_image_meta]
-            outputs = [ fcn_hm_norm, fcn_hm_scores, fcn_hm]
+            outputs = [ fcn_hm]
             # end if Inference Mode        
+            
+            
         model = KM.Model( inputs, outputs,  name='FCN')
-
+        
+         
         print(' ================================================================')
         print(' self.keras_model.losses : ', len(model.losses))
-        print(model.losses)
+        for idx,ls in enumerate(model.losses):
+            print(idx, '    ', ls)
         print(' ================================================================')
-        
+            
         # Add multi-GPU support.
-        if config.GPU_COUNT > 1:
-            from parallel_model import ParallelModel
-            model = ParallelModel(model, config.GPU_COUNT)
+        # if config.GPU_COUNT > 1:
+            # from parallel_model import ParallelModel
+            # model = ParallelModel(model, config.GPU_COUNT)
 
         print('\n>>> FCN build complete. mode: ',mode)
         return model
@@ -524,6 +478,7 @@ class FCN(ModelBase):
         return boxes, class_ids, scores     # , full_masks
 
 
+
     def unmold_detections_new(self, detections, image_shape, window):
         '''
         RUNS DETECTIONS ON FCN_SCORE TENSOR
@@ -605,9 +560,594 @@ class FCN(ModelBase):
 
         return boxes, class_ids, scores, pre_scores, fcn_scores     # , full_masks
 
-           
+
+        
+    ##---------------------------------------------------------------------------------------------
+    ## Compile 
+    ## 
+    ##    Note: Using l2 regularizers in the model adds a loss for each layer using the regularization
+    ##---------------------------------------------------------------------------------------------            
+    def compile(self, losses, optimizer):
+        '''
+        Gets the model ready for training. Adds losses, regularization, and
+        metrics. Then calls the Keras compile() function.
+        '''
+        assert isinstance(losses, list) , "A loss function must be defined as the objective"
+        
+        # Optimizer object
+        print('\n')
+        print(' Compile Model :')
+        print('----------------')
+        print('    losses        : ', losses)
+        print('    optimizer     : ', optimizer)
+        print('    learning rate : ', self.config.LEARNING_RATE)
+        print('    momentum      : ', self.config.LEARNING_MOMENTUM)
+        print()
+        
+        ##------------------------------------------------------------------------
+        ## Add Losses
+        ## These are the losses aimed for minimization
+        ## Normally Keras expects the same number of losses as outputs. Since we 
+        ## are returning more outputs , we go deep and set the losses in the base
+        ## layers () 
+        ##------------------------------------------------------------------------    
+        # First, clear previously set losses to avoid duplication
+        self.keras_model._losses = []
+        self.keras_model._per_input_losses = {}
+
+        print('Initial self.keras_model.losses :')
+        print('---------------------------------')
+        print(' losses passed to compile : ', losses)
+        print(' self.keras_model.losses  : ')
+        for idx, i in enumerate(self.keras_model.losses):
+            print('     ',idx, '  ', i)
+        
+        print()
+        print('Add losses to self.keras_model.losses')
+        print('-------------------------------------')
+        
+        loss_names = losses              
+        for name in loss_names:
+            layer = self.keras_model.get_layer(name)
+            print(' --  Loss: {}  Related Layer is : {}'.format(name, layer.name))
+            if layer.output in self.keras_model.losses:
+                print('      ',layer.output,' is already in self.keras_model.losses, and wont be added to list')
+                continue
+            print('    >> Add add loss for ', layer.output, ' to list of losses...')
+            self.keras_model.add_loss(tf.reduce_mean(layer.output, keepdims=True))
+            
+        print()    
+        print('self.keras_model.losses after adding losses passed to compile() : ') 
+        print('----------------------------------------------------------------- ') 
+        for idx, i in enumerate(self.keras_model.losses):
+            print('     ',idx, '  ', i)
+
+        print()    
+        print('Keras_model._losses:' ) 
+        print('---------------------' ) 
+        for idx, i in enumerate(self.keras_model._losses):
+            print('     ',idx, '  ', i)
+
+        print()    
+        print('Keras_model._per_input_losses:')
+        print('------------------------------')
+        for idx, i in enumerate(self.keras_model._per_input_losses):
+            print('     ',idx, '  ', i)
+        # pp.pprint(self.keras_model._per_input_losses)
+            
+            
+        ##------------------------------------------------------------------------    
+        ## Add L2 Regularization as loss to list of losses
+        ##------------------------------------------------------------------------    
+        # Skip gamma and beta weights of batch normalization layers.
+        # reg_losses = [keras.regularizers.l2(self.config.WEIGHT_DECAY)(w) / tf.cast(tf.size(w), tf.float32)
+                      # for w in self.keras_model.trainable_weights
+                      # if 'gamma' not in w.name and 'beta' not in w.name]
+        # self.keras_model.add_loss(tf.add_n(reg_losses))
+
+        print()    
+        print('Final list of keras_model.losses, after adding L2 regularization as loss to list : ') 
+        print('---------------------------------------------------------------------------------- ') 
+        for idx, i in enumerate(self.keras_model.losses):
+            print('     ',idx, '  ', i)
+
+        ##------------------------------------------------------------------------    
+        ## Compile
+        ##------------------------------------------------------------------------   
+        print()
+        print('Compile ')
+        print('--------')
+        print (' Length of Keras_Model.outputs:', len(self.keras_model.outputs))
+        self.keras_model.compile(optimizer=optimizer, loss=[None] * len(self.keras_model.outputs))
+
+        ##------------------------------------------------------------------------    
+        ## Add metrics for losses
+        ##------------------------------------------------------------------------    
+        print()
+        print(' Add Metrics for losses :')
+        print('-------------------------')                                 
+        print(' Initial Keras metric_names:', self.keras_model.metrics_names)                                 
+
+        for name in loss_names:
+            if name in self.keras_model.metrics_names:
+                print('      ' , name , 'is already in in self.keras_model.metrics_names')
+                continue
+            layer = self.keras_model.get_layer(name)
+            print('    Loss name : {}  Related Layer is : {}'.format(name, layer.name))
+            self.keras_model.metrics_names.append(name)
+            self.keras_model.metrics_tensors.append(tf.reduce_mean(layer.output, keepdims=True))
+            print('    >> Add metric ', name, ' with metric tensor: ', layer.output.name, ' to list of metrics ...')
+        
+        print()
+        print ('Final Keras metric_names :') 
+        print ('--------------------------') 
+        for idx, i in enumerate(self.keras_model.metrics_names):
+            print('     ',idx, '  ', i)
+
+        print()
+        print(' self.keras_model.losses after adding losses passed to compile() : ') 
+        print('------------------------------------------------------------------ ') 
+        for idx, i in enumerate(self.keras_model.losses):
+            print('     ',idx, '  ', i)
+
+        print()    
+        print('Keras_model._losses:' ) 
+        print('---------------------' ) 
+        for idx, i in enumerate(self.keras_model._losses):
+            print('     ',idx, '  ', i)
+
+        print()    
+        print('Keras_model._per_input_losses:')
+        print('------------------------------')
+        for idx, i in enumerate(self.keras_model._per_input_losses):
+            print('     ',idx, '  ', i)
+        print()
+        
+        return
+        
+    ##---------------------------------------------------------------------------------------------
+    ##
+    ##---------------------------------------------------------------------------------------------
+    def train_in_batches(self,
+              mrcnn_model,
+              train_dataset, 
+              val_dataset,  
+              layers            = None,
+              losses            = None,
+              learning_rate     = 0,              
+              epochs            = 0,
+              epochs_to_run     = 0, 
+              batch_size        = 0, 
+              steps_per_epoch   = 0,
+              min_LR            = 0,
+              debug             = False):
+              
+        '''
+        Train the model.
+        train_dataset, 
+        val_dataset:    Training and validation Dataset objects.
+        
+        learning_rate:  The learning rate to train with
+        
+        epochs:         Number of training epochs. Note that previous training epochs
+                        are considered to be done already, so this actually determines
+                        the epochs to train in total rather than in this particaular
+                        call.
+                        
+        layers:         Allows selecting wich layers to train. It can be:
+                        - A regular expression to match layer names to train
+                        - One of these predefined values:
+                        heads: The RPN, classifier and mask heads of the network
+                        all: All the layers
+                        3+: Train Resnet stage 3 and up
+                        4+: Train Resnet stage 4 and up
+                        5+: Train Resnet stage 5 and up
+        '''
+        assert self.mode == "training", "Create model in training mode."
+        
+        if batch_size == 0 :
+            batch_size = self.config.BATCH_SIZE
+        
+        if epochs_to_run ==  0 :
+            epochs_to_run = self.config.EPOCHS_TO_RUN
+        
+        if steps_per_epoch == 0:
+            steps_per_epoch = self.config.STEPS_PER_EPOCH
+
+        if min_LR == 0 :
+            min_LR = self.config.MIN_LR
+        
+        if learning_rate == 0:
+            learning_rate = self.config.LEARNING_RATE
+            
+        epochs = self.epoch + epochs_to_run
+            
+        # use Pre-defined layer regular expressions
+        # if layers in self.layer_regex.keys():
+            # layers = self.layer_regex[layers]
+        print(layers)
+        # train_regex_list = []
+        # for x in layers:
+            # print( ' layers ias : ',x)
+            # train_regex_list.append(x)
+        train_regex_list = [self.layer_regex[x] for x in layers]
+        print(train_regex_list)
+        layers = '|'.join(train_regex_list)        
+        print('layers regex :', layers)
+        
+        
+        ##--------------------------------------------------------------------------------
+        ## Data generators
+        ##--------------------------------------------------------------------------------
+        train_generator = data_generator(train_dataset, mrcnn_model.config, shuffle=True,
+                                         batch_size=batch_size)
+        val_generator   = data_generator(val_dataset, mrcnn_model.config, shuffle=True,
+                                         batch_size=batch_size,
+                                         augment=False)
+
+        ##--------------------------------------------------------------------------------
+        ## Set trainable layers and compile
+        ##--------------------------------------------------------------------------------
+        self.set_trainable(layers)            
+
+        ##----------------------------------------------------------------------------------------------
+        ## Setup optimizaion method 
+        ##----------------------------------------------------------------------------------------------            
+        optimizer = self.set_optimizer()
+
+        # self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)        
+        self.compile(losses, optimizer)
+
+        ##--------------------------------------------------------------------------------
+        ## get metrics from keras_model.metrics_names and setup callback metrics 
+        ##--------------------------------------------------------------------------------
+        out_labels = self.get_deduped_metrics_names()
+        callback_metrics = out_labels + ['val_' + n for n in out_labels]
+        
+        print()
+        print(' out_labels from get_deduped_metrics_names() : ')
+        print(' --------------------------------------------- ')
+        for i in out_labels:
+            print('     -',i)
+        print()
+        print(' Callback metrics monitored by progbar :')
+        print(' ---------------------------------------')
+        for i in callback_metrics:
+            print('     -',i)
+
+        print()
+        print ('End of Compile() Keras metric_names :') 
+        print ('--------------------------') 
+        for idx, i in enumerate(self.keras_model.metrics_names):
+            print('     ',idx, '  ', i)
+            
+        print()
+        print ('Keras stateful_metric_names :') 
+        print ('--------------------------') 
+        for idx, i in enumerate(self.keras_model.stateful_metric_names):
+            print('     ',idx, '  ', i)
+            
+        ##--------------------------------------------------------------------------------
+        ## Callbacks
+        ##--------------------------------------------------------------------------------
+        # call back for model checkpoint was originally (?) loss. chanegd to val_loss (which is default) 2-5-18
+        # copied from \keras\engine\training.py
+        # def _get_deduped_metrics_names(self):
+
+            
+        callbacks_list = [
+              keras.callbacks.ProgbarLogger(count_mode='steps',
+                                            stateful_metrics=self.keras_model.stateful_metric_names)
+            
+            , keras.callbacks.BaseLogger(stateful_metrics=self.keras_model.stateful_metric_names)
+            
+            , keras.callbacks.TensorBoard(log_dir=self.log_dir,
+                                          histogram_freq=0,
+                                          write_graph=True,
+                                          write_images=False) 
+                                          # histogram_freq=0,
+                                          # batch_size=self.config.BATCH_SIZE,
+                                          # write_graph=True,
+                                          # write_grads=True,
+                                          # write_images=True,
+                                          # embeddings_freq=0,
+                                          # embeddings_layer_names=None,
+                                          # embeddings_metadata=None)
+
+            , keras.callbacks.ModelCheckpoint(self.checkpoint_path, 
+                                              mode = 'auto', 
+                                              period = 1, 
+                                              monitor='val_loss', 
+                                              verbose=1, 
+                                              save_best_only = True, 
+                                              save_weights_only=True)
+                                            
+            , keras.callbacks.ReduceLROnPlateau(monitor='val_loss', 
+                                                mode     = 'auto', 
+                                                factor   = self.config.REDUCE_LR_FACTOR,   
+                                                cooldown = self.config.REDUCE_LR_COOLDOWN,
+                                                patience = self.config.REDUCE_LR_PATIENCE,
+                                                min_lr   = self.config.MIN_LR, 
+                                                verbose  = 1)                                            
+                                                
+            , keras.callbacks.EarlyStopping(monitor='val_loss', 
+                                                mode      = 'auto', 
+                                                min_delta = self.config.EARLY_STOP_MIN_DELTA, 
+                                                patience  = self.config.EARLY_STOP_PATIENCE, 
+                                                verbose   = 1)                                            
+            , keras.callbacks.History() 
+        ]
+         
+        
+        callbacks =  keras.callbacks.CallbackList(callbacks = callbacks_list)
+        callbacks.set_model(self.keras_model)
+        callbacks.set_params({
+            'epochs': epochs,
+            'steps': steps_per_epoch,
+            'verbose': 1 ,
+            'do_validation': True,
+            'metrics': callback_metrics
+        })
+        log(" ")
+        log("Training Start Parameters:")
+        log("--------------------------")
+        log("Starting at epoch     {} of {} epochs.".format(self.epoch, epochs))
+        log("Steps per epochs      {} ".format(steps_per_epoch))
+        log("Last epoch completed  {} ".format(self.epoch))
+        log("Batch size            {} ".format(batch_size))
+        log("Learning Rate         {} ".format(self.config.LEARNING_RATE))
+        log("Momentum              {} ".format(self.config.LEARNING_MOMENTUM))
+        log("Weight Decay:         {} ".format(self.config.WEIGHT_DECAY       ))
+        log("VALIDATION_STEPS      {} ".format(self.config.VALIDATION_STEPS   ))
+        log("REDUCE_LR_FACTOR      {} ".format(self.config.REDUCE_LR_FACTOR   ))
+        log("REDUCE_LR_COOLDOWN    {} ".format(self.config.REDUCE_LR_COOLDOWN ))
+        log("REDUCE_LR_PATIENCE    {} ".format(self.config.REDUCE_LR_PATIENCE ))
+        log("MIN_LR                {} ".format(self.config.MIN_LR             ))
+        log("EARLY_STOP_PATIENCE   {} ".format(self.config.EARLY_STOP_PATIENCE))        
+        log("Checkpoint Path:      {} ".format(self.checkpoint_path))
+
+
+        ##----------------------------------------------------------------------------------------------
+        ## If in debug mode write stdout intercepted IO to output file  
+        ##----------------------------------------------------------------------------------------------            
+        if self.config.SYSOUT == 'FILE':
+            sysout_file = os.path.join(self.log_dir, "{:%Y%m%dT%H%M}".format(datetime.datetime.now()))
+            write_stdout(sysout_file, '_sysout', sys.stdout )        
+            sys.stdout = sys.__stdout__
+            print(' Run information written to ', sysout_file+'_sysout.out')
+
+
+        ##--------------------------------------------------------------------------------
+        ## Start main training loop
+        ##--------------------------------------------------------------------------------
+        early_stopping  = False
+        epoch_idx = self.epoch
+        # progbar.on_train_begin()
+        callbacks.on_train_begin()
+
+        if epoch_idx >= epochs:
+            print('Final epoch {} has already completed - Training will not proceed'.format(epochs))
+        else:
+        
+            while epoch_idx < epochs :
+                callbacks.on_epoch_begin(epoch_idx)
+                epoch_logs = {}
+                
+                for steps_index in range(steps_per_epoch):
+                    
+                    # print(' self.epoch {}   epochs {}  step {} '.format(self.epoch, epochs, steps_index))
+                    batch_logs = {}
+                    batch_logs['batch'] = steps_index
+                    batch_logs['size']  = batch_size    
+
+                    callbacks.on_batch_begin(steps_index, batch_logs)
+
+                    train_batch_x, train_batch_y = next(train_generator)
+
+                    
+                    # print('len of train batch x' ,len(train_batch_x))
+                    # for idx, i in  enumerate(train_batch_x):
+                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
+                    # print('len of train batch y' ,len(train_batch_y))
+                    # for idx, i in  enumerate(train_batch_y):
+                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
+                    # print(type(output_rois))
+                    # for i in model_output:
+                        # print( i.shape)       
+                        
+                    ## Run prediction on MRCNN  
+                    
+                    results = mrcnn_model.keras_model.predict(train_batch_x)
+                    # pr_hm_norm, pr_hm_scores, gt_hm_norm,  gt_hm_scores = val_results[:4]
+                    # x = [pr_hm_norm, pr_hm_scores, gt_hm_norm, gt_hm_scores]
+                    x = results[:4]
+
+                    # print('size of results : ', len(results))
+                    # for idx, i in  enumerate(results):
+                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
+
+                    # print('pr_hm_norm   : ', pr_hm_norm.shape)
+                    # print('pr_hm_scores : ', pr_hm_scores.shape)
+                    # print('gt_hm_norm   : ', gt_hm_norm.shape)
+                    # print('gt_hm_scores : ', gt_hm_scores.shape)
+                    
+                    outs = self.keras_model.train_on_batch( x , train_batch_y)
+                
+                    if not isinstance(outs, list):
+                        outs = [outs]
+
+                    # print('size of outputs from train_on_batch : ', len(outs), outs)
+                    # for idx, i in  enumerate(outs):
+                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
+
+                    for l, o in zip(out_labels, outs):
+                        # print(' out label: ', l, ' out value: ', o,' shape: ', o.shape)
+                        batch_logs[l] = o
+    
+                    callbacks.on_batch_end(steps_index, batch_logs)
+
+                ##------------------------------------------------------------------------
+                ## end of epoch operations - VALIDATION    
+                ##------------------------------------------------------------------------
+                val_steps_done  = 0
+                val_all_outs    = []
+                val_batch_sizes = []
+
+                # print(' Start validation ')
+                # print(' ---------------- ')
+
+                while val_steps_done < self.config.VALIDATION_STEPS:
+                    # print(' ** Validation step: ', val_steps_done)
+                    val_batch_x, val_batch_y = next(val_generator)
+                    
+                    # print('len of train batch x' ,len(val_batch_x))
+                    # for idx, i in  enumerate(val_batch_x):
+                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
+                    # print('len of train batch y' ,len(val_batch_y))
+                    # for idx, i in  enumerate(val_batch_y):
+                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
+                    
+                    val_results = mrcnn_model.keras_model.predict(val_batch_x)
+                    # pr_hm_norm, pr_hm_scores, gt_hm_norm,  gt_hm_scores = val_results[:4]
+                    # x = [pr_hm_norm, pr_hm_scores, gt_hm_norm, gt_hm_scores]
+                    x = val_results[:4]
+                    
+                    # print('    mrcnn_model.predict() size of results : ', len(val_results))
+                    # for idx, i in  enumerate(xval_results):
+                        # print('    ',idx, 'type: ', type(i), 'shape: ', i.shape)
+                    
+                    # print('type ',type(x), len(x), x[0].shape[0])
+                    
+                    outs2 = self.keras_model.test_on_batch( x , val_batch_y)
+                    
+                    # print('fcn_model.test_on_batch() size of results : ', len(outs2))
+                    # for idx, i in  enumerate(outs2):
+                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
+                    # print('    validation outputs from train_on_batch : ', len(outs2), outs2)
+                    
+                    if isinstance(x, list):
+                        batch_size = x[0].shape[0]
+                    elif isinstance(x, dict):
+                        batch_size = list(x.values())[0].shape[0]
+                    else:
+                        batch_size = x.shape[0]
+                        
+                    if batch_size == 0:
+                        raise ValueError('Received an empty batch. '
+                                         'Batches should at least contain one item.')
+                    # else:
+                        # print('batch size:', batch_size)
+                        
+                    val_all_outs.append(outs2)
+                    val_steps_done += 1
+                    val_batch_sizes.append(batch_size)
+
+                ## calculate val_outs after all validations steps complete
+                # print(len(val_batch_sizes), len(val_all_outs))
+                # print(val_batch_sizes)
+                # print('\n val_all_outs:', np.asarray(val_all_outs).shape)
+                # pp.pprint(val_all_outs)
+
+                if not isinstance(outs2, list):
+                    val_outs =  np.average(np.asarray(val_all_outs), weights=val_batch_sizes)
+                else:
+                    averages = []
+                    for i in range(len(outs2)):
+                        averages.append(np.average([out[i] for out in val_all_outs], axis = 0, weights=val_batch_sizes))
+                    val_outs = averages
+                    
+                # write_log(callback, val_names, logs, batch_no//10)
+                print('\n    validation logs output: ', val_outs)
+                if not isinstance(val_outs, list):
+                    val_outs = [val_outs]
+                
+                # Same labels assumed.
+                for l, o in zip(out_labels, val_outs):
+                    print(' Validations : out label: val_', l, ' out value: ', o)
+                    epoch_logs['val_' + l] = o
+                    
+                epoch_logs.update({'lr': KB.eval(self.keras_model.optimizer.lr)})    
+                callbacks.on_epoch_end(epoch_idx, epoch_logs)
+                epoch_idx += 1
+
+                for callback in callbacks:
+                    # print(callback)
+                    # pp.pprint(dir(callback.model))
+                    if hasattr(callback.model, 'stop_training') and (callback.model.stop_training ==True):
+                        early_stopping = True
+                        # break
+                        
+                if early_stopping:
+                    print('{}  Early Stopping triggered on epoch {} of {} epochs'.format(callback, epoch_idx, epochs))
+                    break    
+                
+            ##-------------------------------
+            ## end of training operations
+            ##--------------------------------
+            # if epoch_idx != self.epoch:
+            # chkpoint.on_epoch_end(epoch_idx -1, batch_logs)
+            callbacks.on_train_end()
+            self.epoch = max(epoch_idx - 1, epochs)
+            print('Final : self.epoch {}   epochs {}'.format(self.epoch, epochs))
+            
+        ##--------------------------------------------------------------------------------
+        ## End main training loop
+        ##--------------------------------------------------------------------------------
+        
+    ## copied from github but not used
+    # def write_log(callback, names, logs, batch_no):
+        # for name, value in zip(names, logs):
+            # summary = tf.Summary()
+            # summary_value = summary.value.add()
+            # summary_value.simple_value = value
+            # summary_value.tag = name
+            # callback.writer.add_summary(summary, batch_no)
+            # callback.writer.flush()        
+
+
+    ##---------------------------------------------------------------------------------------------
+    ## Learning Rate scheduler copied from Keras-FCN
+    ##---------------------------------------------------------------------------------------------
+    def lr_scheduler(epoch, mode='power_decay'):
+        '''
+        Usage:
+            
+            scheduler = LearningRateScheduler(lr_scheduler)            
+                
+        Default values:
+            lr_base     = 0.01 * (float(batch_size) / 16)
+            lr_power    = 0.9
+
+        '''
+        lr_base     = 0.01 * (float(self.config.BATCH_SIZE) / 16)
+        lr_power    = 0.9
+
+        if mode is 'power_decay':
+            # original lr scheduler
+            lr = lr_base * ((1 - float(epoch)/epochs) ** lr_power)
+        if mode is 'exp_decay':
+            # exponential decay
+            lr = (float(lr_base) ** float(lr_power)) ** float(epoch+1)
+        # adam default lr
+        if mode is 'adam':
+            lr = 0.001
+
+        if mode is 'progressive_drops':
+            # drops as progression proceeds, good for sgd
+            if epoch > 0.9 * epochs:
+                lr = 0.0001
+            elif epoch > 0.75 * epochs:
+                lr = 0.001
+            elif epoch > 0.5 * epochs:
+                lr = 0.01
+            else:
+                lr = 0.1
+
+        print('lr: %f' % lr)
+        return lr
+
+"""        
     def train(self, 
-              optimizer,
               train_dataset, 
               val_dataset, 
               learning_rate, 
@@ -721,6 +1261,12 @@ class FCN(ModelBase):
         # Train
 
         self.set_trainable(layers)
+
+        ##----------------------------------------------------------------------------------------------
+        ## Setup optimizaion method 
+        ##----------------------------------------------------------------------------------------------            
+        optimizer = self.set_optimizer()
+
         # self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)
         self.compile(losses, optimizer)
         
@@ -753,493 +1299,6 @@ class FCN(ModelBase):
         self.epoch = max(self.epoch, epochs)
 
         print('Final : self.epoch {}   epochs {}'.format(self.epoch, epochs))
-
-        
-    def train_in_batches(self,
-              mrcnn_model,
-              optimizer,
-              train_dataset, 
-              val_dataset,  
-              layers            = None,
-              losses            = None,
-              learning_rate     = 0,              
-              epochs            = 0,
-              epochs_to_run     = 0, 
-              batch_size        = 0, 
-              steps_per_epoch   = 0,
-              min_LR            = 0,
-              debug             = False):
-              
-        '''
-        Train the model.
-        train_dataset, 
-        val_dataset:    Training and validation Dataset objects.
-        
-        learning_rate:  The learning rate to train with
-        
-        epochs:         Number of training epochs. Note that previous training epochs
-                        are considered to be done already, so this actually determines
-                        the epochs to train in total rather than in this particaular
-                        call.
-                        
-        layers:         Allows selecting wich layers to train. It can be:
-                        - A regular expression to match layer names to train
-                        - One of these predefined values:
-                        heads: The RPN, classifier and mask heads of the network
-                        all: All the layers
-                        3+: Train Resnet stage 3 and up
-                        4+: Train Resnet stage 4 and up
-                        5+: Train Resnet stage 5 and up
-        '''
-        assert self.mode == "training", "Create model in training mode."
-        
-        if batch_size == 0 :
-            batch_size = self.config.BATCH_SIZE
-        
-        if epochs_to_run ==  0 :
-            epochs_to_run = self.config.EPOCHS_TO_RUN
-        
-        if steps_per_epoch == 0:
-            steps_per_epoch = self.config.STEPS_PER_EPOCH
-
-        if min_LR == 0 :
-            min_LR = self.config.MIN_LR
-        
-        if learning_rate == 0:
-            learning_rate = self.config.LEARNING_RATE
-            
-        epochs = self.epoch + epochs_to_run
-            
-        # use Pre-defined layer regular expressions
-        # if layers in self.layer_regex.keys():
-            # layers = self.layer_regex[layers]
-        print(layers)
-        # train_regex_list = []
-        # for x in layers:
-            # print( ' layers ias : ',x)
-            # train_regex_list.append(x)
-        train_regex_list = [self.layer_regex[x] for x in layers]
-        print(train_regex_list)
-        layers = '|'.join(train_regex_list)        
-        print('layers regex :', layers)
-        
-        
-        ##--------------------------------------------------------------------------------
-        ## Data generators
-        ##--------------------------------------------------------------------------------
-        train_generator = data_generator(train_dataset, mrcnn_model.config, shuffle=True,
-                                         batch_size=batch_size)
-        val_generator   = data_generator(val_dataset, mrcnn_model.config, shuffle=True,
-                                         batch_size=batch_size,
-                                         augment=False)
-
-        ##--------------------------------------------------------------------------------
-        ## Set trainable layers and compile
-        ##--------------------------------------------------------------------------------
-        self.set_trainable(layers)            
-        # self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)        
-        self.compile(losses, optimizer)
-
-        ##--------------------------------------------------------------------------------
-        ## get metrics from keras_model.metrics_names and setup callback metrics 
-        ##--------------------------------------------------------------------------------
-        out_labels = self.get_deduped_metrics_names()
-        callback_metrics = out_labels + ['val_' + n for n in out_labels]
-
-        print()
-        print(' out_labels from get_deduped_metrics_names() : ')
-        print(' --------------------------------------------- ')
-        for i in out_labels:
-            print('     -',i)
-        print()
-        print(' Callback metrics monitored by progbar :')
-        print(' ---------------------------------------')
-        for i in callback_metrics:
-            print('     -',i)
-
-        ##--------------------------------------------------------------------------------
-        ## Callbacks
-        ##--------------------------------------------------------------------------------
-        # call back for model checkpoint was originally (?) loss. chanegd to val_loss (which is default) 2-5-18
-        # copied from \keras\engine\training.py
-        # def _get_deduped_metrics_names(self):
-
-            
-        callbacks_list = [
-            keras.callbacks.ProgbarLogger(count_mode='steps'),
-             
-            keras.callbacks.TensorBoard(log_dir=self.log_dir,
-                                          histogram_freq=0,
-                                          batch_size=self.config.BATCH_SIZE,
-                                          write_graph=True,
-                                          write_grads=True,
-                                          write_images=True,
-                                          embeddings_freq=0,
-                                          embeddings_layer_names=None,
-                                          embeddings_metadata=None)
-
-            , keras.callbacks.ModelCheckpoint(self.checkpoint_path, 
-                                              mode = 'auto', 
-                                              period = 1, 
-                                              monitor='val_loss', 
-                                              verbose=1, 
-                                              save_best_only = True, 
-                                              save_weights_only=True)
-                                            
-            , keras.callbacks.ReduceLROnPlateau(monitor='val_loss', 
-                                                mode     = 'auto', 
-                                                factor   = self.config.REDUCE_LR_FACTOR,   
-                                                cooldown = self.config.REDUCE_LR_COOLDOWN,
-                                                patience = self.config.REDUCE_LR_PATIENCE,
-                                                min_lr   = self.config.MIN_LR, 
-                                                verbose  = 1)                                            
-                                                
-            , keras.callbacks.EarlyStopping(monitor='val_loss', 
-                                                mode      = 'auto', 
-                                                min_delta = self.config.EARLY_STOP_MIN_DELTA, 
-                                                patience  = self.config.EARLY_STOP_PATIENCE, 
-                                                verbose   = 1)                                            
-            # , my_callback
-        ]
-
-        
-        callbacks =  keras.callbacks.CallbackList(callbacks = callbacks_list)
-        callbacks.set_model(self.keras_model)
-        callbacks.set_params({
-            'epochs': epochs,
-            'steps': steps_per_epoch,
-            'verbose': 1 ,
-            'do_validation': True,
-            'metrics': callback_metrics
-        })
-        
-        ##----------------------------------------------------------------------------------------------
-        ## If in debug mode write stdout intercepted IO to output file  
-        ##----------------------------------------------------------------------------------------------            
-        if debug:
-            write_stdout(self.log_dir, '_sysout', sys.stdout )        
-            sys.stdout = sys.__stdout__
-        print(' Run information written to ', self.log_dir+'_sysout.out')
-
-
-        log("Starting at epoch {} of {} epochs. LR={}\n".format(self.epoch, epochs, learning_rate))
-        log("Steps per epochs      {} ".format(steps_per_epoch))
-        log("Last epoch completed  {} ".format(self.epoch))
-        log("Steps per epochs      {} ".format(steps_per_epoch))
-        log("Batch size            {} ".format(batch_size))
-        log("Checkpoint Path:      {} ".format(self.checkpoint_path))
-        log("Learning Rate         {} ".format(self.config.LEARNING_RATE))
-        log("Momentum              {} ".format(self.config.LEARNING_MOMENTUM))
-        log("Weight Decay:         {} ".format(self.config.WEIGHT_DECAY       ))
-        log("VALIDATION_STEPS      {} ".format(self.config.VALIDATION_STEPS   ))
-        log("REDUCE_LR_FACTOR      {} ".format(self.config.REDUCE_LR_FACTOR   ))
-        log("REDUCE_LR_COOLDOWN    {} ".format(self.config.REDUCE_LR_COOLDOWN ))
-        log("REDUCE_LR_PATIENCE    {} ".format(self.config.REDUCE_LR_PATIENCE ))
-        log("MIN_LR                {} ".format(self.config.MIN_LR             ))
-        log("EARLY_STOP_PATIENCE   {} ".format(self.config.EARLY_STOP_PATIENCE))        
-
-        
-
-        ##--------------------------------------------------------------------------------
-        ## Start main training loop
-        ##--------------------------------------------------------------------------------
-        early_stopping  = False
-        epoch_idx = self.epoch
-        # progbar.on_train_begin()
-        callbacks.on_train_begin()
-
-        if epoch_idx >= epochs:
-            print('Final epoch {} has already completed - Training will not proceed'.format(epochs))
-        else:
-        
-            while epoch_idx < epochs :
-                callbacks.on_epoch_begin(epoch_idx)
-                epoch_logs = {}
-                
-                for steps_index in range(steps_per_epoch):
-                    
-                    # print(' self.epoch {}   epochs {}  step {} '.format(self.epoch, epochs, steps_index))
-                    batch_logs = {}
-                    batch_logs['batch'] = steps_index
-                    batch_logs['size']  = batch_size    
-
-                    callbacks.on_batch_begin(steps_index, batch_logs)
-
-                    train_batch_x, train_batch_y = next(train_generator)
-
-                    
-                    print('len of train batch x' ,len(train_batch_x))
-                    for idx, i in  enumerate(train_batch_x):
-                        print(idx, 'type: ', type(i), 'shape: ', i.shape)
-                    print('len of train batch y' ,len(train_batch_y))
-                    for idx, i in  enumerate(train_batch_y):
-                        print(idx, 'type: ', type(i), 'shape: ', i.shape)
-                    # print(type(output_rois))
-                    # for i in model_output:
-                        # print( i.shape)                    
-                    
-                    results = mrcnn_model.keras_model.predict(train_batch_x)
-                    pr_hm_norm, gt_hm_norm, pr_hm_scores, gt_hm_scores = results[11:]                 
-
-                    # print('pr_hm_norm shape   :', pr_hm_norm.shape)
-                    # print('pr_hm_scores shape :', pr_hm_scores.shape)
-                    # print('gt_hm_norm shape   :', gt_hm_norm.shape)
-                    # print('gt_hm_scores shape :', gt_hm_scores.shape)
-                    
-                    outs = self.keras_model.train_on_batch([pr_hm_norm,  pr_hm_scores,gt_hm_norm, gt_hm_scores], train_batch_y)
-                
-                    if not isinstance(outs, list):
-                        outs = [outs]
-
-                    for l, o in zip(out_labels, outs):
-                        batch_logs[l] = o
-    
-                    callbacks.on_batch_end(steps_index, batch_logs)
-
-                ##-------------------------------
-                ## end of epoch operations     
-                ##-------------------------------
-                val_steps_done  = 0
-                val_all_outs    = []
-                val_batch_sizes = []
-                while val_steps_done < self.config.VALIDATION_STEPS:
-
-                    val_batch_x, val_batch_y = next(val_generator)
-                    val_results = mrcnn_model.keras_model.predict(val_batch_x)
-                    pr_hm_norm, gt_hm_norm, pr_hm_scores, gt_hm_scores = val_results[11:]                 
-                    
-                    # print('pr_hm_norm shape   :', pr_hm_norm.shape)
-                    # print('pr_hm_scores shape :', pr_hm_scores.shape)
-                    # print('gt_hm_norm shape   :', gt_hm_norm.shape)
-                    # print('gt_hm_scores shape :', gt_hm_scores.shape)
- 
-                    x = [pr_hm_norm, pr_hm_scores, gt_hm_norm, gt_hm_scores]
-                    # print('type ',type(x), len(x), x[0].shape[0])
-                    outs2 = self.keras_model.test_on_batch( x , val_batch_y)
-                    
-                    
-                    if isinstance(x, list):
-                        batch_size = x[0].shape[0]
-                    elif isinstance(x, dict):
-                        batch_size = list(x.values())[0].shape[0]
-                    else:
-                        batch_size = x.shape[0]
-                        
-                    if batch_size == 0:
-                        raise ValueError('Received an empty batch. '
-                                         'Batches should at least contain one item.')
-                    # else:
-                        # print('batch size:', batch_size)
-                        
-                    val_all_outs.append(outs2)
-                    val_steps_done += 1
-                    val_batch_sizes.append(batch_size)
-
-                ## calculate val_outs after all validations steps complete
-                # print(len(val_batch_sizes), len(val_all_outs))
-                # print(val_batch_sizes)
-                # print('\n val_all_outs:', np.asarray(val_all_outs).shape)
-                # pp.pprint(val_all_outs)
-
-                if not isinstance(outs2, list):
-                    val_outs =  np.average(np.asarray(val_all_outs), weights=val_batch_sizes)
-                else:
-                    averages = []
-                    for i in range(len(outs2)):
-                        averages.append(np.average([out[i] for out in val_all_outs], axis = 0, weights=val_batch_sizes))
-                    val_outs = averages
-                # print('val_outs is ', val_outs)
-                    
-                    
-                # write_log(callback, val_names, logs, batch_no//10)
-                print('\n  validation logs output: ', val_outs)
-                if not isinstance(val_outs, list):
-                    val_outs = [val_outs]
-                
-                # Same labels assumed.
-                for l, o in zip(out_labels, val_outs):
-                    epoch_logs['val_' + l] = o
-
-                callbacks.on_epoch_end(epoch_idx, epoch_logs)
-                epoch_idx += 1
-
-                # for callback in callbacks:
-                    # print(callback)
-                    # pp.pprint(dir(callback.model))
-                    # if hasattr(callback.model, 'stop_training') and (callback.model.stop_training ==True):
-                        # early_stopping = True
-                        # break
-                # if early_stopping:
-                    # print('{}  Early Stopping triggered....'.format(callback))
-                    # break    
-                
-            ##-------------------------------
-            ## end of training operations
-            ##--------------------------------
-            # if epoch_idx != self.epoch:
-            # chkpoint.on_epoch_end(epoch_idx -1, batch_logs)
-            callbacks.on_train_end()
-            self.epoch = max(epoch_idx - 1, epochs)
-            print('Final : self.epoch {}   epochs {}'.format(self.epoch, epochs))
-            
-        ##--------------------------------------------------------------------------------
-        ## End main training loop
-        ##--------------------------------------------------------------------------------
-        
-    ## copied from github but not used
-    # def write_log(callback, names, logs, batch_no):
-        # for name, value in zip(names, logs):
-            # summary = tf.Summary()
-            # summary_value = summary.value.add()
-            # summary_value.simple_value = value
-            # summary_value.tag = name
-            # callback.writer.add_summary(summary, batch_no)
-            # callback.writer.flush()        
-
-
-            
-    def compile(self, losses, optimizer):
-        '''
-        Gets the model ready for training. Adds losses, regularization, and
-        metrics. Then calls the Keras compile() function.
-        '''
-        assert isinstance(losses, list) , "A loss function must be defined as the objective"
-        # Optimizer object
-        print('\n')
-        print(' Compile Model :')
-        print('----------------')
-        print('    losses        : ', losses)
-        print('    optimizer     : ', optimizer)
-        
-        # optimizer= tf.train.GradientDescentOptimizer(learning_rate, momentum)
-        #optimizer = keras.optimizers.SGD(lr=learning_rate, momentum=momentum, clipnorm=5.0)
-        # optimizer = keras.optimizers.RMSprop(lr=learning_rate, rho=0.9, epsilon=None, decay=0.0)
-        # optimizer = keras.optimizers.Adagrad(lr=learning_rate, epsilon=None, decay=0.01)
-        # optimizer = keras.optimizers.Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
-        # optimizer = keras.optimizers.Nadam(lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
-
-        ##------------------------------------------------------------------------
-        ## Add Losses
-        ## These are the losses aimed for minimization
-        ## Normally Keras expects the same number of losses as outputs. Since we 
-        ## are returning more outputs , we go deep and set the losses in the base
-        ## layers () 
-        ##------------------------------------------------------------------------    
-        print()
-        # First, clear previously set losses to avoid duplication
-        self.keras_model._losses = []
-        self.keras_model._per_input_losses = {}
-
-        print('Initial self.keras_model.losses :')
-        print('---------------------------------')
-        print(' losses passed to compile : ', losses)
-        print(' self.keras_model.losses  : ', self.keras_model.losses)
-        
-        print()
-        print('Add losses to self.keras_model.losses')
-        print('-------------------------------------')
-        
-        loss_names = losses              
-        for name in loss_names:
-            layer = self.keras_model.get_layer(name)
-            print(' --  Loss: {}  Related Layer is : {}'.format(name, layer.name))
-            if layer.output in self.keras_model.losses:
-                print('      ',layer.output,' is already in self.keras_model.losses, and wont be added to list')
-                continue
-            print('    >> Add add loss for ', layer.output, ' to list of losses...')
-            self.keras_model.add_loss(tf.reduce_mean(layer.output, keepdims=True))
-            
-        print()    
-        print('self.keras_model.losses after adding losses passed to compile() : ') 
-        print('----------------------------------------------------------------- ') 
-        for i in self.keras_model.losses:
-            print('     ', i)
-
-        print()    
-        print('Keras_model._losses:' ) 
-        print('---------------------' ) 
-        for i in self.keras_model._losses:
-            print('     ', i)
-
-        print()    
-        print('Keras_model._per_input_losses:')
-        print('------------------------------')
-        for i in self.keras_model._per_input_losses:
-            print('     ', i)
-        # pp.pprint(self.keras_model._per_input_losses)
-            
-            
-        ##------------------------------------------------------------------------    
-        ## Add L2 Regularization as loss to list of losses
-        ##------------------------------------------------------------------------    
-        # Skip gamma and beta weights of batch normalization layers.
-        # reg_losses = [keras.regularizers.l2(self.config.WEIGHT_DECAY)(w) / tf.cast(tf.size(w), tf.float32)
-                      # for w in self.keras_model.trainable_weights
-                      # if 'gamma' not in w.name and 'beta' not in w.name]
-        # self.keras_model.add_loss(tf.add_n(reg_losses))
-
-        print()    
-        print('Final list of keras_model.losses, after adding L2 regularization as loss to list : ') 
-        print('---------------------------------------------------------------------------------- ') 
-        for i in self.keras_model.losses:
-            print('     ', i)
-        # pp.pprint(self.keras_model.losses)
-
-        ##------------------------------------------------------------------------    
-        ## Compile
-        ##------------------------------------------------------------------------   
-        print()
-        print('Compile ')
-        print('--------')
-        print (' Length of Keras_Model.outputs:', len(self.keras_model.outputs))
-        self.keras_model.compile(optimizer=optimizer, 
-                                 loss=[None] * len(self.keras_model.outputs))
-        print('-------------------------------------------------------------------------')
-
-        ##------------------------------------------------------------------------    
-        ## Add metrics for losses
-        ##------------------------------------------------------------------------    
-        print()
-        print(' Add Metrics :')
-        print('--------------')                                 
-        print (' Initial Keras metric_names:', self.keras_model.metrics_names)                                 
-
-        for name in loss_names:
-            if name in self.keras_model.metrics_names:
-                print('      ' , name , 'is already in in self.keras_model.metrics_names')
-                continue
-            layer = self.keras_model.get_layer(name)
-            print('    Loss name : {}  Related Layer is : {}'.format(name, layer.name))
-            self.keras_model.metrics_names.append(name)
-            self.keras_model.metrics_tensors.append(tf.reduce_mean(layer.output, keepdims=True))
-            print('    >> Add metric ', name, ' with metric tensor: ', layer.output.name, ' to list of metrics ...')
-        
-        print()
-        print ('Final Keras metric_names :') 
-        print ('--------------------------') 
-        for i in self.keras_model.metrics_names:
-            print('     ', i)
-
-        print()
-        print(' self.keras_model.losses after adding losses passed to compile() : ') 
-        print('------------------------------------------------------------------ ') 
-        for i in self.keras_model.losses:
-            print('     ', i)
-
-        print()    
-        print('Keras_model._losses:' ) 
-        print('---------------------' ) 
-        for i in self.keras_model._losses:
-            print('     ', i)
-
-        print()    
-        print('Keras_model._per_input_losses:')
-        print('------------------------------')
-        for i in self.keras_model._per_input_losses:
-            print('     ', i)
-        # pp.pprint(self.keras_model._per_input_losses)        
-        print()
-        
-        return
+"""
 
 

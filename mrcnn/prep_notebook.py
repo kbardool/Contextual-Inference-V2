@@ -2,7 +2,7 @@
 prep_dev_notebook:
 pred_newshapes_dev: Runs against new_shapes
 '''
-import os, sys, random, math, re, gc, time
+import os, sys, random, math, re, gc, time, platform
 import numpy as np
 import cv2
 import matplotlib
@@ -20,47 +20,35 @@ import mrcnn.new_shapes   as new_shapes
 from datetime import datetime   
 from mrcnn.config      import Config
 from mrcnn.dataset     import Dataset 
-from mrcnn.utils       import stack_tensors, stack_tensors_3d, log
+from mrcnn.utils       import stack_tensors, stack_tensors_3d, log, Paths
 from mrcnn.datagen     import data_generator, load_image_gt
 from mrcnn.coco        import CocoDataset, CocoConfig, CocoInferenceConfig, evaluate_coco, build_coco_results
 
-import platform
+# syst = platform.system()
+# if syst == 'Windows':
+    # # Root directory of the project
+    # print(' windows ' , syst)
+    # # WINDOWS MACHINE ------------------------------------------------------------------
+    # DIR_ROOT          = "F:\\"
+    # DIR_TRAINING   = os.path.join(DIR_ROOT, 'models')
+    # DIR_DATASET    = os.path.join(DIR_ROOT, 'MLDatasets')
+    # DIR_PRETRAINED = os.path.join(DIR_ROOT, 'PretrainedModels')
+# elif syst == 'Linux':
+    # print(' Linx ' , syst)
+    # # LINUX MACHINE ------------------------------------------------------------------
+    # DIR_ROOT       = os.getcwd()
+    # DIR_TRAINING   = os.path.expanduser('~/models')
+    # DIR_DATASET    = os.path.expanduser('~/MLDatasets')
+    # DIR_PRETRAINED = os.path.expanduser('~/PretrainedModels')
+# else :
+    # raise Error('unreconized system ')
 
-syst = platform.system()
-if syst == 'Windows':
-    # Root directory of the project
-    print(' windows ' , syst)
-    # WINDOWS MACHINE ------------------------------------------------------------------
-    ROOT_DIR          = "E:\\"
-    TRAINING_DIR   = os.path.join(ROOT_DIR, "models")
-    DATASET_DIR    = os.path.join(ROOT_DIR, 'MLDatasets')
-    PRETRAINED_DIR = os.path.join(ROOT_DIR, 'PretrainedModels')
-elif syst == 'Linux':
-    print(' Linx ' , syst)
-    # LINUX MACHINE ------------------------------------------------------------------
-    ROOT_DIR       = os.getcwd()
-    TRAINING_DIR   = os.path.expanduser('~/models')
-    DATASET_DIR    = os.path.expanduser('~/MLDatasets')
-    PRETRAINED_DIR = os.path.expanduser('~/PretrainedModels')
-else :
-    raise Error('unreconized system  '      )
-
-# MODEL_DIR    = os.path.join(TRAINING_DIR, "mrcnn_logs")
-
-TRAINING_PATH     = os.path.join(TRAINING_DIR  , "train_mrcnn_coco")
-COCO_DATASET_PATH = os.path.join(DATASET_DIR   , "coco2014")
-COCO_MODEL_PATH   = os.path.join(PRETRAINED_DIR, "mask_rcnn_coco.h5")
-RESNET_MODEL_PATH = os.path.join(PRETRAINED_DIR, "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
-VGG16_MODEL_PATH  = os.path.join(PRETRAINED_DIR, "fcn_vgg16_weights_tf_dim_ordering_tf_kernels.h5")
-
-# print('\n\n\n')
-# print(' Checkpoint directory  : ', TRAINING_DIR)
-# print(' Checkpoint folder     : ', TRAINING_PATH)
-# print(' COCO   Model Path     : ', COCO_MODEL_PATH)
-# print(' ResNet Model Path     : ', RESNET_MODEL_PATH)
-# print(' VGG16  Model Path     : ', COCO_MODEL_PATH)
-
-
+# TRAINING_PATH         = os.path.join(DIR_TRAINING  , "train_mrcnn_coco")
+# COCO_DATASET_PATH     = os.path.join(DIR_DATASET   , "coco2014")
+# COCO_MODEL_PATH       = os.path.join(DIR_PRETRAINED, "mask_rcnn_coco.h5")
+# RESNET_MODEL_PATH     = os.path.join(DIR_PRETRAINED, "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
+# VGG16_MODEL_PATH      = os.path.join(DIR_PRETRAINED, "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5")
+# FCN_VGG16_MODEL_PATH  = os.path.join(DIR_PRETRAINED, "fcn_vgg16_weights_tf_dim_ordering_tf_kernels.h5")
 
 print("Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
 import pprint
@@ -71,25 +59,21 @@ np.set_printoptions(linewidth=100,precision=4,threshold=1000, suppress = True)
 ##------------------------------------------------------------------------------------
 ## Build  NewShapes Training and Validation datasets
 ##------------------------------------------------------------------------------------
-def newshapes_dataset(type, config, shuffle = True, augment = False):
+def newshapes_dataset(type, config, image_count, shuffle = True, augment = False):
     '''
         type = { train, val, test}
     '''
     dataset = new_shapes.NewShapesDataset(config)
-    dataset.load_shapes(config.TRAINING_IMAGES) 
+    dataset.load_shapes(image_count) 
     dataset.prepare()
 
-    generator = data_generator(dataset, config, batch_size=config.BATCH_SIZE,
-                                shuffle=shuffle,
-                                augment = augment)   
-
-    return [dataset, generator]    
+    return dataset
 
 
 ##------------------------------------------------------------------------------------
 ## Build  COCO Training and Validation datasets
 ##------------------------------------------------------------------------------------
-def coco_dataset(type, config, shuffle = True, augment = False):
+def coco_dataset(type, config):
     '''
         type = { train, val, test}
     '''
@@ -102,38 +86,65 @@ def coco_dataset(type, config, shuffle = True, augment = False):
         dataset.load_coco(config.COCO_DATASET_PATH, i )
     dataset.prepare()
 
-    generator = data_generator(dataset, config, batch_size = config.BATCH_SIZE,
-                                     shuffle = shuffle,
-                                     augment = augment)   
-
-    return [dataset, generator]
+    return dataset
 
     
+##------------------------------------------------------------------------------------
+## Build Training and Validation datasets
+##------------------------------------------------------------------------------------
+def prep_coco_dataset(type, config, generator = False):
+    # dataset_train, train_generator = coco_dataset(["train",  "val35k"], mrcnn_config)
+
+    # if args.command == "train":
+    # Training dataset. Use the training set and 35K from the validation set, as as in the Mask RCNN paper.
+    dataset = CocoDataset()
+    
+    # dataset_test.load_coco(COCO_DATASET_PATH,  "train", class_ids=mrcnn_config.COCO_CLASSES)
+    for i in type:
+        dataset.load_coco(config.COCO_DATASET_PATH, i )
+    dataset.prepare()
+
+    results =  dataset
+    
+    if generator:
+        generator = data_generator(dataset, config, 
+                                   batch_size=config.BATCH_SIZE,
+                                   shuffle = True, augment = False) 
+        results = [dataset, generator]
+    return results
     
 ##------------------------------------------------------------------------------------    
 ## mrcnn COCO TRAIN
 ##------------------------------------------------------------------------------------    
 def mrcnn_coco_train(mode = 'training', FCN_layers = False, 
                      batch_sz = 1, epoch_steps = 4, 
+                     training_folder = 'train_mrcnn_coco',
                      mrcnn_config = None):
 
     ##------------------------------------------------------------------------------------
     ## Build configuration object , if none has been passed
     ##------------------------------------------------------------------------------------
     if mrcnn_config is None:
+        paths = Paths()
+        paths.display()
         mrcnn_config = CocoConfig()
         mrcnn_config.NAME               = 'mrcnn'              
-        mrcnn_config.TRAINING_PATH      = os.path.join(TRAINING_DIR, training_folder)
-        mrcnn_config.COCO_DATASET_PATH  = COCO_DATASET_PATH 
-        mrcnn_config.COCO_MODEL_PATH    = COCO_MODEL_PATH   
-        mrcnn_config.RESNET_MODEL_PATH  = RESNET_MODEL_PATH 
-        mrcnn_config.VGG16_MODEL_PATH   = VGG16_MODEL_PATH  
+        mrcnn_config.DIR_DATASET        = paths.DIR_DATASET
+        mrcnn_config.DIR_TRAINING       = paths.DIR_TRAINING
+        mrcnn_config.DIR_PRETRAINED     = paths.DIR_PRETRAINED
+        mrcnn_config.TRAINING_PATH      = os.path.join(paths.DIR_TRAINING, training_folder)
+        mrcnn_config.COCO_DATASET_PATH  = paths.COCO_DATASET_PATH 
+        mrcnn_config.COCO_MODEL_PATH    = paths.COCO_MODEL_PATH   
+        mrcnn_config.RESNET_MODEL_PATH  = paths.RESNET_MODEL_PATH 
+        mrcnn_config.VGG16_MODEL_PATH   = paths.VGG16_MODEL_PATH  
+
         mrcnn_config.COCO_CLASSES       = None 
         mrcnn_config.DETECTION_PER_CLASS = 200
         mrcnn_config.HEATMAP_SCALE_FACTOR = 4
         mrcnn_config.BATCH_SIZE         = batch_sz                  # Batch size is 2 (# GPUs * images/GPU).
         mrcnn_config.IMAGES_PER_GPU     = batch_sz                  # Must match BATCH_SIZE
         mrcnn_config.STEPS_PER_EPOCH    = epoch_steps
+        mrcnn_config.NEW_LOG_FOLDER     = True
         # mrcnn_config.COCO_CLASSES       = [1,2,3,4,5,6,7,8,9,10]
         # mrcnn_config.NUM_CLASSES        = len(mrcnn_config.COCO_CLASSES) + 1
         # mrcnn_config.FCN_INPUT_SHAPE        = config.IMAGE_SHAPE[0:2]
@@ -148,55 +159,44 @@ def mrcnn_coco_train(mode = 'training', FCN_layers = False,
     except: 
         pass
     KB.clear_session()
-    mrcnn_model = mrcnn_modellib.MaskRCNN(mode=mode, config=mrcnn_config, model_dir=TRAINING_PATH)
+    mrcnn_model = mrcnn_modellib.MaskRCNN(mode=mode, config=mrcnn_config)
 
     ##------------------------------------------------------------------------------------
     ## Load Mask RCNN Model Weight file
     ##------------------------------------------------------------------------------------
-    # mrcnn_model.load_model_weights( init_with = init_weights)   
-
-    # print('==========================================')
-    # print(" MRCNN MODEL Load weight file COMPLETE    ")
-    # print('==========================================')
-    # print('\n\n\n')
-    # print(' Checkpoint directory  : ', TRAINING_DIR)
-    # print(' Checkpoint folder     : ', TRAINING_PATH)
-    # print(' COCO   Model Path     : ', COCO_MODEL_PATH)
-    # print(' ResNet Model Path     : ', RESNET_MODEL_PATH)
-    # print(' VGG16  Model Path     : ', COCO_MODEL_PATH)
-    
-    # mrcnn_config.display()  
     mrcnn_model.layer_info()
-    # print('\n Outputs: ') 
-    # pp.pprint(mrcnn_model.keras_model.outputs)
     
-    ##------------------------------------------------------------------------------------
-    ## Build Training and Validation datasets
-    ##------------------------------------------------------------------------------------
-    dataset_train, train_generator = coco_dataset(["train",  "val35k"], mrcnn_config)
-    dataset_val  , val_generator   = coco_dataset(["minival"], mrcnn_config)
-    mrcnn_config.display()     
-    
-    return [mrcnn_model, dataset_train, dataset_val, train_generator, val_generator, mrcnn_config]
+    return [mrcnn_model, mrcnn_config]
     
 
+
+    
 ##------------------------------------------------------------------------------------    
 ## mrcnn COCO TEST
 ##------------------------------------------------------------------------------------    
-def mrcnn_coco_test(mode = 'inference' , batch_sz = 5, epoch_steps = 4, training_folder = "mrcnn_coco_dev"):
+def mrcnn_coco_test(mode = 'inference' , 
+                    batch_sz = 5, epoch_steps = 4, training_folder = "mrcnn_coco_dev",
+                    mrcnn_config = None ):
 
-    TRAINING_PATH = os.path.join(TRAINING_DIR, training_folder)
+    if mrcnn_config is None:    
+        paths = Paths()
+        paths.display()
+        mrcnn_config = CocoInferenceConfig()
+        mrcnn_config.NAME                 = 'mrcnn'              
+        mrcnn_config.DIR_DATASET        = paths.DIR_DATASET
+        mrcnn_config.DIR_TRAINING       = paths.DIR_TRAINING
+        mrcnn_config.DIR_PRETRAINED     = paths.DIR_PRETRAINED
+        mrcnn_config.TRAINING_PATH      = os.path.join(paths.DIR_TRAINING, training_folder)
+        mrcnn_config.COCO_DATASET_PATH  = paths.COCO_DATASET_PATH 
+        mrcnn_config.COCO_MODEL_PATH    = paths.COCO_MODEL_PATH   
+        mrcnn_config.RESNET_MODEL_PATH  = paths.RESNET_MODEL_PATH 
+        mrcnn_config.VGG16_MODEL_PATH   = paths.VGG16_MODEL_PATH  
 
-    mrcnn_config = CocoInferenceConfig()
-    mrcnn_config.NAME               = 'mrcnn'              
-    mrcnn_config.TRAINING_PATH      = TRAINING_PATH
-    mrcnn_config.COCO_MODEL_PATH    = COCO_MODEL_PATH   
-    mrcnn_config.RESNET_MODEL_PATH  = RESNET_MODEL_PATH 
-    mrcnn_config.VGG16_MODEL_PATH   = VGG16_MODEL_PATH  
-    mrcnn_config.DETECTION_PER_CLASS= 200
-    mrcnn_config.HEATMAP_SCALE_FACTOR = 4
-    # mrcnn_config.COCO_CLASSES       = None
-    # mrcnn_config.NUM_CLASSES      = len(mrcnn_config.COCO_CLASSES) + 1
+        mrcnn_config.DETECTION_PER_CLASS  = 200
+        mrcnn_config.HEATMAP_SCALE_FACTOR = 4
+        mrcnn_config.NEW_LOG_FOLDER     = False
+        # mrcnn_config.COCO_CLASSES       = None
+        # mrcnn_config.NUM_CLASSES      = len(mrcnn_config.COCO_CLASSES) + 1
 
     # Recreate the model in inference mode
     try :
@@ -206,7 +206,7 @@ def mrcnn_coco_test(mode = 'inference' , batch_sz = 5, epoch_steps = 4, training
     except: 
         pass
     KB.clear_session()
-    mrcnn_model = mrcnn_modellib.MaskRCNN(mode=mode, config=mrcnn_config, model_dir=TRAINING_PATH)
+    mrcnn_model = mrcnn_modellib.MaskRCNN(mode=mode, config=mrcnn_config)
 
     ##------------------------------------------------------------------------------------
     ## Load Mask RCNN Model Weight file
@@ -220,22 +220,84 @@ def mrcnn_coco_test(mode = 'inference' , batch_sz = 5, epoch_steps = 4, training
     ##------------------------------------------------------------------------------------
     # dataset_train, train_generator = coco_dataset(["train",  "val35k"], mrcnn_config)
     dataset_test, test_generator = coco_dataset(["val"], mrcnn_config)
-    
+    test_generator = data_generator(dataset_test, mrcnn_config, 
+                                   batch_size=mrcnn_config.BATCH_SIZE,
+                                   shuffle = True, augment = False) 
+
     mrcnn_config.display()     
     
     return [mrcnn_model, dataset_test, test_generator, mrcnn_config]
     
 
+    
+##------------------------------------------------------------------------------------    
+## FCN TRAIN
+##------------------------------------------------------------------------------------    
+def fcn_coco_train(mode = 'training', fcn_config = None, mrcnn_config = None, training_folder = 'train_mrcnn_coco'):
+    
+    FCN_TRAINING_PATH = os.path.join(DIR_TRAINING  , "train_fcn_coco")
+    ##------------------------------------------------------------------------------------
+    ## Build configuration object , if none has been passed
+    ##------------------------------------------------------------------------------------
+    if fcn_config is None:
+        fcn_config = CocoConfig()
+        fcn_config.IMAGE_MAX_DIM        = 600
+        fcn_config.IMAGE_MIN_DIM        = 480      
+        fcn_config.NAME                 = 'fcn'              
+        fcn_config.BATCH_SIZE           = mrcnn_config.BATCH_SIZE                 # Batch size is 2 (# GPUs * images/GPU).
+        fcn_config.IMAGES_PER_GPU       = mrcnn_config.BATCH_SIZE               # Must match BATCH_SIZE
+        fcn_config.STEPS_PER_EPOCH      = mrcnn_config.steps_in_epoch
+        fcn_config.LEARNING_RATE        = mrcnn_config.lr
+        fcn_config.EPOCHS_TO_RUN        = mrcnn_config.epochs
+        fcn_config.FCN_INPUT_SHAPE      = mrcnn_config.IMAGE_SHAPE[0:2] // mrcnn_config.HEATMAP_SCALE_FACTOR 
+        fcn_config.LAST_EPOCH_RAN       = mrcnn_config.last_epoch
+        fcn_config.WEIGHT_DECAY         = 2.0e-4
+        fcn_config.VALIDATION_STEPS     = mrcnn_config.val_steps
+        fcn_config.REDUCE_LR_FACTOR     = 0.5
+        fcn_config.REDUCE_LR_COOLDOWN   = 50
+        fcn_config.REDUCE_LR_PATIENCE   = 33
+        fcn_config.EARLY_STOP_PATIENCE  = 50
+        fcn_config.EARLY_STOP_MIN_DELTA = 1.0e-4
+        fcn_config.MIN_LR               = 1.0e-10
+        fcn_config.NEW_LOG_FOLDER       = True  
+        fcn_config.OPTIMIZER            = args.opt.upper()
+        fcn_config.FCN_TRAINING_PATH    = FCN_TRAINING_PATH
+
+    ##------------------------------------------------------------------------------------
+    ## Build FCN Model in Training Mode
+    ##------------------------------------------------------------------------------------
+    try :
+        del fcn_model
+        gc.collect()
+    except: 
+        pass    
+    fcn_model = fcn_modellib.FCN(mode="training", config=fcn_config, model_dir=MODEL_DIR)
+
+    print(' COCO Model Path       : ', COCO_MODEL_PATH)
+    print(' Checkpoint folder Path: ', MODEL_DIR)
+    print(' Model Parent Path     : ', MODEL_PATH)
+
+    ##------------------------------------------------------------------------------------
+    ## Load Mask RCNN Model Weight file
+    ##------------------------------------------------------------------------------------
+    # mrcnn_config.display()  
+    fcn_model.layer_info()
+    # print('\n Outputs: ') 
+    # pp.pprint(mrcnn_model.keras_model.outputs)
+    
+    return [fcn_model,fcn_config]
+    
+    
 
 ##------------------------------------------------------------------------------------    
 ## New Shapes TESTING
 ##------------------------------------------------------------------------------------    
 def prep_newshapes_test(init_with = 'last', FCN_layers = False, batch_sz = 5, epoch_steps = 4,training_folder= "mrcnn_newshape_test_logs"):
 
-    MODEL_DIR = os.path.join(TRAINING_DIR, training_folder)
 
     # Build configuration object -----------------------------------------------
     config = new_shapes.NewShapesConfig()
+    config.TRAINING_PATH        = os.path.join(DIR_TRAINING, training_folder)
     config.BATCH_SIZE      = batch_sz                  # Batch size is 2 (# GPUs * images/GPU).
     config.IMAGES_PER_GPU  = batch_sz                  # Must match BATCH_SIZE
     config.STEPS_PER_EPOCH = epoch_steps
@@ -256,15 +318,13 @@ def prep_newshapes_test(init_with = 'last', FCN_layers = False, batch_sz = 5, ep
     except: 
         pass
     KB.clear_session()
-    model = modellib.MaskRCNN(mode="inference", 
-                              config=config,
-                              model_dir=MODEL_DIR, 
+    model = modellib.MaskRCNN(mode="inference", config=config, model_dir=config.TRAINING_PATH, 
                               FCN_layers = FCN_layers )
         
-    print(' COCO Model Path       : ', COCO_TRAINING_DIR)
+    print(' COCO Model Path       : ', COCO_DIR_TRAINING)
     print(' Checkpoint folder Path: ', MODEL_DIR)
-    print(' Model Parent Path     : ', TRAINING_DIR)
-    print(' Resent Model Path     : ', RESNET_TRAINING_DIR)
+    print(' Model Parent Path     : ', DIR_TRAINING)
+    print(' Resent Model Path     : ', RESNET_DIR_TRAINING)
     # exclude_layers = \
            # ['fcn_block1_conv1' 
            # ,'fcn_block1_conv2' 
@@ -312,77 +372,15 @@ def prep_newshapes_test(init_with = 'last', FCN_layers = False, batch_sz = 5, ep
 ##------------------------------------------------------------------------------------    
 ## New Shapes TRAINING 
 ##------------------------------------------------------------------------------------            
-def prep_newshapes_train2(init_with = "last",  config=None):
-
-    import mrcnn.new_shapes as new_shapes
-    config.CHECKPOINT_FOLDER = os.path.join(TRAINING_DIR, config.CHECKPOINT_FOLDER)
-
-    try :
-        del model
-        print('delete model is successful')
-        gc.collect()
-    except: 
-        pass
-    KB.clear_session()
-    model = modellib.MaskRCNN(mode="training", config=config, model_dir=config.CHECKPOINT_FOLDER, FCN_layers = config.FCN_LAYERS)
-
-    print('TRAINING_DIR        : ', TRAINING_DIR)
-    print('COCO_TRAINING_DIR   : ', COCO_TRAINING_DIR)
-    print('RESNET_TRAINING_DIR : ', RESNET_TRAINING_DIR)
-    print('CHECKPOINT_DIR      : ', config.CHECKPOINT_FOLDER)
-    print('Last Saved Model    : ', model.find_last())
-    # exclude_layers = \
-           # ['fcn_block1_conv1' 
-           # ,'fcn_block1_conv2' 
-           # ,'fcn_block1_pool' 
-           # ,'fcn_block2_conv1'
-           # ,'fcn_block2_conv2' 
-           # ,'fcn_block2_pool'  
-           # ,'fcn_block3_conv1' 
-           # ,'fcn_block3_conv2' 
-           # ,'fcn_block3_conv3' 
-           # ,'fcn_block3_pool'  
-           # ,'fcn_block4_conv1' 
-           # ,'fcn_block4_conv2' 
-           # ,'fcn_block4_conv3' 
-           # ,'fcn_block4_pool'  
-           # ,'fcn_block5_conv1' 
-           # ,'fcn_block5_conv2' 
-           # ,'fcn_block5_conv3' 
-           # ,'fcn_block5_pool'  
-           # ,'fcn_fc1'          
-           # ,'dropout_1'        
-           # ,'fcn_fc2'          
-           # ,'dropout_2'        
-           # ,'fcn_classify'     
-           # ,'fcn_bilinear'     
-           # ,'fcn_heatmap_norm' 
-           # ,'fcn_scoring'      
-           # ,'fcn_heatmap'      
-           # ,'fcn_norm_loss']
-    # load_model(model, init_with = 'last', exclude = exclude_layers)
-    model.load_model_weights(init_with = init_with)
-    
-    # print('=====================================')
-    # print(" Load second weight file ?? ")
-    # model.keras_model.load_weights('E:/Models/vgg16_weights_tf_dim_ordering_tf_kernels.h5', by_name= True)
-    dataset_train, train_generator = newshapes_dataset("train", mrcnn_config)
-    dataset_val  , val_generator   = newshapes_dataset("val"  , mrcnn_config)    
-    
-                                 
-    config.display()     
-    return [model, dataset_train, dataset_val, train_generator, val_generator, config]
-
-    
-##------------------------------------------------------------------------------------    
-## New Shapes TRAINING 
-##------------------------------------------------------------------------------------            
 def prep_newshapes_train(init_with = "last", FCN_layers= False, batch_sz =5, epoch_steps = 4, training_folder= None):
 
-    MODEL_DIR = os.path.join(TRAINING_DIR, training_folder)
+    import mrcnn.new_shapes as new_shapes
+    config.CHECKPOINT_FOLDER = os.path.join(DIR_TRAINING, config.CHECKPOINT_FOLDER)
+    MODEL_DIR = os.path.join(DIR_TRAINING, training_folder)
 
     # Build configuration object -----------------------------------------------
     config = new_shapes.NewShapesConfig()
+    config.TRAINING_PATH        = os.path.join(DIR_TRAINING, training_folder)
     config.BATCH_SIZE      = batch_sz                  # Batch size is 2 (# GPUs * images/GPU).
     config.IMAGES_PER_GPU  = batch_sz                  # Must match BATCH_SIZE
     config.STEPS_PER_EPOCH = epoch_steps
@@ -406,11 +404,11 @@ def prep_newshapes_train(init_with = "last", FCN_layers= False, batch_sz =5, epo
     except: 
         pass
     KB.clear_session()
-    model = modellib.MaskRCNN(mode="training", config=config, model_dir=MODEL_DIR,FCN_layers = FCN_layers)
+    model = modellib.MaskRCNN(mode="training", config=config, model_dir=config.TRAINING_PATH, FCN_layers = config.FCN_LAYERS)
 
-    print('TRAINING_DIR        : ', TRAINING_DIR)
-    print('COCO_TRAINING_DIR   : ', COCO_TRAINING_DIR)
-    print('RESNET_TRAINING_DIR : ', RESNET_TRAINING_DIR)
+    print('DIR_TRAINING        : ', DIR_TRAINING)
+    print('COCO_DIR_TRAINING   : ', COCO_DIR_TRAINING)
+    print('RESNET_DIR_TRAINING : ', RESNET_DIR_TRAINING)
     print('MODEL_DIR         : ', MODEL_DIR)
     print('Last Saved Model  : ', model.find_last())
     # exclude_layers = \
@@ -449,28 +447,21 @@ def prep_newshapes_train(init_with = "last", FCN_layers= False, batch_sz =5, epo
     # print(" Load second weight file ?? ")
     # model.keras_model.load_weights('E:/Models/vgg16_weights_tf_dim_ordering_tf_kernels.h5', by_name= True)
     
+    dataset_train, train_generator = newshapes_dataset("train", mrcnn_config, image_count = 10000)
+    dataset_val  , val_generator   = newshapes_dataset("val"  , mrcnn_config, image_count = 2500)
     
-    
-    train_generator = data_generator(dataset_train, model.config, shuffle=True,
-                                 batch_size=model.config.BATCH_SIZE,
-                                 augment = False)   
-
-
-    val_generator = data_generator(dataset_val, model.config, shuffle=True, 
-                                    batch_size=model.config.BATCH_SIZE,
-                                    augment=False)                                           
+                                 
     config.display()     
     return [model, dataset_train, dataset_val, train_generator, val_generator, config]
 
     
 
-    
 ##------------------------------------------------------------------------------------    
 ## Old Shapes TRAINING
 ##------------------------------------------------------------------------------------   
 def prep_oldshapes_train(init_with = None, FCN_layers = False, batch_sz = 5, epoch_steps = 4, training_folder= "mrcnn_oldshape_training_logs"):
     import mrcnn.shapes    as shapes
-    MODEL_DIR = os.path.join(TRAINING_DIR, training_folder)
+    MODEL_DIR = os.path.join(DIR_TRAINING, training_folder)
 
     # Build configuration object -----------------------------------------------
     config = shapes.ShapesConfig()
@@ -498,10 +489,10 @@ def prep_oldshapes_train(init_with = None, FCN_layers = False, batch_sz = 5, epo
     KB.clear_session()
     model = modellib.MaskRCNN(mode="training", config=config, model_dir=MODEL_DIR, FCN_layers = FCN_layers)
 
-    print(' COCO Model Path       : ', COCO_TRAINING_DIR)
+    print(' COCO Model Path       : ', COCO_DIR_TRAINING)
     print(' Checkpoint folder Path: ', MODEL_DIR)
-    print(' Model Parent Path     : ', TRAINING_DIR)
-    print(' Resent Model Path     : ', RESNET_TRAINING_DIR)
+    print(' Model Parent Path     : ', DIR_TRAINING)
+    print(' Resent Model Path     : ', RESNET_DIR_TRAINING)
 
     model.load_model_weights(init_with = init_with)
 
@@ -520,8 +511,8 @@ def prep_oldshapes_train(init_with = None, FCN_layers = False, batch_sz = 5, epo
     
 def prep_oldshapes_test(init_with = None, FCN_layers = False, batch_sz = 5, epoch_steps = 4, training_folder= "mrcnn_oldshape_test_logs"):
     import mrcnn.shapes as shapes
-    MODEL_DIR = os.path.join(TRAINING_DIR, training_folder)
-    # MODEL_DIR = os.path.join(TRAINING_DIR, "mrcnn_development_logs")
+    MODEL_DIR = os.path.join(DIR_TRAINING, training_folder)
+    # MODEL_DIR = os.path.join(DIR_TRAINING, "mrcnn_development_logs")
 
     # Build configuration object -----------------------------------------------
     config = shapes.ShapesConfig()
@@ -548,10 +539,10 @@ def prep_oldshapes_test(init_with = None, FCN_layers = False, batch_sz = 5, epoc
                               model_dir=MODEL_DIR, 
                               FCN_layers = FCN_layers )
         
-    print(' COCO Model Path       : ', COCO_TRAINING_DIR)
+    print(' COCO Model Path       : ', COCO_DIR_TRAINING)
     print(' Checkpoint folder Path: ', MODEL_DIR)
-    print(' Model Parent Path     : ', TRAINING_DIR)
-    print(' Resent Model Path     : ', RESNET_TRAINING_DIR)
+    print(' Model Parent Path     : ', DIR_TRAINING)
+    print(' Resent Model Path     : ', RESNET_DIR_TRAINING)
 
     model.load_model_weights(init_with = init_with)
 
@@ -568,7 +559,7 @@ def prep_oldshapes_test(init_with = None, FCN_layers = False, batch_sz = 5, epoc
 ##------------------------------------------------------------------------------------        
 def prep_oldshapes_dev(init_with = None, FCN_layers = False, batch_sz = 5):
     import mrcnn.shapes    as shapes
-    MODEL_DIR = os.path.join(TRAINING_DIR, "mrcnn_oldshape_dev_logs")
+    MODEL_DIR = os.path.join(DIR_TRAINING, "mrcnn_oldshape_dev_logs")
 
     config = build_config(batch_sz = batch_sz)
 
@@ -585,10 +576,10 @@ def prep_oldshapes_dev(init_with = None, FCN_layers = False, batch_sz = 5):
     KB.clear_session()
     model = modellib.MaskRCNN(mode="training", config=config, model_dir=MODEL_DIR, FCN_layers = FCN_layers)
 
-    print(' COCO Model Path       : ', COCO_TRAINING_DIR)
+    print(' COCO Model Path       : ', COCO_DIR_TRAINING)
     print(' Checkpoint folder Path: ', MODEL_DIR)
-    print(' Model Parent Path     : ', TRAINING_DIR)
-    print(' Resent Model Path     : ', RESNET_TRAINING_DIR)
+    print(' Model Parent Path     : ', DIR_TRAINING)
+    print(' Resent Model Path     : ', RESNET_DIR_TRAINING)
 
     load_model(model, init_with = init_with)
 
@@ -608,7 +599,7 @@ def prep_oldshapes_dev(init_with = None, FCN_layers = False, batch_sz = 5):
 ##------------------------------------------------------------------------------------            
 def prep_newshapes_dev(init_with = "last", FCN_layers= False, batch_sz = 5):
     import mrcnn.new_shapes as new_shapes
-    MODEL_DIR = os.path.join(TRAINING_DIR, "mrcnn_newshape_dev_logs")
+    MODEL_DIR = os.path.join(DIR_TRAINING, "mrcnn_newshape_dev_logs")
 
     config = build_config(batch_sz = batch_sz, newshapes=True)
 
@@ -631,9 +622,9 @@ def prep_newshapes_dev(init_with = "last", FCN_layers= False, batch_sz = 5):
     KB.clear_session()
     model = modellib.MaskRCNN(mode="training", config=config, model_dir=MODEL_DIR,FCN_layers = FCN_layers)
 
-    print('TRAINING_DIR        : ', TRAINING_DIR)
-    print('COCO_TRAINING_DIR   : ', COCO_TRAINING_DIR)
-    print('RESNET_TRAINING_DIR : ', RESNET_TRAINING_DIR)
+    print('DIR_TRAINING        : ', DIR_TRAINING)
+    print('COCO_DIR_TRAINING   : ', COCO_DIR_TRAINING)
+    print('RESNET_DIR_TRAINING : ', RESNET_DIR_TRAINING)
     print('MODEL_DIR         : ', MODEL_DIR)
     print('Last Saved Model  : ', model.find_last())
 

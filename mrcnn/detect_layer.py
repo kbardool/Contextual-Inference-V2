@@ -62,6 +62,8 @@ def refine_detections(rois, probs, deltas, window, config):
     Returns:
     --------
     detections      [N, (y1, x1, y2, x2, class_id, score)]
+                    detection bounding boxes -- these have had the corresponding 
+                    deltas applied, and their boundries clipped to the image window
     '''
 
     

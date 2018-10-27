@@ -1,5 +1,4 @@
-import os
-import sys
+import os, sys, pprint
 import numpy as np
 import tensorflow as tf
 # import keras
@@ -8,50 +7,43 @@ import keras.layers as KL
 import keras.engine as KE
 sys.path.append('..')
 import mrcnn.utils as utils
-import tensorflow.contrib.util as tfc
-import pprint
+# import tensorflow.contrib.util as tfc
 
-              
-              
-              
-##----------------------------------------------------------------------------------------------------------------------          
+##------------------------------------------------------------------------------------------------------------
 ##
-##----------------------------------------------------------------------------------------------------------------------          
+##------------------------------------------------------------------------------------------------------------
      
 class FCNScoringLayer(KE.Layer):
     '''
-    Contextual Heatmap Layer  (previously CHMLayerTF)
-    Receives the bboxes, their repsective classification and roi_outputs and 
-    builds the per_class tensor
+    FCN Scoring Layer  
+    Receives the heatmap out of FCN, bboxes information and builds FCN scores 
 
     Returns:
     -------
     The CHM layer returns the following tensors:
 
-    pred_tensor :       [batch, NUM_CLASSES, TRAIN_ROIS_PER_IMAGE    , (index, class_prob, y1, x1, y2, x2, class_id, old_idx)]
-                                in normalized coordinates   
-    pred_cls_cnt:       [batch, NUM_CLASSES] 
-    gt_tensor:          [batch, NUM_CLASSES, DETECTION_MAX_INSTANCES, (index, class_prob, y1, x1, y2, x2, class_id, old_idx)]
-    gt_cls_cnt:         [batch, NUM_CLASSES]
-    
-     Note: Returned arrays might be zero padded if not enough target ROIs.
-    
+    fcn_scores :       [batch, NUM_CLASSES, TRAIN_ROIS_PER_IMAGE, 16] 
+                       ( --- same as pr_hm_scores --- + fcn_score)]
     '''
 
     def __init__(self, config=None, **kwargs):
         super().__init__(**kwargs)
-        print('\n>>> FCN Scoring Layer ')
+        print()
+        print('----------------------')
+        print('>>> FCN Scoring Layer ')
+        print('----------------------')
         self.config = config
 
         
     def call(self, inputs):
-        fcn_heatmap, chm_scores = inputs
+        fcn_heatmap, pr_hm_scores, gt_hm_scores = inputs
         
         print('   > FCNScoreLayer Call() ', len(inputs))
-        print('     fcn_heatmap.shape    :',   fcn_heatmap.shape, KB.int_shape(fcn_heatmap))
-        print('      chm_scores.shape    :',    chm_scores.shape, KB.int_shape(chm_scores )) 
+        print('     fcn_heatmap.shape    :', fcn_heatmap.shape , KB.int_shape(fcn_heatmap))
+        print('     pr_hm_scores.shape   :', pr_hm_scores.shape, KB.int_shape(pr_hm_scores)) 
+        print('     gt_hm_scores.shape   :', gt_hm_scores.shape, KB.int_shape(gt_hm_scores)) 
 
-        fcn_scores  = self.build_fcn_scores(fcn_heatmap, chm_scores, self.config)
+        fcn_scores  = self.build_fcn_scores(fcn_heatmap, pr_hm_scores, gt_hm_scores, self.config)
 
         print('\n    Output build_fcn_score ')
         print('     pred_heatmap_norm  : ', fcn_scores.shape  , 'Keras tensor ', KB.is_keras_tensor(fcn_scores))
@@ -67,10 +59,18 @@ class FCNScoringLayer(KE.Layer):
               ]
               
               
-    ##----------------------------------------------------------------------------------------------------------------------          
+    ##-------------------------------------------------------------------------------------------------------
     ##   build_fcn_scores 
-    ##----------------------------------------------------------------------------------------------------------------------          
-    def build_fcn_scores(self, in_heatmap, in_scores, names = None):
+    ##-------------------------------------------------------------------------------------------------------
+    ##   We use the coordinates of the bounding boxes passed in pr_scores (or gt_scores), to calculate 
+    ##   the score of bounding boxes overlaid on the heatmap produced by the fcn_layer
+    ##   - convert the pr_scores (or gt_hm_scores) from a per_class/per_bbox tensor to a per_class tensor
+    ##     [BATCH_SIZE, NUM_CLASSES, DETECTIONS_PER_CLASS, 11] --> [BATCH_SIZE, DETECTIONS_MAX_INSTANCES, 11]
+    ##   - Extract non-zero bounding boxes
+    ##   - calculate the Cy, Cx, and Covar of the bounding boxes 
+    ##   - Clip the heatmap by using masks centered on Cy,Cx and +/- Covar_Y, Covar_X
+    ##-------------------------------------------------------------------------------------------------------
+    def build_fcn_scores(self, in_heatmap, pr_scores, gt_hm_scores, names = None):
 
         num_detections  = self.config.DETECTION_MAX_INSTANCES
         img_h, img_w    = self.config.IMAGE_SHAPE[:2]
@@ -82,30 +82,30 @@ class FCNScoringLayer(KE.Layer):
         # rois per image is determined by size of input tensor 
         #   detection mode:   config.TRAIN_ROIS_PER_IMAGE 
         #   ground_truth  :   config.DETECTION_MAX_INSTANCES
-        rois_per_image  = KB.int_shape(in_scores)[2] 
+        rois_per_image  = KB.int_shape(pr_scores)[2] 
         # strt_cls        = 0 if rois_per_image == 32 else 1
         print('    num of bboxes per class is : ', rois_per_image )
 
-        ##--------------------------------------------------------------------------------------------
+        ##----------------------------------------------------------------------------------------------------
         ## generate score based on gaussian using bounding box masks 
         ## NOTE: Score is generated on NORMALIZED gaussian distributions (GAUSS_NORM)
         ##       If want to do this on NON-NORMALIZED, we need to apply it on GAUSS_SUM
-        ##--------------------------------------------------------------------------------------------
+        ##----------------------------------------------------------------------------------------------------
         # flatten guassian scattered and input_tensor, and pass on to build_bbox_score routine 
-        in_scores_shape = tf.shape(in_scores)
-        in_scores_flat  = tf.reshape(in_scores, [-1, in_scores_shape[-1]])
-        bboxes = tf.to_int32(tf.round(in_scores_flat[...,0:4]))
-        # print('    in_scores_shape : ', in_scores_shape.eval() )
-        # print('    in_scores_flat  : ', tf.shape(in_scores_flat).eval())
+        pr_scores_shape = tf.shape(pr_scores)
+        pr_scores_flat  = tf.reshape(pr_scores, [-1, pr_scores_shape[-1]])
+        bboxes = tf.to_int32(tf.round(pr_scores_flat[...,0:4]))
+        # print('    pr_scores_shape : ', pr_scores_shape.eval() )
+        # print('    pr_scores_flat  : ', tf.shape(pr_scores_flat).eval())
         # print('    boxes shape     : ', tf.shape(bboxes).eval())
         print('    Rois per image  : ', rois_per_image)
 
-        #--------------------------------------------------------------------------------------------------------------------------
+        #-----------------------------------------------------------------------------------------------------
         # duplicate GAUSS_NORM <num_roi> times to pass along with bboxes to map_fn function
-        #   Here we have a choice to calculate scores using the GAUSS_SUM (unnormalized) or GAUSS_NORM (normalized)
-        #   after looking at the scores and ratios for each option, I decided to go with the normalized 
-        #   as the numbers are large
-        #---------------------------------------------------------------------------------------------------------------------------
+        #   Here we have a choice to calculate scores using the GAUSS_SUM (unnormalized) or GAUSS_NORM 
+        #   (normalized). After looking at the scores and ratios for each option, I decided to go with 
+        #   the normalized as the numbers are large
+        #-----------------------------------------------------------------------------------------------------
         dup_heatmap = tf.transpose(in_heatmap, [0,3,1,2])
         print('    heatmap original shape   : ', in_heatmap.shape)
         print('    heatmap transposed shape :',  dup_heatmap.get_shape())
@@ -115,7 +115,7 @@ class FCNScoringLayer(KE.Layer):
         print('    heatmap tiled            : ', dup_heatmap.get_shape())
         dup_heatmap_shape   = KB.int_shape(dup_heatmap)
         dup_heatmap         = KB.reshape(dup_heatmap, (-1, dup_heatmap_shape[-2], dup_heatmap_shape[-1]))
-        # print('    heatmap flattened        : ', tf.shape(dup_heatmap).eval())
+        print('    dup_heatmap reshaped     : ', tf.shape(dup_heatmap).eval())
 
         scores = tf.map_fn(self.build_mask_routine, [dup_heatmap, bboxes], dtype=tf.float32)    
 
@@ -123,11 +123,11 @@ class FCNScoringLayer(KE.Layer):
         ## Add returned values from scoring to the end of the input score 
         ##--------------------------------------------------------------------------------------------    
         # consider the two new columns for reshaping the gaussian_bbox_scores
-        new_shape   = in_scores_shape + [0,0,0, tf.shape(scores)[-1]]        
-        bbox_scores = tf.concat([in_scores_flat, scores], axis = -1)
+        new_shape   = pr_scores_shape + [0,0,0, tf.shape(scores)[-1]]        
+        bbox_scores = tf.concat([pr_scores_flat, scores], axis = -1)
         bbox_scores = tf.reshape(bbox_scores, new_shape)
         # print('    new shape is            : ', new_shape.eval())
-        # print('    in_scores_flat          : ', tf.shape(in_scores_flat).eval())
+        # print('    pr_scores_flat          : ', tf.shape(pr_scores_flat).eval())
         # print('    Scores shape            : ', tf.shape(scores).eval())   # [(num_batches x num_class x num_rois ), 3]
         # print('    boxes_scores (rehspaed) : ', tf.shape(bbox_scores).eval())    
 
@@ -165,9 +165,9 @@ class FCNScoringLayer(KE.Layer):
     
         
                   
-    ##----------------------------------------------------------------------------------------------------------------------          
+    ##--------------------------------------------------------------------------------------------------------
     ##
-    ##----------------------------------------------------------------------------------------------------------------------          
+    ##--------------------------------------------------------------------------------------------------------
         
     def build_mask_routine(self, input_list):
         '''
