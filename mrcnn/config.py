@@ -148,7 +148,16 @@ class Config(object):
     USE_RPN_ROIS = True
     LAST_EPOCH_RAN = 0
     EPOCHS_TO_RUN  = 0
+    
+    # heatmap generation parameters
+    # maximum detections per class
+    ## should be same as 
+    DETECTION_PER_CLASS = 200
+    # heatscale downscale factor (applied to IMAGE_MAX_DIM)
+    HEATMAP_SCALE_FACTOR = 4
 
+    
+    
     def __init__(self):
         """Set values of computed attributes."""
         # Effective batch size

@@ -614,9 +614,11 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
     # commented on 24-10-18 to allow for restarting generator at a certain point. 
     # -1 is now default parm , if not specified in call
     #  image_index = -1  
+    image_index = max(-1, image_index -1)
 
+   
     image_ids   = np.copy(dataset.image_ids)
-    print(' DATAGEN starting image_index  ',image_index, 'len of image ids :', len(image_ids))
+    # print(' DATAGEN starting image_index  ',image_index, 'len of image ids :', len(image_ids))
     error_count = 0
 
     # Anchors
@@ -808,14 +810,15 @@ def data_gen_simulate(dataset, config, image_index):
     
     detection_targets=False
     augment=False
-    shuffle=True    
+    # shuffle=True    
     b = 0  # batch item index
 
-    image_ids   = np.copy(dataset.image_ids)
+    # image_ids   = np.copy(dataset.image_ids)
     error_count = 0
     if not isinstance(image_index, list):
         image_index = [image_index]
         print(' Converted to image index --> ',image_index)
+    
     batch_size  = len(image_index)
     print(' batch size is :', batch_size)
     # Anchors
@@ -833,7 +836,7 @@ def data_gen_simulate(dataset, config, image_index):
             # Get GT bounding boxes and masks for image.
             #-----------------------------------------------------------------------            
             print(' load image ud: ', img_idx)
-            image_id = image_ids[img_idx]
+            image_id = dataset.image_ids[img_idx]
             # image, image_meta, gt_class_ids, gt_boxes, gt_masks = \
             image, image_meta, gt_class_ids, gt_boxes = \
                 load_image_gt(dataset, config, image_id, augment=augment, use_mini_mask=config.USE_MINI_MASK)

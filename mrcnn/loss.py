@@ -172,7 +172,8 @@ def rpn_bbox_loss_graph(config, target_bbox, rpn_match, rpn_bbox):
 ##  MRCNN Class loss  
 ##-----------------------------------------------------------------------    
 def mrcnn_class_loss_graph(target_class_ids, pred_class_logits, active_class_ids):
-    '''Loss for the classifier head of Mask RCNN.
+    '''
+    Loss for the classifier head of Mask RCNN.
 
     target_class_ids:       [batch, num_rois]. Integer class IDs. Uses zero
                             padding to fill in the array.
@@ -362,7 +363,7 @@ def fcn_score_loss_graph(input_target,  input_pred):
     
     
 ##-----------------------------------------------------------------------
-##  FCN xxxx loss
+##  FCN BBOX loss
 ##-----------------------------------------------------------------------    
 def fcn_bbox_loss_graph(target_bbox_deltas, target_class_ids, fcn_bbox_deltas):
     ''' 
@@ -413,9 +414,9 @@ def fcn_bbox_loss_graph(target_bbox_deltas, target_class_ids, fcn_bbox_deltas):
 
     
 ##-----------------------------------------------------------------------
-##  FCN heatmap loss
+##  FCN Heatmap Mean Square Error loss
 ##-----------------------------------------------------------------------    
-def fcn_heatmap_loss_graph(target_heatmap, pred_heatmap):
+def fcn_heatmap_MSE_loss_graph(target_heatmap, pred_heatmap):
     """
     Binary cross-entropy loss for the heatmaps.
 
@@ -423,11 +424,19 @@ def fcn_heatmap_loss_graph(target_heatmap, pred_heatmap):
     pred_heatmap:         [batch, height, width, num_classes] 
     """
     print()
-    print('---------------------------' )
-    print('>>> fcn_heatmap_loss_graph ' )
-    print('---------------------------' )
-    print('    target_masks :', target_heatmap.get_shape(), KB.shape(target_heatmap), 'KerasTensor: ', KB.is_keras_tensor(target_heatmap))
-    print('    pred_heatmap :', pred_heatmap.get_shape()  , KB.shape(pred_heatmap)  , 'KerasTensor: ', KB.is_keras_tensor(pred_heatmap))
+    print('-------------------------------' )
+    print('>>> fcn_heatmap_MSE_loss_graph ' )
+    print('-------------------------------' )
+    print('    target_masks :', target_heatmap.get_shape(), KB.int_shape(target_heatmap), 'KerasTensor: ', KB.is_keras_tensor(target_heatmap))
+    print('    pred_heatmap :', pred_heatmap.get_shape()  , KB.int_shape(pred_heatmap)  , 'KerasTensor: ', KB.is_keras_tensor(pred_heatmap))
+    loss = KLosses.mean_squared_error(target_heatmap[...,1:], pred_heatmap[...,1:])
+    loss_mean  = KB.mean(loss)
+    loss_final = tf.reshape(loss_mean, [1, 1], name = "fcn_MSE_loss")
+    print('    loss         :', loss.get_shape()       , KB.int_shape(loss)       , 'KerasTensor: ', KB.is_keras_tensor(loss))
+    print('    loss mean    :', loss_mean.get_shape()  , KB.int_shape(loss_mean)  , 'KerasTensor: ', KB.is_keras_tensor(loss_mean))
+    print('    loss final   :', loss_final.get_shape() , KB.int_shape(loss_final) , 'KerasTensor: ', KB.is_keras_tensor(loss_final))
+    # loss_mean = tf.squeeze(loss_mean,axis =  [0, 1], name = 'fcn_heatmap_loss')
+    # print('    loss mean :', loss_mean.get_shape()  , KB.shape(loss_mean)  , 'KerasTensor: ', KB.is_keras_tensor(loss_mean))
 
     # Permute predicted & target heatmaps to [N, num_classes, height, width]
     
@@ -464,14 +473,64 @@ def fcn_heatmap_loss_graph(target_heatmap, pred_heatmap):
     # loss = KLosses.squared_hinge(target_heatmap[...,1:], pred_heatmap[...,1:])
     # loss = KLosses.hinge(target_heatmap[...,1:], pred_heatmap[...,1:])
     
-    loss = KLosses.mean_squared_error(target_heatmap[...,1:], pred_heatmap[...,1:])
-    loss_mean = KB.mean(loss)
-    
-    print('    loss      :', loss.get_shape(), KB.shape(loss), 'KerasTensor: ', KB.is_keras_tensor(loss))
-    print('    loss mean :', loss_mean.get_shape()  , KB.shape(loss_mean)  , 'KerasTensor: ', KB.is_keras_tensor(loss_mean))
-    # loss_mean = tf.squeeze(loss_mean,axis =  [0, 1], name = 'fcn_heatmap_loss')
-    # print('    loss mean :', loss_mean.get_shape()  , KB.shape(loss_mean)  , 'KerasTensor: ', KB.is_keras_tensor(loss_mean))
                     
-    return loss_mean
+    return loss_final
     
+
+##-----------------------------------------------------------------------
+##  FCN Categorical Cross Entropy loss  
+##-----------------------------------------------------------------------    
+def fcn_heatmap_CE_loss_graph(target_heatmap, pred_heatmap, active_class_ids):
+    '''
+    Categorical Cross Entropy Loss for the FCN heatmaps.
+
+    target_class_ids:       [batch, num_rois]. Integer class IDs. Uses zero
+                            padding to fill in the array.
+    
+    pred_class_logits:      [batch, num_rois, num_classes]
+    
+    active_class_ids:       [batch, num_classes]. Has a value of 1 for
+                            classes that are in the dataset of the image, and 0
+                            for classes that are not in the dataset. 
+    '''
+    print()
+    print('-------------------------------' )
+    print('>>> fcn_heatmap_CE_loss_graph  ' )
+    print('-------------------------------' )
+    print('    target_class_ids  :', KB.int_shape(target_heatmap))
+    print('    pred_class_logits :', KB.int_shape(pred_heatmap))
+    print('    active_class_ids  :', KB.int_shape(active_class_ids))
+    # target_class_ids = tf.cast(target_class_ids, 'int64')
+    
+    # Find predictions of classes that are not in the dataset.
+    pred_class_ids = KB.argmax(pred_heatmap  , axis=-1)
+    gt_class_ids   = KB.argmax(target_heatmap, axis=-1)
+    print('    pred_class_ids    :', KB.int_shape(pred_class_ids), pred_class_ids.dtype ) 
+    print('    gt_class_ids      :', KB.int_shape(gt_class_ids  ), gt_class_ids.dtype) 
+
+    # TODO: Update this line to work with batch > 1. Right now it assumes all
+    #       images in a batch have the same active_class_ids
+    pred_active = tf.gather(active_class_ids[0], pred_class_ids)
+    print('    pred_active       :', KB.int_shape(pred_active),  pred_active.dtype)  
+    
+    # Loss
+    loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=target_heatmap, logits=pred_heatmap)
+    print('    loss              :', KB.int_shape(loss), loss.dtype)    
+
+    # Erase losses of predictions of classes that are not in the active
+    # classes of the image.
+    loss = loss * pred_active
+    print('    loss*pred_active  :', KB.int_shape(loss), 'KerasTensor: ', KB.is_keras_tensor(loss))
+
+    # Compute  loss mean. Use only predictions that contribute
+    # to the loss to get a correct mean.
+    loss = tf.reduce_sum(loss)   ##/ tf.reduce_sum(pred_active)
+    loss_mean  = KB.mean(loss)
+    loss_final = tf.reshape(loss_mean, [1, 1], name = "fcn_CE_loss")
+    
+    print('    loss              :', loss.get_shape()       , KB.int_shape(loss)       , 'KerasTensor: ', KB.is_keras_tensor(loss))
+    print('    loss mean         :', loss_mean.get_shape()  , KB.int_shape(loss_mean)  , 'KerasTensor: ', KB.is_keras_tensor(loss_mean))
+    print('    loss final        :', loss_final.get_shape() , KB.int_shape(loss_final) , 'KerasTensor: ', KB.is_keras_tensor(loss_final))
+    
+    return loss_final
 

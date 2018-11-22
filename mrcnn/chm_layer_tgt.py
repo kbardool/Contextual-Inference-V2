@@ -19,6 +19,7 @@ sys.path.append('..')
 import mrcnn.utils as utils
 import tensorflow.contrib.util as tfc
 import pprint
+from   mrcnn.chm_layer   import build_hm_score, clip_heatmap
 
 ##-----------------------------------------------------------------------------------------------------------
 ## 
@@ -259,7 +260,7 @@ def build_gt_heatmap(in_tensor, config, names = None):
     #---------------------------------------------------------------------------------------------    
     # prob_grid_norm_scaled = tf.transpose(tf.transpose(prob_grid_norm) * pt2_dense[:,7])
     # print('    prob_grid_norm_scaled : ', prob_grid_norm_scaled.shape)
-    prob_grid_clipped = tf.map_fn(clip_gt_heatmap, [prob_grid, cy,cx, covar], 
+    prob_grid_clipped = tf.map_fn(clip_heatmap, [prob_grid, cy,cx, covar], 
                                  dtype = tf.float32, swap_memory = True)
                                  
                                  
@@ -268,7 +269,7 @@ def build_gt_heatmap(in_tensor, config, names = None):
     ##  pt2_dense[:,7] is the per-class-normalized score from in_tensor
     ##  added 09-21-2018
     ##--------------------------------------------------------------------------------------------
-    scores_from_sum2 = tf.map_fn(build_gt_hm_score, [prob_grid_clipped, pt2_dense_scaled, pt2_dense[:,7]], 
+    scores_from_sum2 = tf.map_fn(build_hm_score, [prob_grid_clipped, pt2_dense_scaled, pt2_dense[:,7]], 
                                      dtype = tf.float32, swap_memory = True)
     scores_scattered = tf.scatter_nd(pt2_ind, scores_from_sum2, 
                                      [batch_size, num_classes, rois_per_image, 3], name = 'scores_scattered')
@@ -282,21 +283,21 @@ def build_gt_heatmap(in_tensor, config, names = None):
     ## (3) scatter out the probability distribution heatmaps based on class 
     ##-------------------------------------------------------------------------------------
     print('\n    Scatter out the probability distributions based on class --------------') 
-    gauss_scatt   = tf.scatter_nd(pt2_ind, prob_grid_clipped, 
+    gauss_heatmap   = tf.scatter_nd(pt2_ind, prob_grid_clipped, 
                                   [batch_size, num_classes, rois_per_image, grid_w, grid_h], 
-                                  name = 'gauss_scatter')
+                                  name = 'gauss_heatmap')
     print('    pt2_ind shape   : ', pt2_ind.shape)  
     print('    prob_grid shape : ', prob_grid.shape)  
-    print('    gauss_scatt     : ', gauss_scatt.shape)   # batch_sz , num_classes, num_rois, image_h, image_w
+    print('    gauss_heatmap   : ', gauss_heatmap.shape)   # batch_sz , num_classes, num_rois, image_h, image_w
 
     ##-------------------------------------------------------------------------------------
-    ## (4) MAX : Reduce_MAX up gauss_scattered heatmaps by class 
+    ## (4) MAX : Reduce_MAX up gauss_heatmaps by class 
     ##           Since all values are set to '1' in the 'heatmap', there is no need to 
     ##           sum or normalize. We Reduce_max on the class axis, and as a result the 
     ##           correspoding areas in the heatmap are set to '1'
     ##-------------------------------------------------------------------------------------
     print('\n    Reduce MAX based on class ---------------------------------------------')         
-    gauss_heatmap = tf.reduce_max(gauss_scatt, axis=2, name='pred_heatmap2')
+    gauss_heatmap = tf.reduce_max(gauss_heatmap, axis=2, name='gauss_heatmap')
     print('    gaussian_heatmap : ', gauss_heatmap.get_shape(), 'Keras tensor ', KB.is_keras_tensor(gauss_heatmap) )
     
     #---------------------------------------------------------------------------------------------
@@ -323,129 +324,6 @@ def build_gt_heatmap(in_tensor, config, names = None):
 
     return   gauss_heatmap, gauss_scores  
 
-##-----------------------------------------------------------------------------------------------------------
-## Build Mask and Score 
-##----------------------------------------------------------------------------------------------------------- 
-def build_gt_hm_score(input_list):
-    '''
-    Inputs:
-    -----------
-        heatmap_tensor :    [ image height, image width ]
-        input_row      :    [y1, x1, y2, x2] in absolute (non-normalized) scale
-        input_norm_score:   class-normalized score 
-        
-    Returns
-    -----------
-        gaussian_sum :      sum of gaussian heatmap vlaues over the area covered by the bounding box
-        bbox_area    :      bounding box area (in pixels)
-        weighted_sum :      gaussian_sum * bbox_score
-    '''
-    heatmap_tensor, input_bbox, input_norm_score = input_list
-    
-    with tf.variable_scope('mask_routine'):
-        y_extent     = tf.range(input_bbox[0], input_bbox[2])
-        x_extent     = tf.range(input_bbox[1], input_bbox[3])
-        Y,X          = tf.meshgrid(y_extent, x_extent)
-        mask_indices = tf.stack([Y,X],axis=2)        
-        mask_indices = tf.reshape(mask_indices,[-1,2])
-        mask_indices = tf.to_int32(mask_indices)
-        mask_size    = tf.shape(mask_indices)[0]
-        mask_updates = tf.ones([mask_size], dtype = tf.float32)    
-        mask         = tf.scatter_nd(mask_indices, mask_updates, tf.shape(heatmap_tensor))
-        # mask_sum    =  tf.reduce_sum(mask)
-        heatmap_tensor = tf.multiply(heatmap_tensor, mask, name = 'mask_applied')
-        bbox_area    = tf.to_float((input_bbox[2]-input_bbox[0]) * (input_bbox[3]-input_bbox[1]))
-        gaussian_sum = tf.reduce_sum(heatmap_tensor)
-
-#         Multiply gaussian_sum by score to obtain weighted sum    
-#         weighted_sum = gaussian_sum * input_row[5]
-
-#       Replaced lines above with following lines 21-09-2018
-        # Multiply gaussian_sum by normalized score to obtain weighted_norm_sum 
-        weighted_norm_sum = gaussian_sum * input_norm_score    # input_list[7]
-
-    return tf.stack([gaussian_sum, bbox_area, weighted_norm_sum], axis = -1)
-    
-    
-##-----------------------------------------------------------------------------------------------------------
-## Build Mask and Score - Using CY,CX, and COVAR to define masking area
-##----------------------------------------------------------------------------------------------------------- 
-def build_gt_hm_score_v2(input_list):
-    '''
-    Inputs:
-    -----------
-        heatmap_tensor :    [ image height, image width ]
-        input_row      :    [y1, x1, y2, x2] in absolute (non-normalized) scale
-        input_norm_score:   class-normalized score 
-        
-    Returns
-    -----------
-        gaussian_sum :      sum of gaussian heatmap vlaues over the area covered by the bounding box
-        bbox_area    :      bounding box area (in pixels)
-        weighted_sum :      gaussian_sum * bbox_score
-    '''
-    heatmap_tensor, input_bbox, input_norm_score = input_list
-    
-    with tf.variable_scope('mask_routine'):
-        y_extent     = tf.range(input_bbox[0], input_bbox[2])
-        x_extent     = tf.range(input_bbox[1], input_bbox[3])
-        Y,X          = tf.meshgrid(y_extent, x_extent)
-        mask_indices = tf.stack([Y,X],axis=2)        
-        mask_indices = tf.reshape(mask_indices,[-1,2])
-        mask_indices = tf.to_int32(mask_indices)
-        mask_size    = tf.shape(mask_indices)[0]
-        mask_updates = tf.ones([mask_size], dtype = tf.float32)    
-        mask         = tf.scatter_nd(mask_indices, mask_updates, tf.shape(heatmap_tensor))
-        # mask_sum    =  tf.reduce_sum(mask)
-        heatmap_tensor = tf.multiply(heatmap_tensor, mask, name = 'mask_applied')
-        bbox_area    = tf.to_float((input_bbox[2]-input_bbox[0]) * (input_bbox[3]-input_bbox[1]))
-        gaussian_sum = tf.reduce_sum(heatmap_tensor)
-
-#         Multiply gaussian_sum by score to obtain weighted sum    
-#         weighted_sum = gaussian_sum * input_row[5]
-
-#       Replaced lines above with following lines 21-09-2018
-        # Multiply gaussian_sum by normalized score to obtain weighted_norm_sum 
-        weighted_norm_sum = gaussian_sum * input_norm_score    # input_list[7]
-
-    return tf.stack([gaussian_sum, bbox_area, weighted_norm_sum], axis = -1)
-    
-
-##-----------------------------------------------------------------------------------------------------------
-## Clip Heatmap
-##      Clips heatmap to a predefined vicinity (+/- Covar_Y, Covar_X pixels of cy,cx)
-##----------------------------------------------------------------------------------------------------------- 
-def clip_gt_heatmap(input_list):
-    '''
-    Inputs:
-    -----------
-        heatmap_tensor :    [ image height, image width ]
-        cy,cx, covar   :   
-        
-    Returns
-    -----------
-        Clipped heatmap tensor 
-    '''
-    heatmap_tensor, cy, cx, covar = input_list
-
-    with tf.variable_scope('mask_routine'):
-        start_y      = tf.maximum(cy-covar[1],0)
-        end_y        = tf.minimum(cy+covar[1], KB.int_shape(heatmap_tensor)[0])
-        start_x      = tf.maximum(cx-covar[0],0)
-        end_x        = tf.minimum(cx+covar[0], KB.int_shape(heatmap_tensor)[1])
-        y_extent     = tf.range(start_y, end_y)
-        x_extent     = tf.range(start_x, end_x)
-        Y,X          = tf.meshgrid(y_extent, x_extent)
-        mask_indices = tf.stack([Y,X],axis=2)        
-        mask_indices = tf.reshape(mask_indices,[-1,2])
-        mask_indices = tf.to_int32(mask_indices)
-        mask_size    = tf.shape(mask_indices)[0]
-        mask_updates = tf.ones([mask_size], dtype = tf.float32)    
-        mask         = tf.scatter_nd(mask_indices, mask_updates, tf.shape(heatmap_tensor))
-        # mask_sum    =  tf.reduce_sum(mask)
-        heatmap_tensor = tf.multiply(heatmap_tensor, mask, name = 'mask_applied')
-
-    return  heatmap_tensor
         
 ##------------------------------------------------------------------------------------------------------------
 ##
@@ -493,7 +371,7 @@ class CHMLayerTarget(KE.Layer):
         print('    gt_heatmap_scores           : ', gt_hm_scores.shape , 'Keras tensor ', KB.is_keras_tensor(gt_hm_scores))
         print('    complete')
         
-        return [  gt_hm_norm, gt_hm_scores, gt_tensor]
+        return [  gt_hm_norm, gt_hm_scores]
 
          
     def compute_output_shape(self, input_shape):
@@ -502,11 +380,12 @@ class CHMLayerTarget(KE.Layer):
                  (None, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1], self.config.NUM_CLASSES)  # gt_heatmap_norm
               ,  (None, self.config.NUM_CLASSES   , self.config.DETECTION_PER_CLASS ,11)                  # gt_heatmap+scores   
               # ----extra stuff for now ---------------------------------------------------------------------------------------------------
-              ,  (None, self.config.NUM_CLASSES   , self.config.DETECTION_PER_CLASS ,8)                  # gt_tensor               
+              # ,  (None, self.config.NUM_CLASSES   , self.config.DETECTION_PER_CLASS ,8)                  # gt_tensor               
               ]
 
+
               
-'''    
+"""   
 ##-----------------------------------------------------------------------------------------------------------
 ##  build_gt_heatmap : Build gaussian heatmaps using pred_gt_tensor
 ## 
@@ -690,13 +569,15 @@ def build_gt_heatmap_original(in_tensor, config, names = None):
 
     return   gauss_heatmap_norm, gauss_scores  
     # , gauss_heatmap   gauss_heatmap_L2norm    # [gauss_heatmap, gauss_scatt, means, covar]    
+"""
 
     
+"""    
 ##-----------------------------------------------------------------------------------------------------------
 ## Build Mask and Score 
 ##----------------------------------------------------------------------------------------------------------- 
 def build_gt_hm_score_original(input_list):
-    """
+    '''
     Inputs:
     -----------
         heatmap_tensor :    [ image height, image width ]
@@ -708,7 +589,7 @@ def build_gt_hm_score_original(input_list):
         gaussian_sum :      sum of gaussian heatmap vlaues over the area covered by the bounding box
         bbox_area    :      bounding box area (in pixels)
         weighted_sum :      gaussian_sum * bbox_score
-    """
+    '''
     heatmap_tensor, input_bbox, input_norm_score = input_list
     
     with tf.variable_scope('mask_routine'):
@@ -735,5 +616,87 @@ def build_gt_hm_score_original(input_list):
 
     return tf.stack([gaussian_sum, bbox_area, weighted_norm_sum], axis = -1)
 
-'''    
+"""    
+              
+"""
+##-----------------------------------------------------------------------------------------------------------
+## Build Mask and Score 
+##----------------------------------------------------------------------------------------------------------- 
+def build_gt_hm_score(input_list):
+    '''
+    Inputs:
+    -----------
+        heatmap_tensor :    [ image height, image width ]
+        input_row      :    [y1, x1, y2, x2] in absolute (non-normalized) scale
+        input_norm_score:   class-normalized score 
+        
+    Returns
+    -----------
+        gaussian_sum :      sum of gaussian heatmap vlaues over the area covered by the bounding box
+        bbox_area    :      bounding box area (in pixels)
+        weighted_sum :      gaussian_sum * bbox_score
+    '''
+    heatmap_tensor, input_bbox, input_norm_score = input_list
+    
+    with tf.variable_scope('mask_routine'):
+        y_extent     = tf.range(input_bbox[0], input_bbox[2])
+        x_extent     = tf.range(input_bbox[1], input_bbox[3])
+        Y,X          = tf.meshgrid(y_extent, x_extent)
+        mask_indices = tf.stack([Y,X],axis=2)        
+        mask_indices = tf.reshape(mask_indices,[-1,2])
+        mask_indices = tf.to_int32(mask_indices)
+        mask_size    = tf.shape(mask_indices)[0]
+        mask_updates = tf.ones([mask_size], dtype = tf.float32)    
+        mask         = tf.scatter_nd(mask_indices, mask_updates, tf.shape(heatmap_tensor))
+        # mask_sum    =  tf.reduce_sum(mask)
+        heatmap_tensor = tf.multiply(heatmap_tensor, mask, name = 'mask_applied')
+        bbox_area    = tf.to_float((input_bbox[2]-input_bbox[0]) * (input_bbox[3]-input_bbox[1]))
+        gaussian_sum = tf.reduce_sum(heatmap_tensor)
+
+        # Multiply gaussian_sum by score to obtain weighted sum    
+        # weighted_sum = gaussian_sum * input_row[5]
+        # Replaced lines above with following lines 21-09-2018
+        # Multiply gaussian_sum by normalized score to obtain weighted_norm_sum 
+        weighted_norm_sum = gaussian_sum * input_norm_score    # input_list[7]
+
+    return tf.stack([gaussian_sum, bbox_area, weighted_norm_sum], axis = -1)
+    
+    
+##-----------------------------------------------------------------------------------------------------------
+## Clip Heatmap
+##      Clips heatmap to a predefined vicinity (+/- Covar_Y, Covar_X pixels of cy,cx)
+##----------------------------------------------------------------------------------------------------------- 
+def clip_gt_heatmap(input_list):
+    '''
+    Inputs:
+    -----------
+        heatmap_tensor :    [ image height, image width ]
+        cy,cx, covar   :   
+        
+    Returns
+    -----------
+        Clipped heatmap tensor 
+    '''
+    heatmap_tensor, cy, cx, covar = input_list
+
+    with tf.variable_scope('mask_routine'):
+        start_y      = tf.maximum(cy-covar[1],0)
+        end_y        = tf.minimum(cy+covar[1], KB.int_shape(heatmap_tensor)[0])
+        start_x      = tf.maximum(cx-covar[0],0)
+        end_x        = tf.minimum(cx+covar[0], KB.int_shape(heatmap_tensor)[1])
+        y_extent     = tf.range(start_y, end_y)
+        x_extent     = tf.range(start_x, end_x)
+        Y,X          = tf.meshgrid(y_extent, x_extent)
+        mask_indices = tf.stack([Y,X],axis=2)        
+        mask_indices = tf.reshape(mask_indices,[-1,2])
+        mask_indices = tf.to_int32(mask_indices)
+        mask_size    = tf.shape(mask_indices)[0]
+        mask_updates = tf.ones([mask_size], dtype = tf.float32)    
+        mask         = tf.scatter_nd(mask_indices, mask_updates, tf.shape(heatmap_tensor))
+        # mask_sum    =  tf.reduce_sum(mask)
+        heatmap_tensor = tf.multiply(heatmap_tensor, mask, name = 'mask_applied')
+
+    return  heatmap_tensor
+"""
+
               

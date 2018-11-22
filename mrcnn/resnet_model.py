@@ -26,17 +26,18 @@ import keras.backend as K
 import keras.layers as KL
 # import keras.initializers as KI
 # import keras.engine as KE
-import keras.models as KM
+# import keras.models as KM
 
-sys.path.append('..')
+# sys.path.append('..')
 
-from mrcnn.batchnorm_layer import BatchNorm
+from  mrcnn.helper_layers import BatchNorm
 
 # import mrcnn.utils as utils
 # from   mrcnn.datagen import data_generator
 # import mrcnn.loss  as loss
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
+
 
 ############################################################
 #  Resnet Graph

@@ -36,10 +36,11 @@ class Dataset(object):
         self.image_info = []
         
         # Background is always the first class
-        self.class_info = [{"source": "", "id": 0, "name": "BG"}]
+        self.class_info = [{"source": "", "id": 0, "name": "BG", "category": "background", "img_count" : 0}]
         self.source_class_ids = {}
+        self.source_objs = {}
 
-    def add_class(self, source, class_id, class_name):
+    def add_class(self, source, class_id, class_name, category = None, img_count = 0):
         '''
         Add class to dataset obj class_info attribute
         '''
@@ -47,13 +48,16 @@ class Dataset(object):
         # Does the class exist already?
         for info in self.class_info:
             if info['source'] == source and info["id"] == class_id:
+                info["img_count"]+= img_count
                 # source.class_id combination already available, skip
                 return
         # Add the class
         self.class_info.append({
             "source": source,
-            "id": class_id,
-            "name": class_name,
+            "id"    : class_id,
+            "name"  : class_name,
+            "category" : category,
+            "img_count": img_count
         })
 
     def add_image(self, source, image_id, path, **kwargs):
@@ -106,6 +110,7 @@ class Dataset(object):
         # Map sources to class_ids they support
         self.sources = list(set([i['source'] for i in self.class_info]))
         self.source_class_ids = {}
+        
         # Loop over datasets
         for source in self.sources:
             self.source_class_ids[source] = []
@@ -115,20 +120,65 @@ class Dataset(object):
                 if i == 0 or source == info['source']:
                     self.source_class_ids[source].append(i)
 
+        # add internal class id to class_info dictionary
+        for cls_info in self.class_info:
+            source_key = cls_info['source']+'.'+str(cls_info['id'])
+            internal_id =  self.class_from_source_map[source_key]
+            cls_info['internal_id'] = internal_id
+                    
+        self.build_category_to_class_map()
+        self.build_category_to_external_class_map()
+        
+        print('Prepares complete')
+        print('-----------------')
+        for cls_info in self.class_info:
+            print('{:25s}  class:  source: {:10s}   (external) id: {:3d}   internal_id: {:3d}  category: {:20}  img_count: {:6d}' .format(
+                    cls_info['name'], cls_info['source'], cls_info['id'], cls_info['internal_id'] , cls_info['category'], cls_info["img_count"]))
+    
+        
+    def build_category_to_class_map(self):
+        self.category_to_class_map = {}
+        for i in self.class_info:
+            self.category_to_class_map.setdefault(i["category"],[]).append(i["internal_id"])
+            #     print(i["category"], '   ',category_to_class_map[i["category"]])
+        # ttl = 0 
+        # for i in self.category_to_class_map:
+            # print('{:15s} {:4d}  {} '.format(i, len(self.category_to_class_map[i]) , self.category_to_class_map[i]))
+            # ttl += len(self.category_to_class_map[i])
+        # print('Total classes: ', ttl)          
+        return 
+        
+        
+    def build_category_to_external_class_map(self):
+        self.category_to_external_class_map = {}
+        for i in self.class_info:
+            self.category_to_external_class_map.setdefault(i["category"],[]).append(i["id"])
+        
+        # ttl = 0 
+        # for i in self.category_to_external_class_map:
+            # print('{:15s}   external ids {:4d}  {}'.format(i, len(self.category_to_external_class_map[i]) , self.category_to_external_class_map[i]))
+            # ttl += len(self.category_to_class_map[i])
+        # print('Total classes: ', ttl)          
+        return 
+        
+        
     def map_source_class_id(self, source_class_id):
-        """Takes a source class ID and returns the int class ID assigned to it.
+        """
+        Takes a source class ID and returns the int class ID assigned to it.
 
         For example:
         dataset.map_source_class_id("coco.12") -> 23
         """
         return self.class_from_source_map[source_class_id]
 
+        
     def get_source_class_id(self, class_id, source):
         """Map an internal class ID to the corresponding class ID in the source dataset."""
         info = self.class_info[class_id]
         assert info['source'] == source
         return info['id']
 
+        
     def append_data(self, class_info, image_info):
         self.external_to_class_id = {}
         for i, c in enumerate(self.class_info):
@@ -155,6 +205,7 @@ class Dataset(object):
         """Load the specified image and return a [H,W,3] Numpy array.
         """
         # Load image
+        # print(' loading image id: ', image_id, ' file:',self.image_info[image_id]['path'], '   ', self.image_info[image_id]['id'])
         image = skimage.io.imread(self.image_info[image_id]['path'])
         # If grayscale. Convert to RGB for consistency.
         if image.ndim != 3:

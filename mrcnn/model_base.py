@@ -1,7 +1,7 @@
 """
 Mask R-CNN
 The main Mask R-CNN model implemenetation.
-
+ 
 Copyright (c) 2017 Matterport, Inc.
 Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
@@ -59,9 +59,6 @@ class ModelBase():
         self.mode      = mode
         self.config    = config
         self.model_dir = config.TRAINING_PATH
-        # self.set_log_dir()        
-
-
         print('   Mode      : ', self.mode)
         print('   Model dir : ', self.model_dir)
 
@@ -71,14 +68,17 @@ class ModelBase():
     ##------------------------------------------------------------------------------------    
     ## LOAD MODEL
     ##------------------------------------------------------------------------------------                
-    def load_model_weights(self,init_with = None, exclude = None, new_folder = False):
+    def load_model_weights(self,init_with = None, exclude = None, new_folder = False, verbose = 0):
         '''
         methods to load weights
-        1 - load a specific file
-        2 - find a last checkpoint in a specific folder 
-        3 - use init_with keyword 
+        1 - look for a specific weights file 
+            Load trained weights (fill in path to trained weights here)
+        2 - look for last checkpoint file in a specific folder (not working correctly)
+        3 - Use init_with keyword
+        -- Which weights to start with?
         '''    
-        # Which weights to start with?
+
+        # Display layers we intent to exclude from loading process
         print('-----------------------------------------------')
         print(' Load Model with init parm: [',init_with,']')
         # print(' find last chkpt :', model.find_last())
@@ -88,24 +88,10 @@ class ModelBase():
                 print('    - ',la)
         print('-----------------------------------------------')
        
-        ## 1- look for a specific weights file 
-        ## Load trained weights (fill in path to trained weights here)
-
-        ## 2- look for last checkpoint file in a specific folder (not working correctly)
-        # model.config.LAST_EPOCH_RAN = 5784
-        # model.model_dir = 'E:\\Models\\mrcnn_logs\\shapes20180428T1819'
-        # last_model_found = model.find_last()
-        # print(' last model in MODEL_DIR: ', last_model_found)
-        # # loc= model.load_weights(model.find_last()[1], by_name=True)
-        # # print('Load weights complete :', loc)
-
-        ## 3- Use init_with keyword
-        ## Which weights to start with?
-        # init_with = "last"  # imagenet, coco, or last
 
         if init_with == "imagenet":
-        #     loc=model.load_weights(model.get_imagenet_weights(), by_name=True)
-            loc=self.load_weights(self.config.RESNET_MODEL_PATH, by_name=True)
+            # loc=model.load_weights(model.get_imagenet_weights(), by_name=True)
+            loc=self.load_weights(self.config.RESNET_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
             
         elif init_with == "init":
             print(' ---> init :', self.config.VGG16_MODEL_PATH)
@@ -113,36 +99,36 @@ class ModelBase():
             # are different due to the different number of classes
             # See README for instructions to download the COCO weights
             
-            loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude)
+            loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
             
         elif init_with == "vgg16":
             print(' ---> vgg16 :', self.config.VGG16_MODEL_PATH)
-            loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude)
+            loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
             
         elif init_with == "coco":
             print(' ---> coco :', self.config.COCO_MODEL_PATH)
-            ## use pretrained coco weights file:  "mask_rcnn_coco.h5"
+            # use pretrained coco weights file:  "mask_rcnn_coco.h5"
             # Load weights trained on MS COCO, but skip layers that 
             # are different due to the different number of classes
             # See README for instructions to download the COCO weights
             # loc=self.load_weights(self.config.COCO_MODEL_PATH, by_name=True, exclude = exclude)
-            loc=self.load_weights(self.config.COCO_MODEL_PATH, by_name=True, exclude = exclude)
+            loc=self.load_weights(self.config.COCO_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
             # exclude=["mrcnn_class_logits"])  # ,"mrcnn_bbox_fc", "mrcnn_bbox", "mrcnn_mask"])
 
         elif init_with == "last":
             print(' ---> last')
             # Load the last model you trained and continue training, placing checkpouints in same folder
-            last_file = self.find_last()[1]
-            print('   Last file is :', last_file)
-            loc= self.load_weights(self.find_last()[1], by_name=True)
+            # last_file = self.find_last()[1]
+            # print('   Last file is :', last_file)
+            loc= self.load_weights(self.find_last()[1], by_name=True, verbose = verbose)
         else:
             assert init_with != "", "Provide path to trained weights"
             print(" ---> Explicit weight file")
-            loc = self.load_weights(init_with, by_name=True, exclude = exclude, new_folder= new_folder)  
+            loc = self.load_weights(init_with, by_name=True, exclude = exclude, new_folder= new_folder, verbose = verbose)  
 
 
         print('==========================================')
-        print( self.config.NAME.upper(), " MODEL Load weight file COMPLETE    ")
+        print( self.config.NAME.upper(), " MODEL Load weight file COMPLETE ")
         print('==========================================')
         return     
 
@@ -150,7 +136,7 @@ class ModelBase():
     ##----------------------------------------------------------------------------------------------
     ## Load weights file
     ##----------------------------------------------------------------------------------------------                    
-    def load_weights(self, filepath, by_name=False, exclude=None, new_folder = False):
+    def load_weights(self, filepath, by_name=False, exclude=None, new_folder = False, verbose = 0):
         '''
         Modified version of the correspoding Keras function with
         the addition of multi-GPU support and the ability to exclude
@@ -190,7 +176,8 @@ class ModelBase():
             
         # Exclude some layers
         if exclude:
-            layers = filter(lambda l: l.name not in exclude, layers)
+            layers = list(filter(lambda l: l.name not in exclude, layers))
+            
             
         # print('--------------------------------------' )       
         # print(' layers to load (not in exclude list) ' )
@@ -201,20 +188,20 @@ class ModelBase():
         
         if by_name:
             # topology.load_weights_from_hdf5_group_by_name(f, layers)
-            utils.load_weights_from_hdf5_group_by_name(f, layers)
+            utils.load_weights_from_hdf5_group_by_name(f, layers, verbose = verbose)
         else:
             # topology.load_weights_from_hdf5_group(f, layers)
-            utils.load_weights_from_hdf5_group(f, layers)
+            utils.load_weights_from_hdf5_group(f, layers, verbose = verbose)
             
         if hasattr(f, 'close'):
             f.close()
             
         # Update the log directory
-        print('   Weights file loaded: {} '.format(filepath))        
-        print('   Weights file loaded: {} '.format(filepath), file = sys.__stdout__)
+        print('    Weights file loaded: {} '.format(filepath))        
+        print('    Weights file loaded: {} '.format(filepath), file = sys.__stdout__)
 
-        if self.mode == 'training':
-            self.set_log_dir(filepath, new_folder)
+        # if self.mode == 'training':
+            # self.set_log_dir(filepath, new_folder)
             
         # print(" load_weights() :  MODEL Load weight file COMPLETE    ")
 
@@ -237,7 +224,7 @@ class ModelBase():
         # print('>>> Set_log_dir() -- model dir is ', self.model_dir)
         # print('    model_path           :   ', model_path)
         # print('    config.LAST_EPOCH_RAN:   ', self.config.LAST_EPOCH_RAN)
-
+        print('>>> set_log_dir(): model_path: ', model_path)
         self.tb_dir = os.path.join(self.model_dir,'tensorboard')
         self.epoch  = 0
         regex_match = False
@@ -252,29 +239,36 @@ class ModelBase():
             # A sample model path might look like:
             # /path/to/logs/coco20171029T2315/mask_rcnn_coco_0001.h5
             model_path = model_path.replace('\\' , "/")
+            print('    set_log_dir(): model_path has been provided : {} '.format(model_path))
             # print('    set_log_dir: model_path (input) is : {}  '.format(model_path))        
 
-            regex = r".*/\w+(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/fcn\w+(\d{4})\.h5"
+            ## serch for something like yyyymmddThhmm/
+            # regex = r".*/\w+(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/fcn\w+(\d{4})\.h5"
+            ## trying this 27-10-18
+            regex = ".*/\w+(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/\w+(\d{4}).h5"
             regex_match  = re.match(regex, model_path)
             
             if regex_match:             
                 now = datetime.datetime(int(regex_match.group(1)), int(regex_match.group(2)), int(regex_match.group(3)),
                                         int(regex_match.group(4)), int(regex_match.group(5)))
                 last_checkpoint_epoch = int(regex_match.group(6)) + 1
-                print('    set_log_dir: self.epoch set to {}  (Next epoch to run)'.format(self.epoch))
-                print('    set_log_dir: tensorboard path: {}'.format(self.tb_dir))
                 if last_checkpoint_epoch > 0 and  self.config.LAST_EPOCH_RAN > last_checkpoint_epoch: 
                     self.epoch = self.config.LAST_EPOCH_RAN
                 else :
                     self.epoch = last_checkpoint_epoch
-        
-        
+                print('    set_log_dir(): File match found')
+                print('    set_log_dir(): self.epoch set to {}  (Next epoch to run)'.format(self.epoch))
+                print('    set_log_dir(): tensorboard path: {}'.format(self.tb_dir))
+        else:
+            print('    set_log_dir(): model_path has NOT been provided : {} '.format(model_path))
+            print('                  NewFolder: {}  config.NEW_LOG_FOLDER: {} '.format(new_folder, self.config.NEW_LOG_FOLDER))
+            now = datetime.datetime.now()
         
         # Set directory for training logs
         # if new_folder = True or appropriate checkpoint filename was not found, generate new folder
-        if new_folder or self.config.NEW_LOG_FOLDER:
-            print('NewFolder: {}  config.NEW_LOG_FOLDER: {} '.format(new_folder, self.config.NEW_LOG_FOLDER))
-            now = datetime.datetime.now()
+        # if new_folder or self.config.NEW_LOG_FOLDER:
+            # print('NewFolder: {}  config.NEW_LOG_FOLDER: {} '.format(new_folder, self.config.NEW_LOG_FOLDER))
+            # now = datetime.datetime.now()
 
         self.log_dir = os.path.join(self.model_dir, "{}{:%Y%m%dT%H%M}".format(self.config.NAME.lower(), now))
 
@@ -282,21 +276,20 @@ class ModelBase():
         ## Create checkpoint folder if it doesn't exists
         ##--------------------------------------------------------------------------------
         from tensorflow.python.platform import gfile
-        print('   set_log_dir(): set checkpoint folder to : {} '.format(self.log_dir), file = sys.__stdout__)
         if not gfile.IsDirectory(self.log_dir):
-            print('   Checkpoint folder (new): {}'.format(self.log_dir), file = sys.__stdout__)
+            print('    set_log_dir(): NEW folder     : {}'.format(self.log_dir), file = sys.__stdout__)
             gfile.MakeDirs(self.log_dir)
         else:
-            print('   Checkpoint folder (existing): {}'.format(self.log_dir), file = sys.__stdout__)
+            print('    set_log_dir(): EXISTING folder: {}'.format(self.log_dir), file = sys.__stdout__)
 
             
         # Path to save after each epoch. Include placeholders that get filled by Keras.
         self.checkpoint_path = os.path.join(self.log_dir, "{}_*epoch*.h5".format(self.config.NAME.lower()))
         self.checkpoint_path = self.checkpoint_path.replace("*epoch*", "{epoch:04d}")
         
-        log('  set_log_dir(): self.Checkpoint_path: {} '.format(self.checkpoint_path))
-        log('  set_log_dir(): self.log_dir        : {} '.format(self.log_dir))
-        log('  set_log_dir(): Last completed epoch (self.epoch): {} '.format(self.epoch))
+        log('    set_log_dir(): weight file template (self.checkpoint_path): {} '.format(self.checkpoint_path))
+        log('    set_log_dir(): weight file dir      (self.log_dir)        : {} '.format(self.log_dir))
+        log('    set_log_dir(): Last completed epoch (self.epoch)          : {} '.format(self.epoch))
 
         return
         
@@ -321,9 +314,8 @@ class ModelBase():
         print('>>> find_last checkpoint in : ', self.model_dir)
         dir_names = next(os.walk(self.model_dir))[1]
         key = self.config.NAME.lower()
-        print(' Key : >',key,'<')
         dir_names = list(filter(lambda f: f.startswith(key), dir_names))
-        print(' Dir names: ', dir_names)
+        print('    Dir starting with ' , key, ' :', dir_names)
         dir_names = sorted(dir_names)
         if not dir_names:
             return None, None
@@ -338,7 +330,8 @@ class ModelBase():
             checkpoints = filter(lambda f: f.startswith(key), checkpoints)
 
             checkpoints = sorted(checkpoints)
-            print(' Folder: ' ,dir_name, ' Checkpoints: ', checkpoints)
+            # print('    Folder: ' ,dir_name)
+            # print('    Checkpoints: ', checkpoints)
             if not checkpoints:
                 continue
                 # return dir_name, None
@@ -365,30 +358,38 @@ class ModelBase():
     ##----------------------------------------------------------------------------------------------
     ##
     ##----------------------------------------------------------------------------------------------                    
-    def save_model(self, filepath, filename = None, by_name=False, exclude=None):
+    def save_model(self, filepath = None, filename = None, by_name=False, exclude=None):
         '''
         Modified version of the correspoding Keras function with
         the addition of multi-GPU support and the ability to exclude
         some layers from loading.
         exlude: list of layer names to excluce
         '''
-        print('>>> save_model_architecture()')
+        print('>>> save_model() -- Weights only')
+        if os.path.splitext(filename)[1] != '.h5':
+            filename += '.h5'
+        
+        if filepath is None:
+            full_filepath = os.path.join(self.log_dir, filename)
+        else:
+            full_filepath = os.path.join(self.log_dir, filename)
+            
+        log('    save model to  {}'.format(full_filepath))
+        self.keras_model.save_weights(full_filepath, overwrite=True)
+        
+        # Following doesnt' work - some objects are not JSON serializable
         # self.keras_model.save_model(model, filepath, overwrite=True, include_optimizer=True):
 
-        model_json = self.keras_model.to_json()
-        full_filepath = os.path.join(filepath, filename)
-        log('    save model to  {}'.format(full_filepath))
-
-        with open(full_filepath , 'w') as f:
+        # Following doesnt' work - some objects are not JSON serializable
+        # model_json = self.keras_model.to_json()
+        # with open(full_filepath , 'w') as f:
             # json.dump(model_json, full_filepath)               
-            if hasattr(f, 'close'):
-                f.close()
-                print('file closed')
-                
-                
+            # if hasattr(f, 'close'):
+                # f.close()
+                # print('file closed')
         print('    save_weights: save directory is  : {}'.format(filepath))
-        print('    save model Load weights complete')        
-        return(filepath)
+        print('    save model weights complete')        
+        return(full_filepath)
 
         
     ##----------------------------------------------------------------------------------------------

@@ -10,33 +10,32 @@ Written by Waleed Abdulla
 import os, sys, glob, random, math, datetime, itertools, json, re, logging, pprint
 from   collections import OrderedDict
 import numpy as np
-import scipy.misc
-import tensorflow as tf
-
+# import scipy.misc
+import tensorflow         as tf
 import keras
-import keras.backend as KB
-import keras.layers  as KL
+import keras.backend      as KB
+import keras.layers       as KL
 import keras.initializers as KI
-import keras.engine as KE
-import keras.models as KM
+import keras.engine       as KE
+import keras.models       as KM
 #sys.path.append('..')
 
-import mrcnn.utils            as utils
-import mrcnn.loss             as loss
-from   mrcnn.datagen          import data_generator
-from   mrcnn.utils            import log, parse_image_meta_graph, parse_image_meta, write_stdout
-from   mrcnn.model_base       import ModelBase
-from   mrcnn.RPN_model        import build_rpn_model
-from   mrcnn.resnet_model     import resnet_graph
-from   mrcnn.chm_layer        import CHMLayer
-from   mrcnn.chm_layer_tgt    import CHMLayerTarget
-from   mrcnn.chm_layer_inf    import CHMLayerInference
-from   mrcnn.proposal_layer   import ProposalLayer
-from   mrcnn.detect_layer      import DetectionLayer  
+import mrcnn.utils                as utils
+import mrcnn.loss                 as loss
+from   mrcnn.datagen              import data_generator
+from   mrcnn.utils                import log, parse_image_meta_graph, parse_image_meta, write_stdout
+from   mrcnn.model_base           import ModelBase
+from   mrcnn.RPN_model            import build_rpn_model
+from   mrcnn.resnet_model         import resnet_graph
+from   mrcnn.chm_layer            import CHMLayer
+from   mrcnn.chm_layer_tgt        import CHMLayerTarget
+from   mrcnn.chm_layer_inf        import CHMLayerInference
+from   mrcnn.proposal_layer       import ProposalLayer
+from   mrcnn.detect_layer         import DetectionLayer  
 from   mrcnn.detect_tgt_layer_mod import DetectionTargetLayer_mod
-from   mrcnn.fpn_layers       import fpn_graph, fpn_classifier_graph, fpn_mask_graph
-from   mrcnn.callbacks        import MyCallback
-from   mrcnn.batchnorm_layer  import BatchNorm
+from   mrcnn.fpn_layers           import fpn_graph, fpn_classifier_graph, fpn_mask_graph
+# from   mrcnn.callbacks            import MyCallback
+# from   mrcnn.batchnorm_layer      import BatchNorm
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 from distutils.version import LooseVersion
@@ -353,13 +352,13 @@ class MaskRCNN(ModelBase):
             ##----------------------------------------------------------------------------
             ##  Contextual Layer(CHM) to generate contextual feature maps using outputs from MRCNN 
             ##----------------------------------------------------------------------------         
-            # pr_hm_norm, pr_hm_scores , gt_hm_norm, gt_hm_scores, pred_tensor,  gt_tensor \
+            # pr_hm_norm, pr_hm_scores , gt_hm_norm, gt_hm_scores, pr_tensor,  gt_tensor \
                 # =  CHMLayer(config, name = 'cntxt_layer' ) \
                     # ([mrcnn_class, mrcnn_bbox, output_rois, target_class_ids, roi_gt_boxes])
-            pr_hm_norm, pr_hm_scores , pred_tensor \
+            pr_hm_norm, pr_hm_scores \
                 =  CHMLayer(config, name = 'cntxt_layer' ) ([mrcnn_class, mrcnn_bbox, output_rois])
                 
-            gt_hm_norm, gt_hm_scores, gt_tensor \
+            gt_hm_norm, gt_hm_scores \
                 =  CHMLayerTarget(config, name = 'cntxt_layer_gt' ) ([target_class_ids, roi_gt_boxes])
                 
             print('<<<  shape of pred_heatmap   : ', pr_hm_norm.shape, ' Keras tensor ', KB.is_keras_tensor(pr_hm_norm) )                         
@@ -413,14 +412,23 @@ class MaskRCNN(ModelBase):
                              # , pr_hm_scores                                                                     # 17
                              # , gt_hm_norm                                                                       # 16
                              # , gt_hm_scores                                                                     # 18    
-                             # , pred_tensor                                                                      # 19
+                             # , pr_tensor                                                                      # 19
                              # , gt_tensor
                              # ]
-                outputs = [ rpn_class_loss , rpn_bbox_loss, mrcnn_class_loss , mrcnn_bbox_loss ]
-
-            ##----------------------------------------------------------------------------                
+                outputs = [ rpn_class_loss , rpn_bbox_loss, mrcnn_class_loss , mrcnn_bbox_loss
+                             , pr_hm_norm                                                                       # 15
+                             , pr_hm_scores                                                                     # 17
+                             , gt_hm_norm                                                                       # 16
+                             , gt_hm_scores                                                                     # 18    
+                             
+                             , target_class_ids  
+                             , mrcnn_class_logits
+                             , active_class_ids 
+                           ]
+            
+            ##------------------------------------------------------------------------------------        
             ##    trainfcn Mode
-            ##----------------------------------------------------------------------------                                    
+            ##------------------------------------------------------------------------------------                            
             else:                   ##  mode = "trainfcn":
 
                 inputs = [ input_image               #  
@@ -434,40 +442,38 @@ class MaskRCNN(ModelBase):
                 if not config.USE_RPN_ROIS:
                     inputs.append(input_rois)
 
-                outputs =  [   
-                             # rpn_class_logits   , rpn_class         , rpn_bbox            , rpn_roi_proposals                                             # 3
-                             # output_rois        , target_class_ids  , target_bbox_deltas  , roi_gt_boxes      # 4 - 7  
-                             # , mrcnn_class_logits 
-                             # , mrcnn_class       , mrcnn_bbox                              # 8 - 10 (from FPN)
-                               pr_hm_norm                                                                       # 15
+                outputs =  [   pr_hm_norm                                                                       # 15
                              , pr_hm_scores                                                                     # 17
                              , gt_hm_norm                                                                       # 16
                              , gt_hm_scores                                                                     # 18    
-                             , pred_tensor                                                                      # 19
-                             , gt_tensor
+                             
+                             , target_class_ids  
+                             , mrcnn_class_logits
+                             , active_class_ids 
                            ]
+                             # , rpn_class_logits   , rpn_class        , rpn_bbox       
+                             # , rpn_roi_proposals                                             # 3
+                             # , output_rois       , target_class_ids  , target_bbox_deltas  , roi_gt_boxes       # 4 - 7  
+                             # , mrcnn_class_logits, mrcnn_class       , mrcnn_bbox                               # 8 - 10 (from FPN)                             
+                             # , pr_tensor                                                                      # 19
+                             # , gt_tensor
+                           # ]
 
-        # end if Training
         ##----------------------------------------------------------------------------                
-        ## END Training Mode Layers
+        ## END   Training Mode Layers
         ##----------------------------------------------------------------------------                
-        
-        ##----------------------------------------------------------------------------                
-        ##
-        ##    Inference Mode
-        ##
+        ## BEGIN Inference Mode
         ##----------------------------------------------------------------------------                
         else:
-            ##------------------------------------------------------------------------
-            ##  FPN Layer
-            ##  Network Heads - Proposal classifier and BBox regressor heads
-            ##------------------------------------------------------------------------
+            ##------------------------------------------------------------------------------------
+            ##  FPN Layer - Network Heads - Proposal classifier and BBox regressor heads
+            ##------------------------------------------------------------------------------------
             mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
                 fpn_classifier_graph(rpn_roi_proposals, mrcnn_feature_maps, config.IMAGE_SHAPE,
                                      config.POOL_SIZE, config.NUM_CLASSES)
-            ##------------------------------------------------------------------------
+            ##------------------------------------------------------------------------------------
             ##  Detection Layer
-            ##------------------------------------------------------------------------
+            ##------------------------------------------------------------------------------------
             ##  Generate detection targets
             ##    generated RPNs + mrcnn predictions ----> Target ROIs
             ##
@@ -479,54 +485,18 @@ class MaskRCNN(ModelBase):
             print('<<<  shape of DETECTIONS : ', KB.int_shape(detections), ' Keras tensor ', KB.is_keras_tensor(detections) )                         
             
 
-            #------------------------------------------------------------------------
-            #  FPN Mask Layer  -  Create masks for detections
-            #------------------------------------------------------------------------
-            # Convert boxes to normalized coordinates
-            # TODO: let DetectionLayer return normalized coordinates to avoid unnecessary conversions
-            # h, w = config.IMAGE_SHAPE[:2]
-            # detection_boxes = KL.Lambda(lambda x: x[..., :4] / np.array([h, w, h, w]))(detections)
-            # print('<<<  shape of DETECTION_BOXES : ', KB.int_shape(detection_boxes),
-                  # ' Keras tensor ', KB.is_keras_tensor(detection_boxes) )                         
-    
-            # mrcnn_mask = fpn_mask_graph(detection_boxes,
-                                        # mrcnn_feature_maps,
-                                        # config.IMAGE_SHAPE,
-                                        # config.MASK_POOL_SIZE,
-                                        # config.NUM_CLASSES)
-
-            ##---------------------------------------------------------------------------
+            ##------------------------------------------------------------------------------------
             ## CHM Inference Layer(s) to generate contextual feature maps using outputs from MRCNN 
-            ##----------------------------------------------------------------------------         
-            pr_hm_norm,  pr_hm_scores, pred_tensor = CHMLayerInference(config, name = 'cntxt_layer' ) ([detections])
+            ##------------------------------------------------------------------------------------ 
+            pr_hm_norm,  pr_hm_scores, pr_tensor = CHMLayerInference(config, name = 'cntxt_layer' ) ([detections])
             print('<<<  shape of pr_hm_norm   : ', pr_hm_norm.shape  , ' Keras tensor ', KB.is_keras_tensor(pr_hm_norm) )                         
             print('<<<  shape of pr_hm_scores : ', pr_hm_scores.shape, ' Keras tensor ', KB.is_keras_tensor(pr_hm_scores) )                         
-            print('<<<  shape of pred_tensor  : ', pred_tensor.shape , ' Keras tensor ', KB.is_keras_tensor(pred_tensor) )                         
-                                        
-            #------------------------------------------------------------------------
-            # FCN Network Head
-            #------------------------------------------------------------------------
-            # if FCN_layers :
-                # print('---------------------------------------------------')
-                # print('    Adding  FCN layers')
-                # print('---------------------------------------------------')
-                        
-                # fcn_hm_norm, fcn_hm,  _ = fcn_graph(pr_hm_norm, config)
-                # # fcn_heatmap_norm = fcn_graph(pred_heatmap, config)
-                # print('   fcn_heatmap      : ', KB.int_shape(fcn_hm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm) )        
-                # print('   fcn_heatmap_norm : ', KB.int_shape(fcn_hm_norm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm_norm) )        
-
-                # fcn_hm_scores = FCNScoringLayer(config, name='fcn_scoring') ([fcn_hm_norm, pr_hm_scores])            
-                # # fcn_hm_norm = fcn_graph(pr_hm, config)
-                # # print('   fcn_heatmap_norm  shape is : ', KB.int_shape(fcn_hm_norm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm_norm) )        
-
+            print('<<<  shape of pr_tensor    : ', pr_tensor.shape   , ' Keras tensor ', KB.is_keras_tensor(pr_tensor) )                         
                                         
             inputs  = [ input_image, input_image_meta]
-            outputs = [ detections , rpn_roi_proposals, mrcnn_class, mrcnn_bbox, pr_hm_norm, pr_hm_scores, pred_tensor]
+            outputs = [ detections , rpn_roi_proposals, mrcnn_class, mrcnn_bbox, pr_hm_norm, pr_hm_scores]
                         #rpn_class, rpn_bbox, pr_hm_norm, pr_hm_scores]
 
-            # if FCN_layers :                            
-                # outputs.extend([fcn_hm_norm, fcn_hm_scores, fcn_hm])
             # end if Inference Mode        
         model = KM.Model( inputs, outputs,  name='mask_rcnn')
 
@@ -563,12 +533,8 @@ class MaskRCNN(ModelBase):
         masks:          [H, W, N] instance binary masks
         '''
 
-        # print('>>> model detect()')
-        
         assert self.mode   == "inference", "Create model in inference mode."
         assert len(images) == self.config.BATCH_SIZE, "len(images) must be equal to BATCH_SIZE"
-        # print('----compile model ------')
-        # self.keras_model.compile()
         
         if verbose:
             log("Processing {} images".format(len(images)))
@@ -585,7 +551,7 @@ class MaskRCNN(ModelBase):
         # print('    call predict()')
         # rpn_roi_proposals, rpn_class, rpn_bbox,\
         # pr_hm_norm, pr_hm_scores = \
-        detections, rpn_roi_proposals, mrcnn_class, mrcnn_bbox =  \
+        detections, rpn_roi_proposals, mrcnn_class, mrcnn_bbox, pr_hm, pr_hm_scores, pr_tensor =  \
                   self.keras_model.predict([molded_images, image_metas], verbose=0)
 
         print('    return from  predict()')
@@ -594,37 +560,42 @@ class MaskRCNN(ModelBase):
         print('    Length of rpn_roi_proposals   : ', len(rpn_roi_proposals   ))
         # print('    Length of rpn_class  : ', len(rpn_class  ))
         # print('    Length of rpn_bbox   : ', len(rpn_bbox   ))
-        print('    Length of mrcnn_class: ', len(mrcnn_class))
-        print('    Length of mrcnn_bbox : ', len(mrcnn_bbox ))
-        # print('    Length of mrcnn_mask : ', len(mrcnn_mask ))
+        print('    Length of mrcnn_class  : ', len(mrcnn_class))
+        print('    Length of mrcnn_bbox   : ', len(mrcnn_bbox ))
+        print('    Length of pr_hm_norm   : ', len(pr_hm_norm ))
+        print('    Length of pr_hm_scores : ', len(pr_hm_scores))
+        # print('    Length of pr_tensor    : ', len(pr_tensor))
 
-        # Process detections
+        ## Process detections
         results = []
         for i, image in enumerate(images):
             # final_rois, final_class_ids, final_scores, \
             # final_pre_scores, final_fcn_scores          \
-            # =  self.unmold_detections_new(fcn_hm_scores[i],        # detections[i], 
-                                       # image.shape  ,
-                                       # windows[i])    
+            # =  self.unmold_detections_new(fcn_hm_scores[i],  detections[i], image.shape, windows[i])    
             final_rois, final_class_ids, final_scores = self.unmold_detections(detections[i], 
                                                                                 image.shape  ,
                                                                                 windows[i])    
 
+            ## reshape pr_scores from pre_class to per_image
+            pr_scrs = utils.byclass_to_byimage_np(r['pr_hm_scores'][i],6)
+            
+            ## Convert pr_scores from NN coordinates to image coordinates
+            pr_boxes_adj = utils.boxes_to_image_domain(pr_scrs[:,:4],image_metas[i])
+            pr_scores_adj= np.hstack((pr_scr_boxes, pr_scrs[:,4:]))
+            
             results.append({
                 "rois"        : final_rois,
                 "class_ids"   : final_class_ids,
-                "scores"      : final_scores
-                # "pre_scores"  : final_pre_scores,
-                # "fcn_scores"  : final_fcn_scores,
-                # "pre_hm_norm" : pr_hm_norm
-                # 'fcn_hm_norm' : fcn_hm_norm,
-                # 'fcn_hm'      : fcn_hm
+                "scores"      : final_scores,
+                "pr_hm"        : pr_hm,
+                "pr_hm_scores" : pr_hm_scores,
+                "pr_scores_adj": pr_scores_adj
             })
         return results 
 
 
     ##-------------------------------------------------------------------------------------
-    ##
+    ## Mold Inputs
     ##-------------------------------------------------------------------------------------        
     def mold_inputs(self, images):
         '''
@@ -681,7 +652,7 @@ class MaskRCNN(ModelBase):
 
         
     ##-------------------------------------------------------------------------------------
-    ##
+    ## Unmold Detections 
     ##-------------------------------------------------------------------------------------        
     # def unmold_detections(self, detections, mrcnn_mask, image_shape, window):
     def unmold_detections(self, detections, image_shape, window):
@@ -763,23 +734,14 @@ class MaskRCNN(ModelBase):
             boxes     = np.delete(boxes, exclude_ix, axis=0)
             class_ids = np.delete(class_ids, exclude_ix, axis=0)
             scores    = np.delete(scores, exclude_ix, axis=0)
-            # masks     = np.delete(masks, exclude_ix, axis=0)
             N         = class_ids.shape[0]
-
-        #------------------------------------------------------------------------------------------
-        # Resize masks to original image size and set boundary threshold.
-        #------------------------------------------------------------------------------------------
-        # full_masks = []
-        # for i in range(N):
-            # Convert neural network mask to full size mask
-            # full_mask = utils.unmold_mask(masks[i], boxes[i], image_shape)
-            # full_masks.append(full_mask)
-        # full_masks = np.stack(full_masks, axis=-1)\
-            # if full_masks else np.empty((0,) + masks.shape[1:3])
 
         return boxes, class_ids, scores     # , full_masks
 
 
+    ##-------------------------------------------------------------------------------------
+    ## Unmold Detections - New 
+    ##-------------------------------------------------------------------------------------        
     def unmold_detections_new(self, detections, image_shape, window):
         '''
         RUNS DETECTIONS ON FCN_SCORE TENSOR
@@ -864,7 +826,7 @@ class MaskRCNN(ModelBase):
         
         
     ##-------------------------------------------------------------------------------------
-    ##
+    ##  Train 
     ##-------------------------------------------------------------------------------------        
     def train(self, 
               train_dataset, 
@@ -997,9 +959,7 @@ class MaskRCNN(ModelBase):
         ## If in debug mode write stdout intercepted IO to output file  
         ##----------------------------------------------------------------------------------------------            
         if self.config.SYSOUT == 'FILE':
-            write_stdout(self.log_dir, '_sysout', sys.stdout )        
-            sys.stdout = sys.__stdout__
-        print(' Run information written to ', self.log_dir+'_sysout.out')
+            utils.write_sysout(self.log_dir)
         
         log("Starting at epoch   {} of {} epochs. LR={}\n".format(self.epoch, epochs, learning_rate))
         log("Steps per epoch     {} ".format(steps_per_epoch))
@@ -1033,7 +993,7 @@ class MaskRCNN(ModelBase):
 
                 
     ##-------------------------------------------------------------------------------------
-    ##
+    ## Compile
     ##-------------------------------------------------------------------------------------        
     # def compile(self, learning_rate, momentum, losses):
     def compile(self, losses, optimizer):
@@ -1159,186 +1119,3 @@ class MaskRCNN(ModelBase):
         print()
         return
 
-"""
-    ##-------------------------------------------------------------------------------------
-    ## train in batches for FCN training 
-    ##-------------------------------------------------------------------------------------        
-    def train_in_batches(self,
-              train_dataset, val_dataset, 
-              learning_rate, 
-              layers            = None,
-              losses            = None,              
-              epochs            = 0,
-              epochs_to_run     = 1, 
-              batch_size        = 0, 
-              steps_per_epoch   = 0,
-              min_LR            = 0.00001,
-              debug             = False):
-              
-        '''
-        Train the model.
-        train_dataset, 
-        val_dataset:    Training and validation Dataset objects.
-        
-        learning_rate:  The learning rate to train with
-        
-        epochs:         Number of training epochs. Note that previous training epochs
-                        are considered to be done already, so this actually determines
-                        the epochs to train in total rather than in this particaular
-                        call.
-                        
-        layers:         Allows selecting wich layers to train. It can be:
-                        - A regular expression to match layer names to train
-                        - One of these predefined values:
-                        heads: The RPN, classifier and mask heads of the network
-                        all: All the layers
-                        3+: Train Resnet stage 3 and up
-                        4+: Train Resnet stage 4 and up
-                        5+: Train Resnet stage 5 and up
-        '''
-        assert self.mode == "training", "Create model in training mode."
-        
-        if batch_size == 0 :
-            batch_size = self.config.BATCH_SIZE
-            
-        if epochs_to_run > 0 :
-            epochs = self.epoch + epochs_to_run
-            
-        if steps_per_epoch == 0:
-            steps_per_epoch = self.config.STEPS_PER_EPOCH
-
-        if min_LR == 0 :
-            min_LR = self.config.MIN_LR
-        
-        if learning_rate == 0:
-            learning_rate = self.config.LEARNING_RATE
-            
-        epochs = self.epoch + epochs_to_run
-
-        # use Pre-defined layer regular expressions
-        # if layers in self.layer_regex.keys():
-            # layers = self.layer_regex[layers]
-        print(layers)
-        # train_regex_list = []
-        # for x in layers:
-            # print( ' layers ias : ',x)
-            # train_regex_list.append(x)
-        train_regex_list = [self.layer_regex[x] for x in layers]
-        print(train_regex_list)
-        layers = '|'.join(train_regex_list)        
-        print('layers regex :', layers)
-        
-        
-        ##--------------------------------------------------------------------------------
-        ## Data generators
-        ##--------------------------------------------------------------------------------
-        train_generator = data_generator(train_dataset, self.config, shuffle=True,
-                                         batch_size=batch_size)
-        val_generator   = data_generator(val_dataset, self.config, shuffle=True,
-                                         batch_size=batch_size,
-                                         augment=False)
-       
-        ##--------------------------------------------------------------------------------
-        ## Set trainable layers and compile
-        ##--------------------------------------------------------------------------------
-        self.set_trainable(layers)            
-        
-        ##----------------------------------------------------------------------------------------------
-        ## Setup optimizaion method 
-        ##----------------------------------------------------------------------------------------------            
-        optimizer = self.set_optimizer()
-
-
-        # self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)        
-        self.compile(losses, optimizer)        
-
-
-        log("Starting at epoch {} of {} epochs. LR={}\n".format(self.epoch, epochs, learning_rate))
-        log("Steps per epochs {} ".format(steps_per_epoch))
-        log("    Last epoch completed : {} ".format(self.epoch))
-        log("    Starting from epoch  : {} for {} epochs".format(self.epoch, epochs_to_run))
-        log("    Learning Rate        : {} ".format(learning_rate))
-        log("    Steps per epoch      : {} ".format(steps_per_epoch))
-        log("    Batch Size           : {} ".format(batch_size))
-        log("    Checkpoint Folder    : {} ".format(self.checkpoint_path))
-
-        ##--------------------------------------------------------------------------------
-        ## If in debug mode write stdout intercepted IO to output file  
-        ##--------------------------------------------------------------------------------
-        if self.config.SYSOUT == 'FILE':
-            write_stdout(self.log_dir, '_sysout', sys.stdout )        
-            sys.stdout = sys.__stdout__
-        print(' Run information written to ', self.log_dir+'_sysout.out')
-
-        
-        # copied from \keras\engine\training.py
-        # def _get_deduped_metrics_names(self):
-        ## get metrics from keras_model.metrics_names
-        out_labels = self.get_deduped_metrics_names()
-        print(' ====> out_labels : ', out_labels)
-
-        ##--------------------------------------------------------------------------------
-        ## Callbacks
-        ##--------------------------------------------------------------------------------
-        ## setup Progress Bar callback
-        callback_metrics = out_labels + ['val_' + n for n in out_labels]
-        print(' Callback metrics monitored by progbar')
-        pp.pprint(callback_metrics)
-        
-        progbar = keras.callbacks.ProgbarLogger(count_mode='steps')
-        progbar.set_model(self.keras_model)
-        progbar.set_params({
-            'epochs': epochs,
-            'steps': steps_per_epoch,
-            'verbose': 1,
-            'do_validation': False,
-            'metrics': callback_metrics,
-        })
-        
-        progbar.set_model(self.keras_model) 
-
-        ## setup Checkpoint callback
-        chkpoint = keras.callbacks.ModelCheckpoint(self.checkpoint_path, 
-                                                   monitor='val_loss', verbose=1, save_best_only = True, save_weights_only=True)
-        chkpoint.set_model(self.keras_model)
-
-        progbar.on_train_begin()
-        epoch_idx = self.epoch
-
-        if epoch_idx >= epochs:
-            print('Final epoch {} has already completed - Training will not proceed'.format(epochs))
-        else:
-            while epoch_idx < epochs :
-                progbar.on_epoch_begin(epoch_idx)
-                
-                for steps_index in range(steps_per_epoch):
-                    batch_logs = {}
-                    # print(' self.epoch {}   epochs {}  step {} '.format(self.epoch, epochs, steps_index))
-                    batch_logs['batch'] = steps_index
-                    batch_logs['size']  = batch_size
-                    progbar.on_batch_begin(steps_index, batch_logs)
-
-                    train_batch_x, train_batch_y = next(train_generator)
-                    
-                    outs = self.keras_model.train_on_batch(train_batch_x, train_batch_y)
-                    print(' outs: ', outs)
-                    if not isinstance(outs, list):
-                        outs = [outs]
-                    for l, o in zip(out_labels, outs):
-                        batch_logs[l] = o
-    
-                    progbar.on_batch_end(steps_index, batch_logs)
-                    
-                    # print(outs)
-                progbar.on_epoch_end(epoch_idx, {})
-                # if (epoch_idx % 10) == 0:
-                chkpoint.on_epoch_end(epoch_idx  , batch_logs)
-                epoch_idx += 1
-
-            # if epoch_idx != self.epoch:
-            # chkpoint.on_epoch_end(epoch_idx -1, batch_logs)
-            self.epoch = max(epoch_idx - 1, epochs)
-
-            print('Final : self.epoch {}   epochs {}'.format(self.epoch, epochs))
-        # end if (else)
-"""        

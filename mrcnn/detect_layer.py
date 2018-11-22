@@ -85,7 +85,7 @@ def refine_detections(rois, probs, deltas, window, config):
     refined_rois    = apply_box_deltas_np(rois, deltas_specific * config.BBOX_STD_DEV)
     
     ##----------------------------------------------------------------------------
-    ##  4. Convert the refined roi coordiates from normalized to image domain
+    ##  4. Convert the refined roi coordiates from normalized to NN image domain
     ##----------------------------------------------------------------------------
     # TODO: better to keep them normalized until later   
     height, width   = config.IMAGE_SHAPE[:2]
@@ -215,6 +215,7 @@ class DetectionLayer(KE.Layer):
                 detections = refine_detections(rois[b], mrcnn_class[b], mrcnn_bbox[b], window[b], self.config)
                 print('\n\n Detections are:')
                 print(detections)
+                
                 # Pad with zeros if detections < DETECTION_MAX_INSTANCES
                 gap = self.config.DETECTION_MAX_INSTANCES - detections.shape[0]
                 assert gap >= 0

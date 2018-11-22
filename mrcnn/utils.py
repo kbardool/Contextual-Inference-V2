@@ -7,12 +7,13 @@ Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
 
-import os, sys, math, zlib, argparse, random, platform, pprint
+import os, sys, math, zlib, argparse, random, platform, pprint, datetime
 import numpy as np
 import tensorflow as tf
 import scipy.misc
 import skimage.color
 import skimage.io
+import skimage.transform
 import keras.backend as K
 import keras
 from distutils.version import LooseVersion
@@ -22,6 +23,10 @@ if LooseVersion(keras.__version__) >= LooseVersion('2.2.0'):
 else:
     from keras.engine.topology import _load_attributes_from_hdf5_group, preprocess_weights_for_loading
 
+try:
+    from xhtml2pdf import pisa
+except:
+    pass
 
 pp = pprint.PrettyPrinter(indent=2, width=100)
 
@@ -164,12 +169,25 @@ def parse_image_meta_graph(meta):
 
     meta:       [batch, meta length] where meta length depends on NUM_CLASSES
     '''
-    image_id    = meta[:, 0]
-    image_shape = meta[:, 1:4]
-    window      = meta[:, 4:8]
+    print(' Parse Image Meta Graph ')
+    print('     meta : ' , type(meta), K.int_shape(meta))
+    image_id         = meta[:, 0:1]
+    image_shape      = meta[:, 1:4]
+    window           = meta[:, 4:8]
     active_class_ids = meta[:, 8:]
     return [image_id, image_shape, window, active_class_ids]
 
+def parse_active_class_ids_graph(meta):
+    '''
+    Parses a tensor that contains image attributes to its components.
+    See compose_image_meta() for more details.
+
+    meta:       [batch, meta length] where meta length depends on NUM_CLASSES
+    '''
+    print(' Parse Image Meta Graph ')
+    print('     meta : ' , type(meta), K.int_shape(meta))
+    active_class_ids = meta[:, 8:]
+    return active_class_ids
 
 def mold_image(images, config):
     '''
@@ -202,7 +220,8 @@ def resize_image(image, min_dim=None, max_dim=None, padding=False):
 
     Returns:
     --------
-    image:          the resized image
+    image:          the resized image (as uint8)
+    
     window:         (y1, x1, y2, x2). If max_dim is provided, padding might
                     be inserted in the returned image. If so, this window is the
                     coordinates of the image part of the full image (excluding
@@ -233,17 +252,19 @@ def resize_image(image, min_dim=None, max_dim=None, padding=False):
     # Resize image and mask
     if scale != 1:
         image = scipy.misc.imresize(image, (round(h * scale), round(w * scale)))
-    
+
+    # print('scipy.misc.imresize datatype ', image.dtype)
     # print(' Finalized scale is : ', scale)
     # print(' Resized image shape is :', image.shape)
     # Need padding?
+    
     if padding:
         # Get new height and width
         h, w = image.shape[:2]
-        top_pad = (max_dim - h) // 2
+        top_pad    = (max_dim - h) // 2
         bottom_pad = max_dim - h - top_pad
-        left_pad = (max_dim - w) // 2
-        right_pad = max_dim - w - left_pad
+        left_pad   = (max_dim - w) // 2
+        right_pad  = max_dim - w - left_pad
         padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
         image = np.pad(image, padding, mode='constant', constant_values=0)
         window = (top_pad, left_pad, h + top_pad, w + left_pad)
@@ -253,9 +274,190 @@ def resize_image(image, min_dim=None, max_dim=None, padding=False):
     return image, window, scale, padding
 
 
+##------------------------------------------------------------------------------------------
+## Resize image such that it complies with the shape expected by the NN (config.IMAGE_SHAPE)
+##------------------------------------------------------------------------------------------
+def unresize_image(image, image_meta, upscale = None):
+    '''
+    Reversed the resize_image function 
+
+
+    image:          Heatmap to resize 
+    image_meta:     Image meta contains information about padding applied to image 
+    upscale:        Necessary upscale if heatmap was downscaled in MRCNN 
+
+    Returns:
+    --------
+    image:          the resized image
+
+    '''
+    # Default window (y1, x1, y2, x2) and default scale == 1.
+    # print('unresize_image() : input image datatype ', image.dtype)
+
+    h, w = image.shape[:2]
+
+    # Get new height and width
+    to_h, to_w = image_meta[1:3]
+    window     = image_meta[4:8]
+    top_pad, left_pad , bottom_pad, right_pad   = image_meta[4:8]
+    scale = 1
+    
+    if upscale is not None:
+        print('0.1 - unresize_image(): shape before upscale: {}  datatype {}  Upscale to h/w: {}/{} '.format(image.shape,image.dtype, (h * upscale),(w * upscale)))
+        print('     min: {} , max: {} '.format(np.amin(image), np.amax(image)))
+        image = skimage.util.img_as_ubyte(skimage.transform.resize (image, (h*upscale, w * upscale)))
+        # print('0.2 - unresize_image(): shape after  upscale: {}  datatype {} '.format(image.shape, image.dtype))
+        # print('     min: {} , max: {} '.format(np.amin(image), np.amax(image)))
+        
+    # print('1 - unresize_image(): Resize Image from: h/w: {}/{}  To:  h/w: {}/{}  , Padding: top: {}  bot: {}  left: {}   right: {} '.
+                # format(h, w, to_h, to_w, top_pad, bottom_pad, left_pad , right_pad))
+        
+    # format applied for np.pad:  [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)] 
+    # print('2- unresize_image(): shape before padding removal: {}  datatype {} '.format(image.shape, image.dtype))
+    image = image[top_pad: bottom_pad, left_pad: right_pad]
+    # print('3-    unresize_image(): shape after padding removal: {}  datatype {} '.format(image.shape, image.dtype))
+
+    # to_image_max = max(to_h, to_w)    
+    # from_image_max = max(h, w)
+    # scale = to_image_max / from_image_max
+    # print('unresize_image(): scale: {}    h-scale: {}    w-scale: {} '.format(scale,round(h * scale), round(w * scale)))
+
+    # print('4 -  unresize_image(): shape r  resize: {}  datatype {} '.format(image.shape, image.dtype))
+    # print('     min: {} , max: {} '.format(np.amin(image), np.amax(image)))
+
+    image = skimage.util.img_as_ubyte(skimage.transform.resize (image, (to_h, to_w)))
+
+    # print('5 -  unresize_image(): shape after  resize: {}  datatype {} '.format(image.shape, image.dtype))
+    # print('     min: {} , max: {} '.format(np.amin(image), np.amax(image)))
+
+
+    return image
+     
+"""    
+    # Scale?
+    if min_dim:
+        # Scale up but not down
+        scale = max(1, min_dim / min(h, w))
+        # print(' Scale based on min_dim is :', scale)
+        
+    # Does it exceed max dim?
+    if max_dim:
+        image_max = max(h, w)
+        # print(' Round(image_max * scale) > max_dim :  {} *{} = {} >? {}'.format(image_max,scale,image_max*scale, max_dim)) 
+        if round(image_max * scale) > max_dim:
+            scale = max_dim / image_max
+            # print(' Scale based on max_dim is :', scale)
+            
+    # Resize image and mask
+    if scale != 1:
+        image = scipy.misc.imresize(image, (round(h * scale), round(w * scale)))
+    
+    # print(' Finalized scale is : ', scale)
+    # print(' Resized image shape is :', image.shape)
+    # Need padding?
+
+        # print(' Padding:  top: {}  bottom: {} left: {} right:{} '.format(top_pad, bottom_pad,left_pad,right_pad))
+            
+    return image, window, scale, padding
+"""
+
+
+##------------------------------------------------------------------------------------------
+## Resize image such that it complies with the shape expected by the NN (config.IMAGE_SHAPE)
+##------------------------------------------------------------------------------------------
+def unresize_heatmap(image, image_meta, upscale = None):
+    '''
+    Similar to unresize_image, but doesnt convert to uint. When converting heatmap to uint many values 
+    are driven to 0.
+
+    image:          Heatmap to resize 
+    image_meta:     Image meta contains information about padding applied to image 
+    upscale:        Necessary upscale if heatmap was downscaled in MRCNN 
+
+    Returns:
+    --------
+    image:          the resized image
+    '''
+    # Default window (y1, x1, y2, x2) and default scale == 1.
+    # print('unresize_image() : input image datatype ', image.dtype)
+
+    h, w = image.shape[:2]
+
+    # Get new height and width
+    to_h, to_w = image_meta[1:3]
+    window     = image_meta[4:8]
+    top_pad, left_pad , bottom_pad, right_pad  = image_meta[4:8]
+    scale = 1
+    
+    if upscale is not None:
+        # print('0.1 - unresize_heatmap(): shape before upscale: {}  dtype {}  Upscale to h/w: {}/{} '.format(image.shape,image.dtype, (h * upscale),(w * upscale)))
+        # print('      min: {} , max: {} '.format(np.amin(image), np.amax(image)))
+        image = skimage.transform.resize (image, (h*upscale, w * upscale))
+        # print('0.2 - unresize_heatmap(): shape after  upscale: {}  dtype {} '.format(image.shape, image.dtype))
+        # print('      min: {} , max: {} '.format(np.amin(image), np.amax(image)))
+    
+    # print('1 - unresize_heatmap(): Resize Image from: h/w: {}/{}  To:  h/w: {}/{}  , Padding: top: {}  bot: {}  left: {}   right: {} '.
+                # format(h, w, to_h, to_w, top_pad, bottom_pad, left_pad , right_pad))
+        
+    ## format applied for np.pad is :  [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)] 
+    # print('2 - unresize_image(): shape before padding removal: {}  datatype {} '.format(image.shape, image.dtype))
+    image = image[top_pad: bottom_pad, left_pad: right_pad]
+    # print('3 - unresize_heatmap(): shape after padding removal: {}  datatype {} '.format(image.shape, image.dtype))
+
+    # print('4 - unresize_heatmap(): shape before resize: {}  dtype: {} '.format(image.shape, image.dtype)) 
+    image = skimage.transform.resize (image, (to_h, to_w))
+
+    # print('5 - unresize_heatmap(): shape  after resize: {}  dtype: {} '.format(image.shape, image.dtype)) 
+
+    return image
+
+
+
 ###############################################################################
 ##  Bounding Box utility functions
 ###############################################################################
+##----------------------------------------------------------------------------------------------
+## byclass_to_byimage_np/tf
+##----------------------------------------------------------------------------------------------
+def byclass_to_byimage_np(in_array, seqid_column):    
+    ''' 
+    convert a per-class tensor, shaped as  [ num_classes, num_bboxes, columns ]
+         to                                  
+            a per-image tensor shaped  as  [ num_bboxes, columns]
+    '''
+    p_sum = np.sum(np.abs(in_array[:,:,0:4]), axis=-1)
+    # a,b = np.where(in_array[...,seqid_column]>0)
+
+    # class_idxs contains the indices of the first dimension (class)
+    # bbox_idxs contains the indices of the second dim (bboxes)
+    class_idxs,bbox_idxs = np.where(p_sum > 0)
+    max_bboxes = in_array.shape[-2]
+    non_zero_bboxes = class_idxs.shape[0]
+    output = np.zeros((non_zero_bboxes, in_array.shape[-1]))
+    # print(' class_idxs : {} , {} '.format(class_idxs.shape, class_idxs))
+    # print(' bbox_idxs : {} , {} '.format(bbox_idxs.shape, bbox_idxs))
+    # print(' max_bboxes: {} , non_zero bboxes: {}  output shape is: {}'.format(max_bboxes, non_zero_bboxes,output.shape))
+    
+    for cls , box in zip(class_idxs, bbox_idxs):
+        # print( ' building output: ', cls, box, max_bboxes  - in_array[cls, box, seqid_column].astype(int))
+        output[max_bboxes - in_array[cls, box, seqid_column].astype(int) ] = in_array[cls, box]
+
+    return output
+
+    
+    
+def byclass_to_byimage_tf(in_array, seqid_column):    
+    ''' 
+    convert a by class tensor shaped  [batch_size, num_classes, num_bboxes, columns ] to 
+            a by image tensor shaped  [batch_size, num_bboxes, columns]
+    '''
+    aa = tf.reshape(in_array, [in_array.shape[0], -1, in_array.shape[-1]])
+    _ , sort_inds = tf.nn.top_k(tf.abs(aa[:,:,seqid_column]), k= in_array.shape[2])
+    batch_grid, bbox_grid = tf.meshgrid(tf.range(in_array.shape[0]), tf.range(in_array.shape[2]),indexing='ij')
+    gather_inds = tf.stack([batch_grid, sort_inds],axis = -1)
+    output = tf.gather_nd(aa, gather_inds )
+    return output    
+    
 
 ##------------------------------------------------------------------------------------------
 ##  Convert bounding box coordinates from NN shape back to original image coordinates
@@ -274,7 +476,7 @@ def boxes_to_image_domain(boxes, image_meta):
         boxes       bounding box in image domain coordinates
        
     '''
-    image_id    = image_meta[0]
+    # image_id    = image_meta[0]
     image_shape = image_meta[1:4]
     window      = image_meta[4:8]
     
@@ -286,12 +488,16 @@ def boxes_to_image_domain(boxes, image_meta):
     scales = np.array([scale, scale, scale, scale])
     shifts = np.array([shift[0], shift[1], shift[0], shift[1]])
 
+    # print(' scales shape: ', scales.shape, '  shifts shape: ', shifts.shape)
+    # print(' scales: ', scales, 'shifts: ', shifts)
     # Translate bounding boxes to image domain
     boxes = np.multiply(boxes - shifts, scales).astype(np.int32)
-    print(' boxes_to_image_domain() ')
-    print('    Original image shape : {}   Image window info: {} '.format(image_shape, window))
-    print('    Adjustment scale     : {}   Adjustment shift : {} '.format(scales, shift))
-    print('    Adjusted boxes shape : {} '.format(boxes.shape))
+    boxes = clip_to_window_np([0,0,image_shape[0], image_shape[1]], boxes)    
+    # print(' boxes_to_image_domain() ')
+    # print('    Original image shape : {}   Image window info: {} '.format(image_shape, window))
+    # print('    Adjustment scale     : {}   Adjustment shift : {} '.format(scales, shift))
+    # print('    Adjusted boxes shape : {} '.format(boxes.shape))
+    
     return boxes
 
 
@@ -647,13 +853,13 @@ def clip_to_window_np(window, boxes):
     boxes : [N, (y1, x1, y2, x2)]
     '''
     new_boxes = np.zeros_like(boxes)
-    print('clip_to_window_np()')
-    print('     boxes.shape: ', boxes.shape)
-    print('     window     : ', window)
-    new_boxes[:, 0] = np.maximum(np.minimum(boxes[:, 0], window[2]), window[0])
-    new_boxes[:, 1] = np.maximum(np.minimum(boxes[:, 1], window[3]), window[1])
-    new_boxes[:, 2] = np.maximum(np.minimum(boxes[:, 2], window[2]), window[0])
-    new_boxes[:, 3] = np.maximum(np.minimum(boxes[:, 3], window[3]), window[1])
+    # print('clip_to_window_np()')
+    # print('     boxes.shape: ', boxes.shape)
+    # print('     window     : ', window)
+    new_boxes[..., 0] = np.maximum(np.minimum(boxes[..., 0], window[2]), window[0])
+    new_boxes[..., 1] = np.maximum(np.minimum(boxes[..., 1], window[3]), window[1])
+    new_boxes[..., 2] = np.maximum(np.minimum(boxes[..., 2], window[2]), window[0])
+    new_boxes[..., 3] = np.maximum(np.minimum(boxes[..., 3], window[3]), window[1])
     return new_boxes
     
 ##------------------------------------------------------------------------------------------
@@ -901,7 +1107,7 @@ def generate_pyramid_anchors(anchor_scales, anchor_ratios, feature_shapes, featu
    
 
 ###############################################################################
-##  Miscellaneous
+## Precision / Recall calculations
 ###############################################################################
 def compute_ap(gt_boxes, gt_class_ids,
                pred_boxes, pred_class_ids, pred_scores,
@@ -993,9 +1199,13 @@ def compute_recall(pred_boxes, gt_boxes, iou):
 
 
 
-############################################################
+###############################################################################
 ##  Utility Functions
-############################################################
+###############################################################################
+def tensor_info(x):
+    print('     {:25s} : {}- {}  KerasTensor: {} '.format(x.name, x.shape, KB.int_shape(x), KB.is_keras_tensor(X)))
+
+  
 def log(text, array=None):
     """Prints a text message. And, optionally, if a Numpy array is provided it
     prints it's shape, min, and max values.
@@ -1015,10 +1225,22 @@ def mask_string(mask):
 from   sys      import stdout    
     
 def write_stdout(filepath=None,filenm=None,stdout=stdout):
-    with open(filepath+filenm+'.out','wb'  ) as f_obj :
+    
+    with open(os.path.join(filepath,filenm),'wb'  ) as f_obj :
         content = stdout.getvalue().encode('utf_8')
         f_obj.write(content)
         f_obj.close()    
+    
+    return
+
+
+def write_sysout(directory):
+    sys.stdout.flush()
+    sysout_file = "{:%Y%m%dT%H%M}_sysout.out".format(datetime.datetime.now())
+    write_stdout( directory, sysout_file , sys.stdout )        
+    sys.stdout = sys.__stdout__
+    print(' Run information written to ', sysout_file+'.out')
+    
     return
 
     
@@ -1030,24 +1252,36 @@ def write_zip_stdout(filepath=None,filenm=None,stdout=stdout):
         f_obj.close()    
     return
 
+def convertHtmlToPdf(sourceHtml, outputFilename):
+
+    outputFile = open(outputFilename, "w+b")
+    pisaStatus = pisa.CreatePDF(sourceHtml, dest = outputFile)
+    outputFile.close()
+    return pisaStatus.err
     
+    
+##----------------------------------------------------------------------------------------------
+## get_predicted_mrcnn_deltas
+##----------------------------------------------------------------------------------------------
 def get_predicted_mrcnn_deltas(m_class, m_bbox, verbose= False):
     '''
+    
     return  MRCNN_BBOX deltas corresponding to the max predicted MRCNN_CLASS
     extract predicted refinements for highest predicted class
     
     m_class:      [Batch_Size, #predictions, # classes ]
-                    Predicted class scores (returned in mrcnn_class)
+                    Predicted  scores for each class  (returned in mrcnn_class)
     m_bbox :      [Batch_Size, #predictions, # classes, 4 (dy, dx, log(dh), log(dw))]
-                    Predicted refinements (returned in mrcnn_bbox)
+                    Predicted refinements for each class (returned in mrcnn_bbox)
                     
     Returns:
+    --------
+    
     predicted_classes  [ Batch_size, # Predictions] : class_id predidcted
 
     predicted_deltas   [Batch_Size, #predictions, 4 (dy, dx, log(dh), log(dw))]
                         delta matching predicted class_id
     '''
-#     pred_scores  = np.max(mrcnn_class,axis = -1)
     
     predicted_classes = np.argmax(m_class,axis = -1)
     row,col = np.indices(predicted_classes.shape)
@@ -1065,45 +1299,12 @@ def get_predicted_mrcnn_deltas(m_class, m_bbox, verbose= False):
     
     return predicted_classes, predicted_deltas    
     
-
-def byclass_to_byimage_np(in_array, seqid_column):    
-    ''' 
-    convert a by class tensor shaped  [batch_size, num_classes, num_bboxes, columns ] to 
-            a by image tensor shaped  [batch_size, num_bboxes, columns]
-    '''
-    #     np_sum = np.sum(np.abs(model_gt_heatmap_scores[:,:,:,0:4]), axis=-1)
-    #     print(np_sum.shape)
-    #     a,b,c = np.where(np_sum > 0)
-    a,b,c = np.where(in_array[...,seqid_column]>0)
-
-    output = np.zeros((in_array.shape[0],in_array.shape[-2],in_array.shape[-1]))
-#     print(' output shape is ',output.shape)
-#     print(a.shape, b.shape,c.shape)
-    
-    for img, cls , box in zip(a, b,c):
-#         print( img,cls, box, 200 - in_array[img, cls, box,6].astype(int))
-        output[img, 200 - in_array[img, cls, box,6].astype(int)] = in_array[img, cls, box]
-
-    return output
-
-def byclass_to_byimage_tf(in_array, seqid_column):    
-    ''' 
-    convert a by class tensor shaped  [batch_size, num_classes, num_bboxes, columns ] to 
-            a by image tensor shaped  [batch_size, num_bboxes, columns]
-    '''
-    aa = tf.reshape(in_array, [in_array.shape[0], -1, in_array.shape[-1]])
-    _ , sort_inds = tf.nn.top_k(tf.abs(aa[:,:,seqid_column]), k= in_array.shape[2])
-    batch_grid, bbox_grid = tf.meshgrid(tf.range(in_array.shape[0]), tf.range(in_array.shape[2]),indexing='ij')
-    gather_inds = tf.stack([batch_grid, sort_inds],axis = -1)
-    output = tf.gather_nd(aa, gather_inds )
-    return output    
-    
     
 ##----------------------------------------------------------------------------------------------
 ## Load weights from hdf5 file
 ##----------------------------------------------------------------------------------------------
 
-def load_weights_from_hdf5_group(f, layers, reshape=False):
+def load_weights_from_hdf5_group(f, layers, reshape=False, verbose = 0):
     """Implements topological (order-based) weight loading.
 
     # Arguments
@@ -1179,8 +1380,7 @@ def load_weights_from_hdf5_group(f, layers, reshape=False):
 ##----------------------------------------------------------------------------------------------
 ## Load weights from hdf5 file
 ##----------------------------------------------------------------------------------------------
-def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False,
-                                         reshape=False):
+def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False, reshape=False, verbose = 0):
     """Implements name-based weight loading.
 
     (instead of topological weight loading).
@@ -1203,12 +1403,6 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False,
     ## import keras.backend as K
     ## from keras.engine.topology import _load_attributes_from_hdf5_group, preprocess_weights_for_loading
    
-    # print(" Load weights from hd5 by name ")
-    # print("==============================================")
-    # print(" Layers passed to load_weights_from_hd5_group ")
-    # print("==============================================")
-    # for idx,layer in enumerate(layers):
-        # print(' {:4d}   {:25s}   {} '.format(idx,layer.name, layer))
         
     if 'keras_version' in f.attrs:
         original_keras_version = f.attrs['keras_version'].decode('utf8')
@@ -1222,45 +1416,58 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False,
     # New file format.
     layer_names = _load_attributes_from_hdf5_group(f, 'layer_names')
     
-    
-    # print("=========================================")
-    # print(" Layer names loaded from hd5 file:       ")
-    # print("=========================================")
-    # for idx,layer in enumerate(layer_names):
-        # print(' {:4d}  {} '.format(idx, layer ))
-
-    # Reverse index of layer name to list of layers with name.
+    # Reverse index of layer name to list of layers with name.    
     index = {}
     for layer in layers:
         if layer.name:
             index.setdefault(layer.name, []).append(layer)
 
-    # print("=========================================")
-    # print(" Reverese Index:")
-    # print("=========================================")
-    # for key  in index.keys():
-        # print(' {:.<30s}     {}'.format(key, index[key]))
-        
-    print("=============================================================")
-    print(" List Model layers and matching hd5 layers, if present :     ")
-    print("=============================================================")
-    for idx, layer in enumerate(layers):
-        hdf5_layer = layer_names.count(layer.name) 
-        print(' {:4d}  {:.<30s}  {} '.format(idx, layer.name, hdf5_layer ))
+    print('layers type: ', type(layers), 'length: ', len(layers))
             
+    # if verbose > 0:
+        # print("=========================================")
+        # print(" Layer names loaded from hd5 file:       ")
+        # print("=========================================")
+        # for idx,layer in enumerate(layer_names):
+            # print(' {:4d}  {} '.format(idx, layer ))
 
-    print("=============================================================")
-    print(" List hd5 layers and matching layers from Model, if present :")
-    print("=============================================================")
-    for idx, name in enumerate(layer_names):
-        mdl_layer_name = index.get(name, []) 
-        print(' {:4d}  {:.<30s}  {} '.format(idx, name, mdl_layer_name[0].name   if mdl_layer_name else '!!! NotFound !!!'))
+    if verbose > 2:
+        # print(" Load weights from hd5 by name ")
+        print("=====================================================================")
+        print(" Model Layer names (passed to load_weights_from_hd5_group) ")
+        print("=====================================================================")
+        for idx,layer in enumerate(layers):
+            print(' {:4d}   {:25s}   {} '.format(idx,layer.name, layer))
+        print("=====================================================================")
+        print(" Model Reverese Index:")
+        print("=====================================================================")
+        for key  in index.keys():
+            print(' {:.<30s}     {}'.format(key, index[key]))
+
+    if verbose > 1:
+        print("=====================================================================")
+        print(" List Defined Model  and matching hd5 layers, if present       ")
+        print("       Model Layer                     HD5 Layer ")
+        print("=====================================================================")
+        for idx, layer in enumerate(layers):
+            hdf5_layer_count = layer_names.count(layer.name) 
+            print(' {:4d}  {:.<30s}  {} '.format(idx, layer.name, hdf5_layer_count  if hdf5_layer_count  else '!!! Not Found !!!')) 
+        print("=====================================================================")
+        print(" List hd5 layers and matching layers from Defined Model, if present  ")
+        print("       HDF5 Layer                      Model Layer")
+        print("=====================================================================")
+        for idx, name in enumerate(layer_names):
+            mdl_layer_name = index.get(name, []) 
+            print(' {:4d}  {:.<30s}  {} '.format(idx, name, mdl_layer_name[0].name  if mdl_layer_name else '!!! NotFound !!!'))
             
+    if verbose > 0:
+        print("=====================================================================")
+        print(" Weight Matchup between model and HDF5 weights ")
+        print("=====================================================================")
+
     # We batch weight value assignments in a single backend call
     # which provides a speedup in TensorFlow.
-    weight_value_tuples = []
-    
-    
+    weight_value_tuples = []    
     ## layer_names  : layers names from hdf5 file
     ## weight_names : weight names from hdf5 file
     
@@ -1270,23 +1477,19 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False,
         weight_values = [np.asarray(g[weight_name]) for weight_name in weight_names]
         
         model_layers = index.get(name,[])
-        if not model_layers:
-            print('\n{:3d} {:25s} *** No corresponding layers found in model ***'.format(k,name))
-            print(' {} Weights     : {}'.format(' '*28,weight_names))
-            for i in range(len(weight_values)):
-                print('{}  {} {:35s}  hdf5 Weights: {}'.format(' '*30, i, weight_names[i], weight_values[i].shape))
-        else:
-            print('\n{:3d} {:25s} Model Layer Name/Type : {} '.format(k,name, [ (i.name, i) for i in model_layers]))
-            print(' {} Weights     : {}'.format(' '*28,weight_names))
+        if verbose > 0:
+            if not model_layers:
+                print('\n{:3d} {:25s} *** No corresponding layers found in model ***'.format(k,name))
+                print('    HDF5 Weights  : {} \n'.format(weight_names))
+                for i in range(len(weight_values)):
+                    print('{:5d} {:35s}  hdf5 Weights: {}'.format( i, weight_names[i], weight_values[i].shape))
+            else:
+                print('\n{:3d} {:25s} Model Layer Name/Type : {} '.format(k,name, [ [i.name, i.__class__.__name__] for i in model_layers]))
+                # print('    HDF5 Weights  : {} \n'.format(weight_names))
         
         
         for layer in index.get(name, []):
             symbolic_weights = layer.weights
-            print(' '*30, 'Symbolic Weights from Model')
-            for i in range(len(symbolic_weights)):
-                print('{}  {} {}  '.format(' '*30, i, symbolic_weights[i].shape))
-                
-                
             weight_values = preprocess_weights_for_loading(
                 layer,
                 weight_values,
@@ -1294,7 +1497,7 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False,
                 original_backend,
                 reshape=reshape)
                 
-            print('{} len weight_values: {}   len symbolic_weights: {}'.format(' '*30,len(weight_values), len(symbolic_weights)))
+            # print('{} len weight_values: {}   len symbolic_weights: {}'.format(' '*30,len(weight_values), len(symbolic_weights)))
             
             if len(weight_values) != len(symbolic_weights):
                 print('      Skipping loading of weights for layer {}'.format(layer.name) +
@@ -1317,8 +1520,11 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False,
             
             # Set values.
             for i in range(len(weight_values)):
-                print('{} i: {}  hdf5 weight shape: {}   symb wgt shp: {}'.format(' '*30,i, weight_values[i].shape,
-                                                     K.int_shape(symbolic_weights[i])))
+                if verbose > 0:
+                    status = " " if weight_values[i].shape == symbolic_weights[i].shape  else  " ***** MISMATCH ***** "
+                    print('{:5d} {:35s}  hdf5 Weights: {}  \t\t Symbolic Wghts: {}  {}'.format(
+                                     i, weight_names[i], weight_values[i].shape, symbolic_weights[i].shape, status))
+                
                 if skip_mismatch:
                     if K.int_shape(symbolic_weights[i]) != weight_values[i].shape:
                         print('{}  {} {:35s}  Weight MISMATCH {}'.format(' '*30, i, weight_names[i],weight_values[i].shape))
@@ -1329,13 +1535,60 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False,
                                           weight_values[i].shape))
                         continue
                         
-                print('{}  {} {:35s}  hdf5 Weights: {}  Symbolic Wghts: {}'.format(' '*30,
-                                    i, weight_names[i], weight_values[i].shape, symbolic_weights[i].shape))
-                weight_value_tuples.append((symbolic_weights[i],
-                                            weight_values[i]))
-    print('Wrap it up...')
+                weight_value_tuples.append((symbolic_weights[i], weight_values[i]))
     K.batch_set_value(weight_value_tuples)
 
+##------------------------------------------------------------------------------------
+## FILE PATHS CLASS  
+##------------------------------------------------------------------------------------
+class Paths(object):
+    """
+    Base configuration class. For custom configurations, create a
+    sub-class that inherits from this one and override properties
+    that need to be changed.
+    """
+    
+    def __init__(self, fcn_training_folder   = "train_fcn_coco", 
+                       mrcnn_training_folder = "train_mrcnn_coco"):
+        print(">>> Initialize Paths")
+        syst = platform.system()
+        if syst == 'Windows':
+            # Root directory of the project
+            print(' windows ' , syst)
+            # WINDOWS MACHINE ------------------------------------------------------------------
+            self.DIR_ROOT          = "F:\\"
+            self.DIR_TRAINING   = os.path.join(self.DIR_ROOT, 'models')
+            self.DIR_DATASET    = os.path.join(self.DIR_ROOT, 'MLDatasets')
+            self.DIR_PRETRAINED = os.path.join(self.DIR_ROOT, 'PretrainedModels')
+        elif syst == 'Linux':
+            print(' Linx ' , syst)
+            # LINUX MACHINE ------------------------------------------------------------------
+            self.DIR_ROOT       = os.getcwd()
+            self.DIR_TRAINING   = os.path.expanduser('~/models')
+            self.DIR_DATASET    = os.path.expanduser('~/MLDatasets')
+            self.DIR_PRETRAINED = os.path.expanduser('~/PretrainedModels')
+        else :
+            raise Error('unreconized system ')
+
+        self.MRCNN_TRAINING_PATH   = os.path.join(self.DIR_TRAINING  , mrcnn_training_folder)
+        self.FCN_TRAINING_PATH     = os.path.join(self.DIR_TRAINING  , fcn_training_folder)
+        self.COCO_DATASET_PATH     = os.path.join(self.DIR_DATASET   , "coco2014")
+        self.COCO_HEATMAP_PATH     = os.path.join(self.DIR_DATASET   , "coco2014_heatmaps")
+        self.COCO_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED, "mask_rcnn_coco.h5")
+        self.RESNET_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED, "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
+        self.VGG16_MODEL_PATH      = os.path.join(self.DIR_PRETRAINED, "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5")
+        self.FCN_VGG16_MODEL_PATH  = os.path.join(self.DIR_PRETRAINED, "fcn_vgg16_weights_tf_dim_ordering_tf_kernels.h5")
+        return 
+        
+    def display(self):
+        """Display Paths values."""
+        print("\nPaths:")
+        print("-------------------------")
+        for a in dir(self):
+            if not a.startswith("__") and not callable(getattr(self, a)):
+                print("{:30} {}".format(a, getattr(self, a)))
+        print("\n")
+    
 ##------------------------------------------------------------------------------------
 ## Parse command line arguments
 ##  
@@ -1349,39 +1602,53 @@ def command_line_parser():
     # parser.add_argument("command",
                         # metavar="<command>",
                         # help="'train' or 'evaluate' on MS COCO")
+
     # parser.add_argument('--dataset', required=True,
                         # metavar="/path/to/coco/",
                         # help='Directory of the MS-COCO dataset')
+    
     # parser.add_argument('--limit', required=False,
                         # default=500,
                         # metavar="<image count>",
                         # help='Images to use for evaluation (defaults=500)')
                         
-    parser.add_argument('--model', required=False,
+    parser.add_argument('--mrcnn_model', required=False,
                         default='last',
                         metavar="/path/to/weights.h5",
                         help="MRCNN model weights file: 'coco' , 'init' , or Path to weights .h5 file ")
-
-    parser.add_argument('--fcn_arch', required=False,
-                        choices=['fcn32', 'fcn16', 'fcn8'],
-                        default='fcn32', type=str.upper, 
-                        metavar="/path/to/weights.h5",
-                        help="FCN Architecture : fcn32, fcn16, or fcn8")
-
-    parser.add_argument('--fcn_model', required=False,
-                        default='last',
-                        metavar="/path/to/weights.h5",
-                        help="FCN model weights file: 'init' , or Path to weights .h5 file ")
 
     parser.add_argument('--mrcnn_logs_dir', required=True,
                         default='train_mrcnn',
                         metavar="/path/to/logs/",
                         help='MRCNN Logs and checkpoints directory (default=logs/)')
 
+    parser.add_argument('--fcn_model', required=False,
+                        default='last',
+                        metavar="/path/to/weights.h5",
+                        help="FCN model weights file: 'init' , or Path to weights .h5 file ")
+
     parser.add_argument('--fcn_logs_dir', required=True,
                         default='train_fcn',
                         metavar="/path/to/logs/",
                         help='FCN Logs and checkpoints directory (default=logs/)')
+
+    parser.add_argument('--fcn_arch', required=False,
+                        choices=['FCN32', 'FCN16', 'FCN8', 'FCN8L2'],
+                        default='FCN32', type=str.upper, 
+                        metavar="/path/to/weights.h5",
+                        help="FCN Architecture : fcn32, fcn16, or fcn8")
+
+    parser.add_argument('--mrcnn_exclude_layers', required=False,
+                        nargs = '+',
+                        type=str.lower, 
+                        metavar="/path/to/weights.h5",
+                        help="layers to exclude from loading " )
+
+    parser.add_argument('--fcn_layers', required=False,
+                        nargs = '+',
+                        default='fcn32+', type=str.lower, 
+                        metavar="/path/to/weights.h5",
+                        help="layers to train" )
 
     parser.add_argument('--last_epoch', required=False,
                         default=0,
@@ -1419,6 +1686,7 @@ def command_line_parser():
                         help='Optimizatoin Method: SGD, RMSPROP, ADAGRAD, ...')
                         
     parser.add_argument('--sysout', required=False,
+                        choices=['SCREEN', 'FILE'],
                         default='screen', type=str.upper,
                         metavar="<sysout>",
                         help="sysout destination: 'screen' or 'file'")
@@ -1429,46 +1697,30 @@ def command_line_parser():
 
     return parser
     
+def display_input_parms(args):
+    print("    Input Parameters        ")
+    print("   -------------------------")
+    print("       MRCNN Model        : ", args.mrcnn_model)
+    print("       FCN Model          : ", args.fcn_model)
+    print("       MRCNN Log/Ckpt Dir : ", args.mrcnn_logs_dir)
+    print("       FCN Log/Ckpt  Dir  : ", args.fcn_logs_dir)
+    print("       FCN architecture   : ", args.fcn_arch)
+    print("       FCN layers to train: ", args.fcn_layers)
+    print("       Optimizer          : ", type(args.opt), args.opt)
+    print()   
+    print("       Last Epoch         : ", args.last_epoch)
+    print("       Epochs to run      : ", args.epochs)
+    print("       Steps in each epoch: ", args.steps_in_epoch)
+    print("       Validation steps   : ", args.val_steps)
+    print("       Batch Size         : ", args.batch_size)
+    print()   
+    print("       New Log Folder     : ", type(args.new_log_folder), args.new_log_folder)
+    print("       Sysout             : ", type(args.sysout), args.sysout)
+    return
     
     
-class Paths(object):
-    def __init__(self, fcn_training_folder   = "train_fcn_coco", 
-                       mrcnn_training_folder = "train_mrcnn_coco"):
-        print(">>> Initialize Paths")
-        syst = platform.system()
-        if syst == 'Windows':
-            # Root directory of the project
-            print(' windows ' , syst)
-            # WINDOWS MACHINE ------------------------------------------------------------------
-            self.DIR_ROOT          = "F:\\"
-            self.DIR_TRAINING   = os.path.join(self.DIR_ROOT, 'models')
-            self.DIR_DATASET    = os.path.join(self.DIR_ROOT, 'MLDatasets')
-            self.DIR_PRETRAINED = os.path.join(self.DIR_ROOT, 'PretrainedModels')
-        elif syst == 'Linux':
-            print(' Linx ' , syst)
-            # LINUX MACHINE ------------------------------------------------------------------
-            self.DIR_ROOT       = os.getcwd()
-            self.DIR_TRAINING   = os.path.expanduser('~/models')
-            self.DIR_DATASET    = os.path.expanduser('~/MLDatasets')
-            self.DIR_PRETRAINED = os.path.expanduser('~/PretrainedModels')
-        else :
-            raise Error('unreconized system ')
+    
 
-        self.MRCNN_TRAINING_PATH   = os.path.join(self.DIR_TRAINING  , mrcnn_training_folder)
-        self.FCN_TRAINING_PATH     = os.path.join(self.DIR_TRAINING  , fcn_training_folder)
-        self.COCO_DATASET_PATH     = os.path.join(self.DIR_DATASET   , "coco2014")
-        self.COCO_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED, "mask_rcnn_coco.h5")
-        self.RESNET_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED, "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
-        self.VGG16_MODEL_PATH      = os.path.join(self.DIR_PRETRAINED, "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5")
-        self.FCN_VGG16_MODEL_PATH  = os.path.join(self.DIR_PRETRAINED, "fcn_vgg16_weights_tf_dim_ordering_tf_kernels.h5")
-        return 
-        
-    def display(self):
-        """Display Paths values."""
-        print("\nPaths:")
-        print("-------------------------")
-        for a in dir(self):
-            if not a.startswith("__") and not callable(getattr(self, a)):
-                print("{:30} {}".format(a, getattr(self, a)))
-        print("\n")
-        
+    
+    
+    

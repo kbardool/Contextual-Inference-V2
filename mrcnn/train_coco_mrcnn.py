@@ -23,8 +23,8 @@ from mrcnn.dataset      import Dataset
 from mrcnn.utils        import log, stack_tensors, stack_tensors_3d, write_stdout
 from mrcnn.datagen      import data_generator, load_image_gt
 from mrcnn.coco         import CocoDataset, CocoConfig, CocoInferenceConfig, evaluate_coco, build_coco_results
-from mrcnn.prep_notebook import mrcnn_coco_train
-from mrcnn.utils        import command_line_parser
+from mrcnn.prep_notebook import mrcnn_coco_train, coco_dataset
+from mrcnn.utils        import command_line_parser, display_input_parms, Paths
 
 pp = pprint.PrettyPrinter(indent=2, width=100)
 np.set_printoptions(linewidth=100,precision=4,threshold=1000, suppress = True)
@@ -44,22 +44,15 @@ args = parser.parse_args()
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
 ##----------------------------------------------------------------------------------------------            
-print("    MRCNN Model        : ", args.model)
-# print("    FCN Model          : ", args.fcn_model)
-print("    MRCNN Log/Ckpt Dir : ", args.mrcnn_logs_dir)
-# print("    FCN Log/Ckpt  Dir  : ", args.fcn_logs_dir)
-print("    Last Epoch         : ", args.last_epoch)
-print("    Epochs to run      : ", args.epochs)
-print("    Steps in each epoch: ", args.steps_in_epoch)
-print("    Validation steps   : ", args.val_steps)
-print("    Batch Size         : ", args.batch_size)
-print("    Optimizer          : ", type(args.opt), args.opt)
-print("    New Log Folder     : ", type(args.new_log_folder), args.new_log_folder)
-print("    Sysout             : ", type(args.sysout), args.sysout)
-print("    OS Platform        : ", os_platform)
+display_input_parms(args)
 
 if args.sysout == 'FILE':
+    print('    Output is written to file....')
     sys.stdout = io.StringIO()
+    print()
+    print('--> Execution started at:', start_time)
+    print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
+    display_input_parms(args)
 
 ##------------------------------------------------------------------------------------
 ## setup project directories
@@ -67,83 +60,65 @@ if args.sysout == 'FILE':
 ##   MODEL_DIR        : Directory to save logs and trained model
 ##   COCO_MODEL_PATH  : Path to COCO trained weights
 ##---------------------------------------------------------------------------------
-if os_platform == 'Windows':
-    # Root directory of the project
-    print(' windows ' , os_platform)
-    # WINDOWS MACHINE ------------------------------------------------------------------
-    DIR_ROOT          = "E:\\"
-    DIR_TRAINING   = os.path.join(DIR_ROOT, "models")
-    DIR_DATASET    = os.path.join(DIR_ROOT, 'MLDatasets')
-    DIR_PRETRAINED = os.path.join(DIR_ROOT, 'PretrainedModels')
-elif os_platform == 'Linux':
-    print(' Linx ' , os_platform)
-    # LINUX MACHINE ------------------------------------------------------------------
-    DIR_ROOT       = os.getcwd()
-    DIR_TRAINING   = os.path.expanduser('~/models')
-    DIR_DATASET    = os.path.expanduser('~/MLDatasets')
-    DIR_PRETRAINED = os.path.expanduser('~/PretrainedModels')
-else :
-    raise Error('unreconized system ')
-
-MRCNN_TRAINING_PATH   = os.path.join(DIR_TRAINING  , args.mrcnn_logs_dir)
-# FCN_TRAINING_PATH     = os.path.join(DIR_TRAINING  , args.fcn_logs_dir)
-COCO_DATASET_PATH     = os.path.join(DIR_DATASET   , "coco2014")
-COCO_MODEL_PATH       = os.path.join(DIR_PRETRAINED, "mask_rcnn_coco.h5")
-RESNET_MODEL_PATH     = os.path.join(DIR_PRETRAINED, "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
-VGG16_MODEL_PATH      = os.path.join(DIR_PRETRAINED, "vgg16_weights_tf_dim_ordering_tf_kernels.h5")
-FCN_VGG16_MODEL_PATH  = os.path.join(DIR_PRETRAINED, "fcn_vgg16_weights_tf_dim_ordering_tf_kernels.h5")
+paths = Paths( mrcnn_training_folder = args.mrcnn_logs_dir, fcn_training_folder =  args.fcn_logs_dir)
+# paths.display()
 
 ##------------------------------------------------------------------------------------
 ## Build configuration object 
 ##------------------------------------------------------------------------------------
-mrcnn_config                    = CocoConfig()
-mrcnn_config.NAME               = 'mrcnn'              
-mrcnn_config.TRAINING_PATH      = MRCNN_TRAINING_PATH
-mrcnn_config.COCO_DATASET_PATH  = COCO_DATASET_PATH 
-mrcnn_config.COCO_MODEL_PATH    = COCO_MODEL_PATH   
-mrcnn_config.RESNET_MODEL_PATH  = RESNET_MODEL_PATH 
-mrcnn_config.VGG16_MODEL_PATH   = VGG16_MODEL_PATH  
-mrcnn_config.COCO_CLASSES       = None 
-mrcnn_config.DETECTION_PER_CLASS = 200
+mrcnn_config                      = CocoConfig()
+mrcnn_config.NAME                 = 'mrcnn'              
+mrcnn_config.TRAINING_PATH        = paths.MRCNN_TRAINING_PATH
+mrcnn_config.COCO_DATASET_PATH    = paths.COCO_DATASET_PATH 
+mrcnn_config.COCO_MODEL_PATH      = paths.COCO_MODEL_PATH   
+mrcnn_config.RESNET_MODEL_PATH    = paths.RESNET_MODEL_PATH 
+mrcnn_config.VGG16_MODEL_PATH     = paths.VGG16_MODEL_PATH  
+mrcnn_config.COCO_CLASSES         = None 
+mrcnn_config.DETECTION_PER_CLASS  = 200
 mrcnn_config.HEATMAP_SCALE_FACTOR = 4
 
-mrcnn_config.BATCH_SIZE         = int(args.batch_size)                  # Batch size is 2 (# GPUs * images/GPU).
-mrcnn_config.IMAGES_PER_GPU     = int(args.batch_size)                  # Must match BATCH_SIZE
-mrcnn_config.STEPS_PER_EPOCH    = int(args.steps_in_epoch)
-mrcnn_config.LEARNING_RATE      = float(args.lr)
-mrcnn_config.EPOCHS_TO_RUN      = int(args.epochs)
-mrcnn_config.FCN_INPUT_SHAPE    = mrcnn_config.IMAGE_SHAPE[0:2]
-mrcnn_config.LAST_EPOCH_RAN     = int(args.last_epoch)
-mrcnn_config.WEIGHT_DECAY       = 2.0e-4
-mrcnn_config.VALIDATION_STEPS   = int(args.val_steps)
-mrcnn_config.REDUCE_LR_FACTOR   = 0.5
-mrcnn_config.REDUCE_LR_COOLDOWN = 30
-mrcnn_config.REDUCE_LR_PATIENCE = 40
-mrcnn_config.EARLY_STOP_PATIENCE= 80
-mrcnn_config.EARLY_STOP_MIN_DELTA = 1.0e-4
-mrcnn_config.MIN_LR             = 1.0e-10
-mrcnn_config.NEW_LOG_FOLDER     = True  
-mrcnn_config.OPTIMIZER          = args.opt.upper()
-# mrcnn_model.config.OPTIMIZER    = 'ADAGRAD'
-mrcnn_config.SYSOUT             = args.sysout
+mrcnn_config.BATCH_SIZE           = int(args.batch_size)                  # Batch size is 2 (# GPUs * images/GPU).
+mrcnn_config.IMAGES_PER_GPU       = int(args.batch_size)                  # Must match BATCH_SIZE
+mrcnn_config.STEPS_PER_EPOCH      = int(args.steps_in_epoch)
+mrcnn_config.LEARNING_RATE        = float(args.lr)
+mrcnn_config.EPOCHS_TO_RUN        = int(args.epochs)
+mrcnn_config.FCN_INPUT_SHAPE      = mrcnn_config.IMAGE_SHAPE[0:2]
+mrcnn_config.LAST_EPOCH_RAN       = int(args.last_epoch)
 
+mrcnn_config.WEIGHT_DECAY         = 2.0e-4
+mrcnn_config.VALIDATION_STEPS     = int(args.val_steps)
+mrcnn_config.REDUCE_LR_FACTOR     = 0.5
+mrcnn_config.REDUCE_LR_COOLDOWN   = 30
+mrcnn_config.REDUCE_LR_PATIENCE   = 40
+mrcnn_config.EARLY_STOP_PATIENCE  = 80
+mrcnn_config.EARLY_STOP_MIN_DELTA = 1.0e-4
+mrcnn_config.MIN_LR               = 1.0e-10
+
+mrcnn_config.NEW_LOG_FOLDER       = args.new_log_folder  
+mrcnn_config.OPTIMIZER            = args.opt.upper()
+mrcnn_config.SYSOUT               = args.sysout
 mrcnn_config.display() 
     
 ##------------------------------------------------------------------------------------
-## Build shape dataset for Training and Validation       
+## Build Mask RCNN Model in TRAINFCN mode
 ##------------------------------------------------------------------------------------
+try :
+    del mrcnn_model
+    print('delete model is successful')
+    gc.collect()
+except: 
+    pass
+KB.clear_session()
+mrcnn_model = mrcnn_modellib.MaskRCNN(mode='training', config=mrcnn_config)
+
 
 ##------------------------------------------------------------------------------------
-## Build Mask RCNN Model in TRAINING mode
+## Display model configuration information
 ##------------------------------------------------------------------------------------
-# try :
-    # del mrcnn_model
-    # gc.collect()
-# except: 
-    # pass
-# KB.clear_session()
-# mrcnn_model = mrcnn_modellib.MaskRCNN(mode="training", config=mrcnn_config, model_dir=MODEL_DIR)
-mrcnn_model, dataset_train, dataset_val, _ , _, mrcnn_config = mrcnn_coco_train(mode = 'training', mrcnn_config = mrcnn_config)
+paths.display()
+mrcnn_config.display()  
+mrcnn_model.layer_info()
+
 
 ##------------------------------------------------------------------------------------
 ## Load Mask RCNN Model Weight file
@@ -153,22 +128,11 @@ mrcnn_model, dataset_train, dataset_val, _ , _, mrcnn_config = mrcnn_coco_train(
 exclude_list = []
 mrcnn_model.load_model_weights(init_with = args.model, exclude = exclude_list)   
 
-print('==========================================')
-print(" MRCNN MODEL Load weight file COMPLETE    ")
-print('==========================================')
-
-mrcnn_config.display()  
-mrcnn_model.layer_info()
-# print(' Checkpoint directory  : ', mrcnn_config.DIR_TRAINING)
-print(' Training dir           : ', DIR_TRAINING)
-print(' Dataset dir            : ', DIR_DATASET)
-print(' Pretrained dir         : ', DIR_PRETRAINED)
-print(' Checkpoint folder      : ', mrcnn_config.TRAINING_PATH)
-print(' COCO   Dataset Path    : ', mrcnn_config.COCO_DATASET_PATH)
-print(' COCO   Model Path      : ', mrcnn_config.COCO_MODEL_PATH)
-print(' ResNet Model Path      : ', mrcnn_config.RESNET_MODEL_PATH)
-print(' VGG16  Model Path      : ', mrcnn_config.VGG16_MODEL_PATH)
-print(' mrcnn_config.BATCH_SIZE: ', mrcnn_config.BATCH_SIZE)
+##----------------------------------------------------------------------------------------------
+## Build COCO Training and Validation Datasets
+##----------------------------------------------------------------------------------------------
+dataset_train = coco_dataset(["train","val35k"], mrcnn_config)
+dataset_val   = coco_dataset(["minival"]       , mrcnn_config)
 
 
 ##----------------------------------------------------------------------------------------------
@@ -177,7 +141,6 @@ print(' mrcnn_config.BATCH_SIZE: ', mrcnn_config.BATCH_SIZE)
 ## layers. You can also pass a regular expression to select
 ## which layers to train by name pattern.
 ##----------------------------------------------------------------------------------------------
-
 train_layers = [ 'mrcnn', 'fpn','rpn']
 loss_names   = [ "rpn_class_loss", "rpn_bbox_loss" , "mrcnn_class_loss", "mrcnn_bbox_loss"]
 # train_layers = [ 'mrcnn']

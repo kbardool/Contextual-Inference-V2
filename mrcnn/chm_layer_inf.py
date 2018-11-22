@@ -19,7 +19,7 @@ sys.path.append('..')
 import mrcnn.utils as utils
 import tensorflow.contrib.util as tfc
 import pprint
-
+from mrcnn.chm_layer import build_hm_score
               
 ##-----------------------------------------------------------------------------------------------------------
 ## build_predictions 
@@ -343,47 +343,6 @@ def build_heatmap_inference(in_tensor, config, names = None):
     # , gauss_heatmap   gauss_heatmap_L2norm    # [gauss_heatmap, gauss_scatt, means, covar]    
  
 
-##-----------------------------------------------------------------------------------------------------------
-## Build Mask and Score 
-##----------------------------------------------------------------------------------------------------------- 
-def build_hm_score(input_list):
-    '''
-    Inputs:
-    -----------
-        heatmap_tensor :    [ image height, image width ]
-        input_row      :    [y1, x1, y2, x2] in absolute (non-normalized) scale
-
-    Returns
-    -----------
-        gaussian_sum :      sum of gaussian heatmap vlaues over the area covered by the bounding box
-        bbox_area    :      bounding box area (in pixels)
-        weighted_sum :      gaussian_sum * bbox_score
-    '''
-    heatmap_tensor, input_bbox, input_norm_score = input_list
-    
-    with tf.variable_scope('mask_routine'):
-        y_extent     = tf.range(input_bbox[0], input_bbox[2])
-        x_extent     = tf.range(input_bbox[1], input_bbox[3])
-        Y,X          = tf.meshgrid(y_extent, x_extent)
-        bbox_mask    = tf.stack([Y,X],axis=2)        
-        mask_indices = tf.reshape(bbox_mask,[-1,2])
-        mask_indices = tf.to_int32(mask_indices)
-        mask_size    = tf.shape(mask_indices)[0]
-        mask_updates = tf.ones([mask_size], dtype = tf.float32)    
-        mask         = tf.scatter_nd(mask_indices, mask_updates, tf.shape(heatmap_tensor))
-        # mask_sum    =  tf.reduce_sum(mask)
-        mask_applied = tf.multiply(heatmap_tensor, mask, name = 'mask_applied')
-        bbox_area    = tf.to_float((input_bbox[2]-input_bbox[0]) * (input_bbox[3]-input_bbox[1]))
-        gaussian_sum = tf.reduce_sum(mask_applied)
-
-#         Multiply gaussian_sum by score to obtain weighted sum    
-#         weighted_sum = gaussian_sum * input_row[5]
-
-#       Replaced lines above with following lines 21-09-2018
-        # Multiply gaussian_sum by normalized score to obtain weighted_norm_sum 
-        weighted_norm_sum = gaussian_sum * input_norm_score    # input_list[7]
-
-    return tf.stack([gaussian_sum, bbox_area, weighted_norm_sum], axis = -1)
 
 
 ##----------------------------------------------------------------------------------------------------------------------          
@@ -445,6 +404,7 @@ class CHMLayerInference(KE.Layer):
 
                ]
 
+               
 """
 -- moved here 10-14-2018
     ##---------------------------------------------------------------------------------------------
@@ -643,3 +603,48 @@ def build_mask_routine_inf(input_list):
          
     
 """               
+
+"""
+# refactored into chm_layer 11-09-2018
+##-----------------------------------------------------------------------------------------------------------
+## Build Mask and Score 
+##----------------------------------------------------------------------------------------------------------- 
+def build_hm_score(input_list):
+    '''
+    Inputs:
+    -----------
+        heatmap_tensor :    [ image height, image width ]
+        input_row      :    [y1, x1, y2, x2] in absolute (non-normalized) scale
+        input_norm_score:   class-normalized score 
+
+    Returns
+    -----------
+        gaussian_sum :      sum of gaussian heatmap vlaues over the area covered by the bounding box
+        bbox_area    :      bounding box area (in pixels)
+        weighted_sum :      gaussian_sum * bbox_score
+    '''
+    heatmap_tensor, input_bbox, input_norm_score = input_list
+    
+    with tf.variable_scope('mask_routine'):
+        y_extent     = tf.range(input_bbox[0], input_bbox[2])
+        x_extent     = tf.range(input_bbox[1], input_bbox[3])
+        Y,X          = tf.meshgrid(y_extent, x_extent)
+        mask_indices = tf.stack([Y,X],axis=2)        
+        mask_indices = tf.reshape(mask_indices,[-1,2])
+        mask_indices = tf.to_int32(mask_indices)
+        mask_size    = tf.shape(mask_indices)[0]
+        mask_updates = tf.ones([mask_size], dtype = tf.float32)    
+        mask         = tf.scatter_nd(mask_indices, mask_updates, tf.shape(heatmap_tensor))
+        # mask_sum    =  tf.reduce_sum(mask)
+        heatmap_tensor = tf.multiply(heatmap_tensor, mask, name = 'mask_applied')
+        bbox_area    = tf.to_float((input_bbox[2]-input_bbox[0]) * (input_bbox[3]-input_bbox[1]))
+        gaussian_sum = tf.reduce_sum(heatmap_tensor)
+
+        # Multiply gaussian_sum by score to obtain weighted sum    
+        # weighted_sum = gaussian_sum * input_row[5]
+        # Replaced lines above with following lines 21-09-2018
+        # Multiply gaussian_sum by normalized score to obtain weighted_norm_sum 
+        weighted_norm_sum = gaussian_sum * input_norm_score    # input_list[7]
+
+    return tf.stack([gaussian_sum, bbox_area, weighted_norm_sum], axis = -1)
+"""

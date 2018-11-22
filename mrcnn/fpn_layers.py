@@ -9,8 +9,7 @@ Written by Waleed Abdulla
 
 import keras.backend as KB
 import keras.layers  as KL
-from   mrcnn.roialign_layer  import PyramidROIAlign
-from   mrcnn.batchnorm_layer import BatchNorm
+from   mrcnn.helper_layers import PyramidROIAlign, BatchNorm
 
 
 ############################################################

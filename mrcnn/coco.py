@@ -36,15 +36,14 @@ import numpy as np
 # I submitted a pull request https://github.com/cocodataset/cocoapi/pull/50
 # If the PR is merged then use the original repo.
 # Note: Edit PythonAPI/Makefile and replace "python" with "python3".
-from pycocotools.coco import COCO
+from pycocotools.coco     import COCO
 from pycocotools.cocoeval import COCOeval
-from pycocotools import mask as maskUtils
+from pycocotools          import mask as maskUtils
+import mrcnn.dataset  as dataset
+import mrcnn.utils    as utils
 
-from   mrcnn.config import Config
-import mrcnn.utils as utils
-# import mrcnn.model as modellib
-import mrcnn.dataset as dataset
-
+from   mrcnn.config   import Config
+from   mrcnn.datagen  import data_generator
 
 ############################################################
 #  Configurations
@@ -83,8 +82,8 @@ class CocoInferenceConfig(CocoConfig):
 
 class CocoDataset(dataset.Dataset):
     
-    def load_coco(self, dataset_dir, subset, class_ids=None,
-                  class_map=None, return_coco=False):
+    def load_coco(self, dataset_dir, subset, active_class_ids=None,
+                  class_ids=None, class_map=None, return_coco=False):
         """Load a subset of the COCO dataset.
         dataset_dir:    The root directory of the COCO dataset.
         subset:         What to load (train, val, minival, val35k)
@@ -112,37 +111,62 @@ class CocoDataset(dataset.Dataset):
         if not class_ids:
             # All classes
             class_ids = sorted(coco.getCatIds())
-        
+
+        ## Add classes to the class_info dictionary - load classes using the Coco internal class id
+        for i in class_ids:
+            cocoClassInfo = coco.loadCats(i)[0]
+            img_count = len(coco.getImgIds(catIds=i))
+            # print('num images: ', img_count)
+            self.add_class("coco", i, cocoClassInfo["name"], cocoClassInfo["supercategory"], img_count = img_count)
+
+            
         # All images or a subset?
-        if class_ids:
+        # if class_ids:
+            # print(' load subset of classes: ', class_ids)
+            # image_ids = []
+            # for id in class_ids:
+                # image_ids.extend(list(coco.getImgIds(catIds=[id])))
+            # # Remove duplicates
+            # image_ids = list(set(image_ids))
+        # else:
+            # # load All image ids
+            # print(' load all classes: ', class_ids)            
+            # image_ids = list(coco.imgs.keys())
+            
+        if active_class_ids:
+            print(' load subset of classes: ', active_class_ids)
             image_ids = []
-            for id in class_ids:
+            for id in active_class_ids:
                 image_ids.extend(list(coco.getImgIds(catIds=[id])))
             # Remove duplicates
             image_ids = list(set(image_ids))
         else:
-            # All images
+            # load All image ids
+            print(' load all classes: ', active_class_ids)            
+            active_class_ids = class_ids
             image_ids = list(coco.imgs.keys())
             
-        print(' image dir        : ', image_dir) 
-        print(' json_path_dir    : ', os.path.join(dataset_dir, json_path_dict[subset]))
-        print(' number of images : ', len(image_ids))
+        self.active_class_ids = sorted(active_class_ids)
+            
+        print(' image dir            : ', image_dir) 
+        print(' json_path_dir        : ', os.path.join(dataset_dir, json_path_dict[subset]))
+        print(' number of images     : ', len(image_ids))
+        print(' image_ids[:10]       : ', image_ids[:10])
+        print(' image_ids[1000:1010] : ', image_ids[1000:1010])
         # print(' ClassIds     :', class_ids)
 
-        # Add classes
-        for i in class_ids:
-            self.add_class("coco", i, coco.loadCats(i)[0]["name"])
-
-        # Add images
+        ## Add images to the image_info dictionary
         for i in image_ids:
             self.add_image(
-                "coco", image_id=i,
-                path=os.path.join(image_dir, coco.imgs[i]['file_name']),
-                width=coco.imgs[i]["width"],
-                height=coco.imgs[i]["height"],
-                annotations=coco.loadAnns(coco.getAnnIds(
-                    imgIds=[i], catIds=class_ids, iscrowd=None)))
+                "coco", 
+                image_id    = i,
+                path        = os.path.join(image_dir, coco.imgs[i]['file_name']),
+                width       = coco.imgs[i]["width"],
+                height      = coco.imgs[i]["height"],
+                annotations = coco.loadAnns(coco.getAnnIds(imgIds=[i], catIds=active_class_ids, iscrowd=None)))
+        
         if return_coco:
+            self.source_objs[subset] = coco
             return coco
 
     def load_mask(self, image_id):
@@ -170,11 +194,10 @@ class CocoDataset(dataset.Dataset):
         # of class IDs that correspond to each channel of the mask.
         
         for annotation in annotations:
-            class_id = self.map_source_class_id(
-                "coco.{}".format(annotation['category_id']))
+            class_id = self.map_source_class_id( "coco.{}".format(annotation['category_id']))
+            # print("coco.id: {} --> class_id : {}  - {} ".format(annotation['category_id'],class_id, self.class_names[class_id]))
             if class_id:
-                m = self.annToMask(annotation, image_info["height"],
-                                   image_info["width"])
+                m = self.annToMask(annotation, image_info["height"], image_info["width"])
                 # Some objects are so small that they're less than 1 pixel area
                 # and end up rounded out. Skip those objects.
                 if m.max() < 1:
@@ -240,6 +263,35 @@ class CocoDataset(dataset.Dataset):
         return m
 
 
+##------------------------------------------------------------------------------------
+## Build Training and Validation datasets
+##------------------------------------------------------------------------------------
+def prep_coco_dataset(type, config, active_class_ids = None, class_ids = None, 
+                      generator = False, shuffle = True, augment = False, return_coco = False):
+    # dataset_train, train_generator = coco_dataset(["train",  "val35k"], mrcnn_config)
+
+    # if args.command == "train":
+    # Training dataset. Use the training set and 35K from the validation set, as as in the Mask RCNN paper.
+    dataset = CocoDataset()
+    
+    # dataset_test.load_coco(COCO_DATASET_PATH,  "train", class_ids=mrcnn_config.COCO_CLASSES)
+    for i in type:
+        dataset.load_coco(config.COCO_DATASET_PATH, i , class_ids = class_ids, 
+                            active_class_ids = active_class_ids, return_coco = return_coco)
+    
+    # all datasets loaded, now prep the final dataset
+    dataset.prepare()
+
+    results =  dataset
+    
+    if generator:
+        generator = data_generator(dataset, config, 
+                                   batch_size=config.BATCH_SIZE,
+                                   shuffle = shuffle, augment = augment) 
+        results = [dataset, generator]
+    return results
+
+    
 ############################################################
 #  COCO Evaluation - Build Results
 ############################################################

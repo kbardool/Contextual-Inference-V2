@@ -8,7 +8,7 @@ python ../mrcnn/train_coco_fcn.py    \
     --val_steps             4   \
     --mrcnn_logs_dir   train_mrcnn_coco \
     --fcn_logs_dir     train_fcn_coco \
-    --model              last   \
+    --mrcnn_model              last   \
     --fcn_model          init   \
     --opt             adagrad   \
     --sysout             file   \
