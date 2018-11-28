@@ -2,8 +2,9 @@
 prep_dev_notebook:
 pred_newshapes_dev: Runs against new_shapes
 '''
-import os, sys, math, io, time, gc, argparse, platform, pprint
-import os, sys, random, math, re, gc, time, platform, datetime
+import os, sys, math, io, time, gc, argparse, platform, pprint, time, random, re
+from   datetime           import datetime   
+import pprint
 import numpy as np
 import cv2
 import matplotlib
@@ -15,24 +16,19 @@ import keras.backend as KB
 import mrcnn.model_mrcnn  as mrcnn_modellib
 import mrcnn.model_fcn    as fcn_modellib
 import mrcnn.visualize    as visualize
-
 # import mrcnn.new_shapes   as shapes
 from mrcnn.config      import Config
 from mrcnn.dataset     import Dataset 
 from mrcnn.utils       import stack_tensors, stack_tensors_3d, log, Paths,command_line_parser
-from mrcnn.datagen     import data_generator
+from mrcnn.datagen     import data_generator, load_image_gt, data_gen_simulate
 # from mrcnn.coco      import CocoDataset, CocoConfig, CocoInferenceConfig, evaluate_coco, build_coco_results,
 from mrcnn.coco        import CocoConfig, CocoInferenceConfig, prep_coco_dataset
 from mrcnn.heatmap     import HeatmapDataset
-from mrcnn.datagen_fcn import fcn_data_generator
-import pprint
+from mrcnn.datagen_fcn import fcn_data_generator,fcn_data_gen_simulate
+
 import mrcnn.new_shapes   as shapes
 import mrcnn.utils        as utils
-
-from mrcnn.datagen      import data_generator, load_image_gt, data_gen_simulate
-from mrcnn.datagen_fcn  import fcn_data_gen_simulate
-# from mrcnn.callbacks    import get_layer_output_1,get_layer_output_2
-# from mrcnn.prep_notebook import prep_heatmap_dataset, prep_coco_dataset
+# from mrcnn.callbacks    import get_layer_output_1,get_layer_output_2, get_layer_outputs
 
 
 pp = pprint.PrettyPrinter(indent=2, width=100)
@@ -500,40 +496,71 @@ def prep_newshapes_dev(init_with = "last", FCN_layers= False, batch_sz = 5):
 
 """
     
+##------------------------------------------------------------------------------------    
+## run fcn training pipeline on training batch or list of image ids 
+##------------------------------------------------------------------------------------    
+def run_mrcnn_training_pipeline(mrcnn_model, dataset, mrcnn_input = None, image_ids = None, verbose = 0):
 
+    if image_ids is not None:
+        image_batch = get_image_batch(dataset, image_ids, display = True)
+        mrcnn_input = get_training_batch(dataset, mrcnn_model, image_ids)
+    elif mrcnn_input is not None:
+        image_batch = mrcnn_input[0]
+    else:
+        print('ERROR - mrcnn_input or image_ids must be passed to inference pipeline')
+        assert len(mrcnn_input) == 2, 'Length of mrcnn_input list must be 2'
+        return
+    print('** Pass through MRCNN model:')  
+    
+    mrcnn_output = mrcnn_model.keras_model.get_layer_outputs( mrcnn_input, training_flag = True, verbose = verbose)
 
+    if verbose :
+        print(' mrcnn outputs: ')
+        print('----------------')
+        print(' length of mrcnn output : ', len(mrcnn_output))
+        for i,j in enumerate(mrcnn_output):
+            print('mrcnn output ', i, ' shape: ' ,  j.shape)
+
+    outputs = {}
+    outputs['mrcnn_input']  = mrcnn_input
+    outputs['mrcnn_output'] = mrcnn_output
+    outputs['image_batch']  = image_batch
+    return outputs 
+                
+    
 
 ##------------------------------------------------------------------------------------    
 ## build_trainfcn_pipeline()
 ##------------------------------------------------------------------------------------    
-def build_trainfcn_pipeline( fcn_weight_file = 'last', batch_size = 2):
+def build_fcn_training_pipeline( args = None, input_parms = None,  batch_size = 2, fcn_weight_file = 'last', fcn_train_dir = "train_fcn8_coco_adam"):
     start_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
     print()
     print('--> Execution started at:', start_time)
     print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
 
-    # Parse command line arguments
-    #------------------------------------------------------------------------------------
-    parser = command_line_parser()
-    input_parms = "--epochs 2 --steps_in_epoch 32  --last_epoch 0 "
-    input_parms +="--batch_size "+str(batch_size)+ " --lr 0.00001 --val_steps 8 " 
-    # input_parms +="--mrcnn_logs_dir train_mrcnn_newshapes "
-    # input_parms +="--fcn_logs_dir   train_fcn8_newshapes "
-    input_parms +="--mrcnn_logs_dir train_mrcnn_coco "
-    input_parms +="--fcn_logs_dir   train_fcn8_coco_adam "
-    input_parms +="--mrcnn_model    last "
-    input_parms +="--fcn_model      init "
-    input_parms +="--opt            adagrad "
-    input_parms +="--fcn_arch       fcn8 " 
-    input_parms +="--fcn_layers     all " 
-    input_parms +="--sysout        screen "
-    input_parms +="--new_log_folder    "
-    # input_parms +="--fcn_model /home/kbardool/models/train_fcn_adagrad/shapes20180709T1732/fcn_shapes_1167.h5"
-    print(input_parms)
+    ##------------------------------------------------------------------------------------
+    ## Parse command line arguments
+    ##------------------------------------------------------------------------------------
+    if args is None:
+        parser = command_line_parser()
+        if input_parms is None:
+            input_parms = " --epochs 2 --steps_in_epoch 32  --last_epoch 0 "
+            input_parms +=" --batch_size "+str(batch_size)+ " --lr 0.00001 --val_steps 8 " 
+            input_parms +=" --mrcnn_logs_dir train_mrcnn_coco "
+            input_parms +=" --fcn_logs_dir " + fcn_train_dir + " " 
+            input_parms +=" --mrcnn_model    last "
+            input_parms +=" --fcn_model    " + fcn_weight_file + " "
+            input_parms +=" --opt            adam "
+            input_parms +=" --fcn_arch       fcn8 " 
+            input_parms +=" --fcn_layers     all " 
+            input_parms +=" --sysout         screen "
+            input_parms +=" --coco_classes   62 63 67 78 79 80 81 82 72 73 74 75 76 77"
+            input_parms +=" --new_log_folder    "
+            # input_parms +="--fcn_model /home/kbardool/models/train_fcn_adagrad/shapes20180709T1732/fcn_shapes_1167.h5"
+            print(input_parms)
+        args = parser.parse_args(input_parms.split())
 
-    args = parser.parse_args(input_parms.split())
-    # args = parser.parse_args()
-
+        
     # if debug is true set stdout destination to stringIO
     #----------------------------------------------------------------------------------------------            
     # debug = False
@@ -585,8 +612,8 @@ def build_trainfcn_pipeline( fcn_weight_file = 'last', batch_size = 2):
     mrcnn_config.EPOCHS_TO_RUN      = int(args.epochs)
     mrcnn_config.FCN_INPUT_SHAPE    = mrcnn_config.IMAGE_SHAPE[0:2]
     mrcnn_config.LAST_EPOCH_RAN     = int(args.last_epoch)
-    mrcnn_config.NEW_LOG_FOLDER       = True
-    mrcnn_config.SYSOUT               = args.sysout
+    mrcnn_config.NEW_LOG_FOLDER     = False
+    mrcnn_config.SYSOUT             = args.sysout
 
     # mrcnn_config.WEIGHT_DECAY       = 2.0e-4
     # mrcnn_config.VALIDATION_STEPS   = int(args.val_steps)
@@ -616,83 +643,147 @@ def build_trainfcn_pipeline( fcn_weight_file = 'last', batch_size = 2):
     fcn_config.NAME                 = 'fcn'              
     fcn_config.TRAINING_PATH        = paths.FCN_TRAINING_PATH
     fcn_config.VGG16_MODEL_PATH     = paths.FCN_VGG16_MODEL_PATH
-    fcn_config.HEATMAP_SCALE_FACTOR = 4
-    fcn_config.FCN_INPUT_SHAPE      = fcn_config.IMAGE_SHAPE[0:2] // fcn_config.HEATMAP_SCALE_FACTOR 
+    fcn_config.HEATMAP_SCALE_FACTOR = mrcnn_config.HEATMAP_SCALE_FACTOR
+    fcn_config.FCN_INPUT_SHAPE      = fcn_config.IMAGE_SHAPE[0:2] // mrcnn_config.HEATMAP_SCALE_FACTOR 
 
     fcn_config.BATCH_SIZE           = int(args.batch_size)                 # Batch size is 2 (# GPUs * images/GPU).
     fcn_config.IMAGES_PER_GPU       = int(args.batch_size)                   # Must match BATCH_SIZE
     fcn_config.EPOCHS_TO_RUN        = int(args.epochs)
     fcn_config.STEPS_PER_EPOCH      = int(args.steps_in_epoch)
     fcn_config.LAST_EPOCH_RAN       = int(args.last_epoch)
-
+    
     fcn_config.LEARNING_RATE        = float(args.lr)
-
     fcn_config.VALIDATION_STEPS     = int(args.val_steps)
     fcn_config.BATCH_MOMENTUM       = 0.9
-    fcn_config.WEIGHT_DECAY         = 2.0e-4
-
+    fcn_config.WEIGHT_DECAY         = 2.0e-4     ## FCN Weight decays are 5.0e-4 or 2.0e-4
+    
     fcn_config.REDUCE_LR_FACTOR     = 0.5
-    fcn_config.REDUCE_LR_COOLDOWN   = 5
-    fcn_config.REDUCE_LR_PATIENCE   = 5
-    fcn_config.EARLY_STOP_PATIENCE  = 15
-    fcn_config.EARLY_STOP_MIN_DELTA = 1.0e-4
+    fcn_config.REDUCE_LR_COOLDOWN   = 15
+    fcn_config.REDUCE_LR_PATIENCE   = 50
+    fcn_config.REDUCE_LR_MIN_DELTA  = 1e-6
+
+    fcn_config.EARLY_STOP_PATIENCE  = 150
+    fcn_config.EARLY_STOP_MIN_DELTA = 1.0e-7
+
     fcn_config.MIN_LR               = 1.0e-10
-     
+    fcn_config.CHECKPOINT_PERIOD    = 1     
+
+    fcn_config.TRAINING_LAYERS      = args.fcn_layers
     fcn_config.NEW_LOG_FOLDER       = args.new_log_folder
     fcn_config.OPTIMIZER            = args.opt
     fcn_config.SYSOUT               = args.sysout
     fcn_config.display()
 
 
-    # Build FCN Model in Training Mode
-    #------------------------------------------------------------------------------------
+    ## Build FCN Model in Training Mode
     try :
         del fcn_model
         gc.collect()
     except: 
         pass    
-    fcn_model = fcn_modellib.FCN(mode="training", arch = 'FCN8', config=fcn_config)
+    fcn_model = fcn_modellib.FCN(mode="training", arch = args.fcn_arch, config=fcn_config)
 
-    ####  Display FCN model info
-
-    # fcn_model.config.display()  
+    ## Display model configuration information
+    paths.display()
+    fcn_config.display()  
     fcn_model.layer_info()
     
     # exclude=["mrcnn_class_logits"] # ,"mrcnn_bbox_fc"]   #, "mrcnn_bbox", "mrcnn_mask"])
-    mrcnn_model.load_model_weights(init_with = 'last', exclude = None)  
+    mrcnn_model.load_model_weights(init_with = args.mrcnn_model , exclude = None)  
     
     # Load FCN Model weights  
     #------------------------------------------------------------------------------------
-    fcn_model.load_model_weights(init_with = fcn_weight_file)
+    if args.fcn_model != 'init':
+        fcn_model.load_model_weights(init_with = args.fcn_model, verbose = 0)
+    else:
+        print(' FCN Training starting from randomly initialized weights ...')
     
     return mrcnn_model, fcn_model
 
+##------------------------------------------------------------------------------------    
+## run fcn training pipeline on training batch or list of image ids 
+##------------------------------------------------------------------------------------    
+def run_fcn_training_pipeline(mrcnn_model, fcn_model, dataset, mrcnn_input = None, image_ids = None, verbose = 0):
+
+    if image_ids is not None:
+        image_batch = get_image_batch(dataset, image_ids, display = True)
+        mrcnn_input, _ = get_inference_batch(dataset, mrcnn_model, image_ids)
+    elif mrcnn_input is not None:
+        image_batch = mrcnn_input[0]
+    else:
+        print('ERROR - mrcnn_input or image_ids must be passed to inference pipeline')
+        assert len(mrcnn_input) == 2, 'Length of mrcnn_input list must be 2'
+        return
+    print('** Pass through MRCNN model:')  
+    
+    mrcnn_output = mrcnn_model.keras_model.get_layer_outputs(mrcnn_input, training_flag = True, verbose = verbose)
+
+    # if verbose :
+        # print(' mrcnn outputs: ')
+        # print('----------------')
+        # print(' length of mrcnn output : ', len(mrcnn_output))
+        # for i,j in enumerate(mrcnn_output):
+            # print('mrcnn output ', i, ' shape: ' ,  j.shape)
+
+    # build input to fcn model 
+    # fcn input / outputs in inference mode:
+    # inputs  = [input_image_meta, pr_hm, pr_hm_scores, gt_hm, gt_hm_scores]
+    # outputs = [fcn_hm, fcn_sm, fcn_MSE_loss, fcn_CE_loss, fcn_scores]     [0,1,2,3,4]
+    
+    fcn_input = [mrcnn_input[1]]
+    fcn_input.extend(mrcnn_output[:4])
+    
+    print('\n** Pass through FCN model:')    
+    fcn_output = fcn_model.keras_model.get_layer_outputs(fcn_input, verbose = verbose)
+    
+    if verbose :
+        print('\n fcn outputs: ')
+        print('----------------')
+        for i,j in enumerate(fcn_input):
+            print('fcn input ', i, ' shape: ' ,  j.shape)
+        for i,j in enumerate(fcn_output):
+            print('fcn output ', i, ' shape: ' ,  j.shape)        
+    
+    outputs = {}
+    outputs['mrcnn_input']  = mrcnn_input
+    outputs['fcn_input']    = fcn_input
+    outputs['mrcnn_output'] = mrcnn_output
+    outputs['fcn_output']   = fcn_output
+    outputs['image_batch']  = image_batch
+    return outputs 
+                
     
 ##------------------------------------------------------------------------------------    
-## build_inference_pipeline()
+## MRCNN build_inference_pipeline()
 ##------------------------------------------------------------------------------------    
-def build_inference_pipeline( fcn_weight_file = 'last', batch_size = 2):
+def build_mrcnn_inference_pipeline( args = None, input_parms = None,  batch_size = 2, fcn_weight_file = 'last'):
+    '''
+    sets up mrcnn model in inference mode
+    '''
     start_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
     print()
     print('--> Execution started at:', start_time)
     print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
 
-    # Parse command line arguments
-    #------------------------------------------------------------------------------------
-    parser = command_line_parser()
-    input_parms = "--batch_size "+str(batch_size)+ " " 
-    input_parms +="--mrcnn_logs_dir train_mrcnn_coco "
-    input_parms +="--fcn_logs_dir   train_fcn8_coco_adam "
-    input_parms +="--mrcnn_model    last "
-    input_parms +="--fcn_model      last "
-    # input_parms +="--opt            adam "
-    input_parms +="--fcn_arch       fcn8 " 
-    input_parms +="--fcn_layers     all " 
-    input_parms +="--sysout        screen "
-    print(input_parms)
 
-    args = parser.parse_args(input_parms.split())
-    # args = parser.parse_args()
+    ##------------------------------------------------------------------------------------
+    ## Parse command line arguments
+    ##------------------------------------------------------------------------------------
+    if args is None:
+        parser = command_line_parser()
+        if input_parms is None:
+            input_parms = " --batch_size "+str(batch_size)+ " " 
+            input_parms +=" --mrcnn_logs_dir train_mrcnn_coco "
+            input_parms +=" --fcn_logs_dir " + fcn_train_dir + " " 
+            input_parms +=" --mrcnn_model    last "
+            input_parms +=" --fcn_model    " + fcn_weight_file + " "
+            input_parms +=" --fcn_arch       fcn8 " 
+            input_parms +=" --fcn_layers     all " 
+            input_parms +=" --sysout        screen "
+            input_parms +=" --coco_classes   62 63 67 78 79 80 81 82 72 73 74 75 76 77"
+            print(input_parms)
+        args = parser.parse_args(input_parms.split())
+
 
     # if debug is true set stdout destination to stringIO
     #------------------------------------------------------------------------------------
@@ -708,8 +799,141 @@ def build_inference_pipeline( fcn_weight_file = 'last', batch_size = 2):
     print("    MRCNN Log Dir      : ", args.mrcnn_logs_dir)
     print("    FCN Log Dir        : ", args.fcn_logs_dir)
     print("    FCN Arch           : ", args.fcn_arch)
-    print("    FCN Log Dir        : ", args.fcn_layers)
+    print("    FCN Training Layers: ", args.fcn_layers)
     print("    sysout             : ", args.sysout)
+
+    ## setup project directories
+    #------------------------------------------------------------------------------------
+    paths = Paths(fcn_training_folder = args.fcn_logs_dir, mrcnn_training_folder = args.mrcnn_logs_dir)
+    paths.display()
+
+    # Build configuration object 
+    #------------------------------------------------------------------------------------                          
+    mrcnn_config                    = CocoConfig()
+    mrcnn_config.NAME               = 'mrcnn'              
+    mrcnn_config.TRAINING_PATH      = paths.MRCNN_TRAINING_PATH
+    mrcnn_config.COCO_DATASET_PATH  = paths.COCO_DATASET_PATH 
+    mrcnn_config.COCO_MODEL_PATH    = paths.COCO_MODEL_PATH   
+    mrcnn_config.RESNET_MODEL_PATH  = paths.RESNET_MODEL_PATH 
+    mrcnn_config.VGG16_MODEL_PATH   = paths.VGG16_MODEL_PATH  
+    mrcnn_config.COCO_CLASSES       = None 
+    mrcnn_config.DETECTION_PER_CLASS = 200
+    mrcnn_config.HEATMAP_SCALE_FACTOR = 4
+    mrcnn_config.BATCH_SIZE         = int(args.batch_size)                  # Batch size is 2 (# GPUs * images/GPU).
+    mrcnn_config.IMAGES_PER_GPU     = int(args.batch_size)                  # Must match BATCH_SIZE
+    
+    mrcnn_config.DETECTION_MIN_CONFIDENCE = 0.3
+    mrcnn_config.DETECTION_MAX_INSTANCES =  100
+    # mrcnn_config.STEPS_PER_EPOCH    = int(args.steps_in_epoch)
+    # mrcnn_config.LEARNING_RATE      = float(args.lr)
+    # mrcnn_config.EPOCHS_TO_RUN      = int(args.epochs)
+    mrcnn_config.FCN_INPUT_SHAPE    = mrcnn_config.IMAGE_SHAPE[0:2]
+    # mrcnn_config.LAST_EPOCH_RAN     = int(args.last_epoch)
+    mrcnn_config.NEW_LOG_FOLDER       = args.new_log_folder
+    # mrcnn_config.SYSOUT               = args.sysout
+
+    #  Build mrcnn Model
+    #------------------------------------------------------------------------------------
+    
+    from mrcnn.prep_notebook import mrcnn_coco_train
+    mrcnn_model, mrcnn_config = mrcnn_coco_train(mode = 'inference', mrcnn_config = mrcnn_config)
+    
+    
+    # Load MRCNN Model weights  
+    # exclude=["mrcnn_class_logits"] # ,"mrcnn_bbox_fc"]   #, "mrcnn_bbox", "mrcnn_mask"])
+    mrcnn_model.load_model_weights(init_with = 'last', exclude = None)  
+    
+    
+    return mrcnn_model
+
+##------------------------------------------------------------------------------------    
+## MRCNN run_mrcnn_detection() on list of image ids
+##------------------------------------------------------------------------------------            
+def run_mrcnn_detection(mrcnn_model, dataset, image_id = None, verbose = 0):
+
+    if image_id is None:
+        image_id = random.choice(dataset.image_ids)
+        
+    image = dataset.load_image(image_id)
+    gt_data = [{}]
+
+    _, image_meta, gt_data[0]['gt_class_id'] , gt_data[0]['gt_bbox'] =\
+            load_image_gt(dataset, mrcnn_model.config, image_id, use_mini_mask=False)
+    print(gt_data[0]['gt_bbox'])
+    info = dataset.image_info[image_id]
+    print("Image Id  : {}     External Id: {}.{}     Image Reference: {}".format( image_id, info["source"], info["id"],
+                                           dataset.image_reference(image_id)))
+    print('Image meta: ', image_meta[:10])
+    # Run object detection
+    mrcnn_results = mrcnn_model.detect([image], verbose=1)
+    
+    mrcnn_results[0]['orig_image_meta']= image_meta
+
+    # Display results
+    if verbose:
+        np.set_printoptions(linewidth=180,precision=4,threshold=10000, suppress = True)
+        print(' Length of results from MRCNN detect: ', len(mrcnn_results))
+        r = mrcnn_results[0]
+        print('mrcnn_results keys: ')
+        print('--------------------')
+        for i in sorted(r.keys()):
+            print('   {:.<25s}  {}'.format(i , r[i].shape))        
+        print()
+        r = gt_data[0]
+        print('gt_data : ')
+        print('----------')
+        for i in sorted(r.keys()):
+            print('   {:.<25s}  {}'.format(i , r[i].shape))        
+        # print('image          : ', r["image"].shape )
+        # print('image_meta     : ', r["image_meta"].shape, r["image_meta"][:11] )
+        # print('class ids      : ', r['class_ids'].shape, r['class_ids'])
+        # print('mrcnn_scores         : ', r['mrcnn_scores'].shape)
+        # print(r['mrcnn_scores'])
+        # print('pr_scores      : ', r['pr_scores'].shape)
+        # print('pr_scores  : ')
+        # print(r['pr_scores'])
+        #            
+            
+            
+    return mrcnn_results, gt_data            
+    
+    
+
+##------------------------------------------------------------------------------------    
+## FCN build_inference_pipeline()
+##------------------------------------------------------------------------------------    
+def build_fcn_inference_pipeline( args = None, input_parms = None,  batch_size = 2, fcn_weight_file = 'last'):
+    start_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
+    print()
+    print('--> Execution started at:', start_time)
+    print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
+
+
+    ##------------------------------------------------------------------------------------
+    ## Parse command line arguments
+    ##------------------------------------------------------------------------------------
+    if args is None:
+        parser = command_line_parser()
+        if input_parms is None:
+            input_parms = " --batch_size "+str(batch_size)+ " " 
+            input_parms +=" --mrcnn_logs_dir train_mrcnn_coco "
+            input_parms +=" --fcn_logs_dir " + fcn_train_dir + " " 
+            input_parms +=" --mrcnn_model    last "
+            input_parms +=" --fcn_model    " + fcn_weight_file + " "
+            input_parms +=" --fcn_arch       fcn8 " 
+            input_parms +=" --fcn_layers     all " 
+            input_parms +=" --sysout        screen "
+            input_parms +=" --coco_classes   62 63 67 78 79 80 81 82 72 73 74 75 76 77"
+            print(input_parms)
+        args = parser.parse_args(input_parms.split())
+
+
+    # if debug is true set stdout destination to stringIO
+    #------------------------------------------------------------------------------------
+    # debug = False
+    if args.sysout == 'FILE':
+        sys.stdout = io.StringIO()
+    utils.display_input_parms(args)
 
     ## setup project directories
     #------------------------------------------------------------------------------------
@@ -796,7 +1020,7 @@ def build_inference_pipeline( fcn_weight_file = 'last', batch_size = 2):
         gc.collect()
     except: 
         pass    
-    fcn_model = fcn_modellib.FCN(mode="inference", arch = 'FCN8', config=fcn_config)
+    fcn_model = fcn_modellib.FCN(mode="inference",  arch = args.fcn_arch, config=fcn_config)
 
     ####  Display FCN model info
 
@@ -815,58 +1039,29 @@ def build_inference_pipeline( fcn_weight_file = 'last', batch_size = 2):
     return mrcnn_model, fcn_model
 
 
-
-##------------------------------------------------------------------------------------    
-## run_fcn_predction_pipeline()
-##------------------------------------------------------------------------------------            
-def run_fcn_predction_pipeline(fcn_model, mrcnn_model, dataset, image_ids, verbose = 0):
-    # from mrcnn.prep_notebook import get_image_batch
-    image_batch = get_image_batch(dataset, image_ids, display = True)
-    fcn_results = fcn_model.detect(mrcnn_model, image_batch)
-    
-    if verbose:
-        np.set_printoptions(linewidth=180,precision=4,threshold=10000, suppress = True)
-        print(' Length of fcn_results: ', len(fcn_results))
-        r = fcn_results[0]
-        print(r.keys())
-        for i in r.keys():
-            print('   {:.<25s}  {}'.format(i , r[i].shape))        
-        print('image          : ', r["image"].shape )
-        print('image_meta     : ', r["image_meta"].shape, r["image_meta"][:11] )
-        print('class ids      : ', r['class_ids'].shape, r['class_ids'])
-        print('mrcnn_scores         : ', r['mrcnn_scores'].shape)
-        print(r['mrcnn_scores'])
-        print('pr_scores      : ', r['pr_scores'].shape)
-        print('pr_scores  : ')
-        print(r['pr_scores'])
-        print('fcn_scores:',r['fcn_scores'].shape)
-        print('fcn_scores  : ')
-        print(r['fcn_scores'])
-        #            
-            
-    return fcn_results            
-    
-    
-##------------------------------------------------------------------------------------    
-## run_inference_pipeline()
-##------------------------------------------------------------------------------------    
-def run_inference_pipeline(mrcnn_model, fcn_model, dataset, image_ids, verbose = 0):
+from   mrcnn.datagen import load_image_gt
 
 
-    image_batch = get_image_batch(dataset, image_ids, display = True)
-    mrcnn_input, _ = get_inference_batch(dataset, mrcnn_model, image_ids)
-    
+##------------------------------------------------------------------------------------    
+## run fcn inference_pipeline() on data batch or list of image ids
+##------------------------------------------------------------------------------------    
+def run_fcn_inference_pipeline(mrcnn_model, fcn_model, dataset, mrcnn_input = None, image_ids = None, verbose = 0):
+
+    if image_ids is not None:
+        image_batch = get_image_batch(dataset, image_ids, display = True)
+        mrcnn_input, _ = get_inference_batch(dataset, mrcnn_model, image_ids)
+    elif mrcnn_input is None:
+        print('ERROR - mrcnn_input or image_ids must be passed to inference pipeline')
+        assert len(mrcnn_input) == 2, 'Length of mrcnn_input list must be 2'
+        return
+        
     #--------------------------------------------------------------------------------------------
-    #  run_pipeline_on_input(mrcnn_model, fcn_model, mrcnn_input, verbose = verbose)
-    
-    
+    # run_pipeline_on_input(mrcnn_model, fcn_model, mrcnn_input, verbose = verbose)
     # batch_x, _ = data_gen_simulate(dataset, config, image_list)
     # mrcnn_model.layer_info()
-    # model_output = get_layer_output_2(model.keras_model, train_batch_x, 1)
-
     # mrcnn_output_layers = [4,5,6,7]
     # fcn_output_layers = [0,1,2,3,4]    
-    mrcnn_output = get_layer_output_1(mrcnn_model.keras_model, mrcnn_input, [0,1,2,3,4,5], 1, verbose = verbose)
+    mrcnn_output = mrcnn_model.keras_model.get_layer_output_1( mrcnn_input, [0,1,2,3,4,5], 1, verbose = verbose)
 
     ### Load input / output data
     if verbose :
@@ -877,9 +1072,11 @@ def run_inference_pipeline(mrcnn_model, fcn_model, dataset, image_ids, verbose =
             print('mrcnn output ', i, ' shape: ' ,  j.shape)
 
     # fcn_model.layer_info()
-
-    fcn_input = [mrcnn_output[4], mrcnn_output[5]]
-    fcn_output = get_layer_output_1(fcn_model.keras_model, fcn_input, [0,1,2], 1, verbose = verbose)
+    # fcn input / outputs in inference mode:
+    # inputs  = [ pr_hm , pr_hm_scores]                                        
+    # outputs = [ fcn_hm, fcn_sm, fcn_scores]
+    fcn_input = [mrcnn_inmrcnn_output[4], mrcnn_output[5]]
+    fcn_output = fcn_model.keras_model.get_layer_output_1( fcn_input, [0,1,2], 1, verbose = verbose)
     if verbose :
         print(' fcn outputs: ')
         print('----------------')
@@ -896,58 +1093,9 @@ def run_inference_pipeline(mrcnn_model, fcn_model, dataset, image_ids, verbose =
     outputs['image_batch']  = image_batch        
     return outputs 
                 
-##------------------------------------------------------------------------------------    
-## run_inference_pipeline()
-##------------------------------------------------------------------------------------    
-def run_inference_pipeline_alt(mrcnn_model, fcn_model, dataset, image_ids, verbose = 0):
-
-
-    image_batch = get_image_batch(dataset, image_ids, display = True)
-    mrcnn_input, _ = get_inference_batch(dataset, mrcnn_model, image_ids)
-    
-    #--------------------------------------------------------------------------------------------
-    #  run_pipeline_on_input(mrcnn_model, fcn_model, mrcnn_input, verbose = verbose)
-    
-    
-    # batch_x, _ = data_gen_simulate(dataset, config, image_list)
-    # mrcnn_model.layer_info()
-    # model_output = get_layer_output_2(model.keras_model, train_batch_x, 1)
-
-    # mrcnn_output_layers = [4,5,6,7]
-    # fcn_output_layers = [0,1,2,3,4]    
-    mrcnn_output = get_layer_output_1(mrcnn_model.keras_model, mrcnn_input, [0,1,2,3,4,5], 1, verbose = verbose)
-
-    ### Load input / output data
-    if verbose :
-        print(' mrcnn outputs: ')
-        print('----------------')
-        print(' length of mrcnn output : ', len(mrcnn_output))
-        for i,j in enumerate(mrcnn_output):
-            print('mrcnn output ', i, ' shape: ' ,  j.shape)
-
-    # fcn_model.layer_info()
-
-    fcn_input = [mrcnn_output[4], mrcnn_output[5]]
-    fcn_output = get_layer_output_1(fcn_model.keras_model, fcn_input, [0,1,2], 1, verbose = verbose)
-    if verbose :
-        print(' fcn outputs: ')
-        print('----------------')
-        for i,j in enumerate(fcn_input):
-            print('fcn input ', i, ' shape: ' ,  j.shape)
-        for i,j in enumerate(fcn_output):
-            print('fcn output ', i, ' shape: ' ,  j.shape)        
-            
-    outputs = {}
-    outputs['mrcnn_input']  = mrcnn_input
-    outputs['fcn_input']    = fcn_input
-    outputs['mrcnn_output'] = mrcnn_output
-    outputs['fcn_output']   = fcn_output
-    outputs['image_batch']  = image_batch        
-    return outputs 
-            
             
 ##------------------------------------------------------------------------------------    
-## get_image_batch()
+## get_image_batch() 
 ##------------------------------------------------------------------------------------    
 def get_image_batch(dataset, image_list, display = False):
     '''
@@ -995,7 +1143,7 @@ def get_training_batch(dataset, config, image_ids, display = True, masks = False
         
         
 ##------------------------------------------------------------------------------------    
-## get_inference_batch()
+## get_inference_batch() : 
 ##------------------------------------------------------------------------------------    
 def get_inference_batch(dataset, mrcnn_model, image_ids, display = False):
     '''

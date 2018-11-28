@@ -120,12 +120,24 @@ class Dataset(object):
                 if i == 0 or source == info['source']:
                     self.source_class_ids[source].append(i)
 
-        # add internal class id to class_info dictionary
+        # add internal class id to class_info dictionary, build external-internal lookups
+        self.ext_to_int_id = {}
+        self.int_to_ext_id = {}
+        # self.active_class_info = {}
+        
         for cls_info in self.class_info:
             source_key = cls_info['source']+'.'+str(cls_info['id'])
             internal_id =  self.class_from_source_map[source_key]
             cls_info['internal_id'] = internal_id
-                    
+            self.ext_to_int_id.setdefault(cls_info['id'], internal_id) 
+            self.int_to_ext_id.setdefault(internal_id, cls_info['id'])
+            # if cls_info.
+
+        self.active_class_info = {}    
+        for cls in  self.active_class_ids:
+            int_id = self.ext_to_int_id[cls]
+            self.active_class_info.setdefault(int_id, {'name':self.class_names[int_id], 'ext_id':cls})
+                
         self.build_category_to_class_map()
         self.build_category_to_external_class_map()
         
@@ -161,7 +173,14 @@ class Dataset(object):
         # print('Total classes: ', ttl)          
         return 
         
-        
+    def display_active_classes(self):
+
+        print(self.active_class_ids)
+        for ext_cls in self.active_class_ids:
+            class_id = self.map_source_class_id( "coco.{}".format(ext_cls))
+            print('ext_cls:',ext_cls, 'internal_class: ', class_id, 'name:', self.class_info[class_id]['category'],'-',self.class_info[class_id]['name'])        
+        return
+            
     def map_source_class_id(self, source_class_id):
         """
         Takes a source class ID and returns the int class ID assigned to it.

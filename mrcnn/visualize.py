@@ -213,14 +213,14 @@ def display_instances(image, boxes, class_ids, class_names,
         
         class_id = class_ids[i]
         if class_id >= 0 :
-            label = class_names[class_id]
+            label = "{:2d} {}".format(class_id, class_names[class_id])
         else:
-            label = class_names[-class_id] + ' (CROWD)'
+            label = "{:2d} {}".format(class_id, class_names[-class_id]) + ' (CROWD)'
             
         x = random.randint(x1, (x1 + x2) // 2)
         caption = "{} {:.3f}".format(label, score) if score else label
-        ax.text(x1, y1 + 8, caption, color='k', size=9, backgroundcolor="w")
-
+        t = ax.text(x1, y1 + 8, caption, color='k', size=8, backgroundcolor="w")
+        t.set_bbox(dict(facecolor='w', alpha=0.5, edgecolor='w'))
         # Mask
         # mask = masks[:, :, i]
         # masked_image = apply_mask(masked_image, mask, color)
@@ -325,6 +325,36 @@ def display_instances_with_mask(image, boxes, masks, class_ids, class_names,
     plt.show()
     return
 
+
+##------------------------------------------------------------------------------------    
+## display_training_batch()
+##------------------------------------------------------------------------------------    
+def display_training_batch(dataset, batch_x, masks= False):
+    ''' 
+    display images in a mrcnn train_batch 
+    '''
+    # replaced following two lines with next line to avoid the need to pass model to this fuction
+    # imgmeta_idx = mrcnn_model.keras_model.input_names.index('input_image_meta')
+    # img_meta    = train_batch_x[imgmeta_idx]
+
+    img_meta    = batch_x[1]
+
+    for img_idx in range(img_meta.shape[0]):
+        image_id = img_meta[img_idx,0]
+        image    = dataset.load_image(image_id)
+        mask, class_ids = dataset.load_mask(image_id)
+        bbox     = utils.extract_bboxes(mask)
+        class_names = [str(dataset.class_names[class_id]) for class_id in class_ids]
+        print(' Image_id    : ', image_id, ' Reference: ', dataset.image_reference(image_id) , 'Coco Id:', dataset.image_info[image_id]['id'])
+        print(' Image meta', img_meta[img_idx, :10])
+        print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
+        print(' Class Names : ', class_names)    #     print('Classes (1: circle, 2: square, 3: triangle ): ',class_ids)
+        display_top_masks(image, mask, class_ids, dataset.class_names)
+        if masks:
+            display_instances_with_mask(image, bbox, mask, class_ids, dataset.class_names) 
+        else:
+            display_instances(image, bbox, class_ids, dataset.class_names)
+    return    
     
 ##----------------------------------------------------------------------
 ## display_instances from pr_scores
@@ -677,6 +707,9 @@ def plot_precision_recall(AP, precisions, recalls):
     ax.set_title("Precision-Recall Curve. AP@50 = {:.3f}".format(AP))
     ax.set_ylim(0, 1.1)
     ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+
     _ = ax.plot(recalls, precisions)
 
 ##----------------------------------------------------------------------
@@ -950,36 +983,6 @@ def display_roi_proposals(model_info, input_image_meta, pred_tensor, classes, im
     
 
 
-
-##------------------------------------------------------------------------------------    
-## display_training_batch()
-##------------------------------------------------------------------------------------    
-def display_training_batch(dataset, batch_x, masks= False):
-    ''' 
-    display images in a mrcnn train_batch 
-    '''
-    # replaced following two lines with next line to avoid the need to pass model to this fuction
-    # imgmeta_idx = mrcnn_model.keras_model.input_names.index('input_image_meta')
-    # img_meta    = train_batch_x[imgmeta_idx]
-
-    img_meta    = batch_x[1]
-
-    for img_idx in range(img_meta.shape[0]):
-        image_id = img_meta[img_idx,0]
-        image    = dataset.load_image(image_id)
-        mask, class_ids = dataset.load_mask(image_id)
-        bbox     = utils.extract_bboxes(mask)
-        class_names = [str(dataset.class_names[class_id]) for class_id in class_ids]
-        print(' Image_id    : ', image_id, ' Reference: ', dataset.image_reference(image_id) , 'Coco Id:', dataset.image_info[image_id]['id'])
-        print(' Image meta', img_meta[img_idx, :10])
-        print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
-        print(' Class Names : ', class_names)    #     print('Classes (1: circle, 2: square, 3: triangle ): ',class_ids)
-        display_top_masks(image, mask, class_ids, dataset.class_names)
-        if masks:
-            display_instances_with_mask(image, bbox, mask, class_ids, dataset.class_names) 
-        else:
-            display_instances(image, bbox, class_ids, dataset.class_names)
-    return    
         
 ##----------------------------------------------------------------------
 ## plot 2d heatmaps form gauss_scatter with bouding boxes for one image (all classes)

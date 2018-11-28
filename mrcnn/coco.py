@@ -94,8 +94,7 @@ class CocoDataset(dataset.Dataset):
         """
         # Path
         image_dir = os.path.join(dataset_dir, "train2014" if subset == "train" else "val2014")
-
-#       image_dir = os.path.join(dataset_dir, "train2017" if subset == "train" lse "val2017")
+        # image_dir = os.path.join(dataset_dir, "train2017" if subset == "train" lse "val2017")
         
         # Create COCO object
         json_path_dict = {
@@ -145,9 +144,10 @@ class CocoDataset(dataset.Dataset):
             print(' load all classes: ', active_class_ids)            
             active_class_ids = class_ids
             image_ids = list(coco.imgs.keys())
-            
+
         self.active_class_ids = sorted(active_class_ids)
             
+        # self.active_class_info    
         print(' image dir            : ', image_dir) 
         print(' json_path_dir        : ', os.path.join(dataset_dir, json_path_dict[subset]))
         print(' number of images     : ', len(image_ids))
@@ -163,7 +163,8 @@ class CocoDataset(dataset.Dataset):
                 path        = os.path.join(image_dir, coco.imgs[i]['file_name']),
                 width       = coco.imgs[i]["width"],
                 height      = coco.imgs[i]["height"],
-                annotations = coco.loadAnns(coco.getAnnIds(imgIds=[i], catIds=active_class_ids, iscrowd=None)))
+                # annotations = coco.loadAnns(coco.getAnnIds(imgIds=[i], catIds=active_class_ids, iscrowd=None)))
+                annotations = coco.loadAnns(coco.getAnnIds(imgIds=[i], catIds=class_ids, iscrowd=None)))
         
         if return_coco:
             self.source_objs[subset] = coco

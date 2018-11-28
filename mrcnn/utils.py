@@ -419,7 +419,7 @@ def unresize_heatmap(image, image_meta, upscale = None):
 ##----------------------------------------------------------------------------------------------
 ## byclass_to_byimage_np/tf
 ##----------------------------------------------------------------------------------------------
-def byclass_to_byimage_np(in_array, seqid_column):    
+def byclass_to_byimage_np(in_array, seqid_column = 6):    
     ''' 
     convert a per-class tensor, shaped as  [ num_classes, num_bboxes, columns ]
          to                                  
@@ -534,7 +534,6 @@ def extract_bboxes(mask):
         boxes[i] = np.array([y1, x1, y2, x2])
     return boxes.astype(np.int32)
 
-
 ##------------------------------------------------------------------------------------------
 ##  Compute IoU between a box and an array of boxes  
 ##------------------------------------------------------------------------------------------
@@ -587,6 +586,100 @@ def compute_overlaps(boxes1, boxes2):
     return overlaps
 
 
+    
+###############################################################################
+## Precision / Recall calculations
+###############################################################################
+def compute_ap(gt_boxes, gt_class_ids,
+               pred_boxes, pred_class_ids, pred_scores,
+               iou_threshold=0.5):
+    '''
+    Compute Average Precision at a set IoU threshold (default 0.5).
+
+    Returns:
+    mAP:            Mean Average Precision
+    precisions:     List of precisions at different class score thresholds.
+    recalls:        List of recall values at different class score thresholds.
+    overlaps:       [pred_boxes, gt_boxes] IoU overlaps.
+    '''
+    # Trim zero padding and sort predictions by score from high to low
+    # TODO: cleaner to do zero unpadding upstream
+    gt_boxes   = trim_zeros(gt_boxes)
+    pred_boxes = trim_zeros(pred_boxes)
+    pred_scores= pred_scores[:pred_boxes.shape[0]]
+    indices    = np.argsort(pred_scores)[::-1]
+  
+    pred_boxes     = pred_boxes[indices]
+    pred_class_ids = pred_class_ids[indices]
+    pred_scores    = pred_scores[indices]
+
+    # Compute IoU overlaps [pred_boxes, gt_boxes]
+    overlaps = compute_overlaps(pred_boxes, gt_boxes)
+
+    # Loop through ground truth boxes and find matching predictions
+    match_count = 0
+    pred_match = np.zeros([pred_boxes.shape[0]])
+    gt_match   = np.zeros([gt_boxes.shape[0]])
+    
+    for i in range(len(pred_boxes)):
+        # Find best matching ground truth box
+        sorted_ixs = np.argsort(overlaps[i])[::-1]
+        for j in sorted_ixs:
+            # If ground truth box is already matched, go to next one
+            if gt_match[j] == 1:
+                continue
+            # If we reach IoU smaller than the threshold, end the loop
+            iou = overlaps[i, j]
+            if iou < iou_threshold:
+                break
+            # Do we have a match?
+            if pred_class_ids[i] == gt_class_ids[j]:
+                match_count  += 1
+                gt_match[j]   = 1
+                pred_match[i] = 1
+                break
+
+    # Compute precision and recall at each prediction box step
+    precisions = np.cumsum(pred_match) / (np.arange(len(pred_match)) + 1)
+    recalls    = np.cumsum(pred_match).astype(np.float32) / len(gt_match)
+
+    # Pad with start and end values to simplify the math
+    precisions = np.concatenate([[0], precisions, [0]])
+    recalls    = np.concatenate([[0], recalls, [1]])
+
+    # Ensure precision values decrease but don't increase. This way, the
+    # precision value at each recall threshold is the maximum it can be
+    # for all following recall thresholds, as specified by the VOC paper.
+    for i in range(len(precisions) - 2, -1, -1):
+        precisions[i] = np.maximum(precisions[i], precisions[i + 1])
+
+    # Compute mean AP over recall range
+    indices = np.where(recalls[:-1] != recalls[1:])[0] + 1
+    mAP     = np.sum((recalls[indices] - recalls[indices - 1]) *
+                 precisions[indices])
+
+    return mAP, precisions, recalls, overlaps
+
+
+def compute_recall(pred_boxes, gt_boxes, iou):
+    '''
+    Compute the recall at the given IoU threshold. It's an indication
+    of how many GT boxes were found by the given prediction boxes.
+
+    pred_boxes:     [N, (y1, x1, y2, x2)] in image coordinates
+    gt_boxes:       [N, (y1, x1, y2, x2)] in image coordinates
+    '''
+    # Measure overlaps
+    overlaps = compute_overlaps(pred_boxes, gt_boxes)
+    iou_max = np.max(overlaps, axis=1)
+    iou_argmax = np.argmax(overlaps, axis=1)
+    positive_ids = np.where(iou_max >= iou)[0]
+    matched_gt_boxes = iou_argmax[positive_ids]
+
+    recall = len(set(matched_gt_boxes)) / gt_boxes.shape[0]
+    return recall, positive_ids
+
+    
 ##------------------------------------------------------------------------------------------
 ##  Apply non maximal suppression on a set of bounding boxes 
 ##------------------------------------------------------------------------------------------
@@ -1106,96 +1199,6 @@ def generate_pyramid_anchors(anchor_scales, anchor_ratios, feature_shapes, featu
     return pp
    
 
-###############################################################################
-## Precision / Recall calculations
-###############################################################################
-def compute_ap(gt_boxes, gt_class_ids,
-               pred_boxes, pred_class_ids, pred_scores,
-               iou_threshold=0.5):
-    '''
-    Compute Average Precision at a set IoU threshold (default 0.5).
-
-    Returns:
-    mAP:            Mean Average Precision
-    precisions:     List of precisions at different class score thresholds.
-    recalls:        List of recall values at different class score thresholds.
-    overlaps:       [pred_boxes, gt_boxes] IoU overlaps.
-    '''
-    # Trim zero padding and sort predictions by score from high to low
-    # TODO: cleaner to do zero unpadding upstream
-    gt_boxes   = trim_zeros(gt_boxes)
-    pred_boxes = trim_zeros(pred_boxes)
-    pred_scores= pred_scores[:pred_boxes.shape[0]]
-    indices    = np.argsort(pred_scores)[::-1]
-  
-    pred_boxes     = pred_boxes[indices]
-    pred_class_ids = pred_class_ids[indices]
-    pred_scores    = pred_scores[indices]
-
-    # Compute IoU overlaps [pred_boxes, gt_boxes]
-    overlaps = compute_overlaps(pred_boxes, gt_boxes)
-
-    # Loop through ground truth boxes and find matching predictions
-    match_count = 0
-    pred_match = np.zeros([pred_boxes.shape[0]])
-    gt_match   = np.zeros([gt_boxes.shape[0]])
-    for i in range(len(pred_boxes)):
-        # Find best matching ground truth box
-        sorted_ixs = np.argsort(overlaps[i])[::-1]
-        for j in sorted_ixs:
-            # If ground truth box is already matched, go to next one
-            if gt_match[j] == 1:
-                continue
-            # If we reach IoU smaller than the threshold, end the loop
-            iou = overlaps[i, j]
-            if iou < iou_threshold:
-                break
-            # Do we have a match?
-            if pred_class_ids[i] == gt_class_ids[j]:
-                match_count  += 1
-                gt_match[j]   = 1
-                pred_match[i] = 1
-                break
-
-    # Compute precision and recall at each prediction box step
-    precisions = np.cumsum(pred_match) / (np.arange(len(pred_match)) + 1)
-    recalls    = np.cumsum(pred_match).astype(np.float32) / len(gt_match)
-
-    # Pad with start and end values to simplify the math
-    precisions = np.concatenate([[0], precisions, [0]])
-    recalls    = np.concatenate([[0], recalls, [1]])
-
-    # Ensure precision values decrease but don't increase. This way, the
-    # precision value at each recall threshold is the maximum it can be
-    # for all following recall thresholds, as specified by the VOC paper.
-    for i in range(len(precisions) - 2, -1, -1):
-        precisions[i] = np.maximum(precisions[i], precisions[i + 1])
-
-    # Compute mean AP over recall range
-    indices = np.where(recalls[:-1] != recalls[1:])[0] + 1
-    mAP     = np.sum((recalls[indices] - recalls[indices - 1]) *
-                 precisions[indices])
-
-    return mAP, precisions, recalls, overlaps
-
-
-def compute_recall(pred_boxes, gt_boxes, iou):
-    '''
-    Compute the recall at the given IoU threshold. It's an indication
-    of how many GT boxes were found by the given prediction boxes.
-
-    pred_boxes:     [N, (y1, x1, y2, x2)] in image coordinates
-    gt_boxes:       [N, (y1, x1, y2, x2)] in image coordinates
-    '''
-    # Measure overlaps
-    overlaps = compute_overlaps(pred_boxes, gt_boxes)
-    iou_max = np.max(overlaps, axis=1)
-    iou_argmax = np.argmax(overlaps, axis=1)
-    positive_ids = np.where(iou_max >= iou)[0]
-    matched_gt_boxes = iou_argmax[positive_ids]
-
-    recall = len(set(matched_gt_boxes)) / gt_boxes.shape[0]
-    return recall, positive_ids
 
 
 
@@ -1695,28 +1698,43 @@ def command_line_parser():
                         default=False, action='store_true',
                         help="put logging/weights files in new folder: True or False")
 
+    parser.add_argument('--coco_classes', required=False,
+                        nargs = '+',
+                        default=None, type=int, 
+                        metavar="<active coco classes>",
+                        help="<identifies active coco classes" )
+
+    
     return parser
     
 def display_input_parms(args):
-    print("    Input Parameters        ")
-    print("   -------------------------")
-    print("       MRCNN Model        : ", args.mrcnn_model)
-    print("       FCN Model          : ", args.fcn_model)
-    print("       MRCNN Log/Ckpt Dir : ", args.mrcnn_logs_dir)
-    print("       FCN Log/Ckpt  Dir  : ", args.fcn_logs_dir)
-    print("       FCN architecture   : ", args.fcn_arch)
-    print("       FCN layers to train: ", args.fcn_layers)
-    print("       Optimizer          : ", type(args.opt), args.opt)
-    print()   
-    print("       Last Epoch         : ", args.last_epoch)
-    print("       Epochs to run      : ", args.epochs)
-    print("       Steps in each epoch: ", args.steps_in_epoch)
-    print("       Validation steps   : ", args.val_steps)
-    print("       Batch Size         : ", args.batch_size)
-    print()   
-    print("       New Log Folder     : ", type(args.new_log_folder), args.new_log_folder)
-    print("       Sysout             : ", type(args.sysout), args.sysout)
-    return
+    """Display Configuration values."""
+    print("\nArguments passed :")
+    print("--------------------")
+    for a in dir(args):
+        if not a.startswith("__") and not callable(getattr(args, a)):
+            print("{:30} {}".format(a, getattr(args, a)))
+    print("\n")
+
+    # print("    Input Parameters        ")
+    # print("   -------------------------")
+    # print("       MRCNN Model        : ", args.mrcnn_model)
+    # print("       FCN Model          : ", args.fcn_model)
+    # print("       MRCNN Log/Ckpt Dir : ", args.mrcnn_logs_dir)
+    # print("       FCN Log/Ckpt  Dir  : ", args.fcn_logs_dir)
+    # print("       FCN architecture   : ", args.fcn_arch)
+    # print("       FCN layers to train: ", args.fcn_layers)
+    # print("       Optimizer          : ", type(args.opt), args.opt)
+    # print()   
+    # print("       Last Epoch         : ", args.last_epoch)
+    # print("       Epochs to run      : ", args.epochs)
+    # print("       Steps in each epoch: ", args.steps_in_epoch)
+    # print("       Validation steps   : ", args.val_steps)
+    # print("       Batch Size         : ", args.batch_size)
+    # print()   
+    # print("       New Log Folder     : ", type(args.new_log_folder), args.new_log_folder)
+    # print("       Sysout             : ", type(args.sysout), args.sysout)
+    # return
     
     
     

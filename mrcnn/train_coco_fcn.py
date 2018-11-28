@@ -125,6 +125,7 @@ fcn_config.STEPS_PER_EPOCH      = int(args.steps_in_epoch)
 fcn_config.LEARNING_RATE        = float(args.lr)
 fcn_config.LAST_EPOCH_RAN       = int(args.last_epoch)
 fcn_config.VALIDATION_STEPS     = int(args.val_steps)
+fcn_config.TRAINING_LAYERS      = args.fcn_layers
 
 fcn_config.WEIGHT_DECAY         = 2.0e-4     ## FCN Weight decays are 5.0e-4 or 2.0e-4
 fcn_config.BATCH_MOMENTUM       = 0.9
@@ -179,9 +180,11 @@ else:
 ##------------------------------------------------------------------------------------
 ## Build & Load Training and Validation datasets
 ##------------------------------------------------------------------------------------
-dataset_train = prep_coco_dataset(["train","val35k"], mrcnn_config)
-dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config)
+dataset_train = prep_coco_dataset(["train","val35k"], mrcnn_config, active_class_ids=args.coco_classes)
+dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config, active_class_ids=args.coco_classes)
 
+dataset_train.display_active_classes()
+dataset_val.display_active_classes()
   
 ##----------------------------------------------------------------------------------------------
 ## Train the FCN only 
@@ -189,7 +192,7 @@ dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config)
 ## layers. You can also pass a regular expression to select
 ## which layers to train by name pattern.
 ##----------------------------------------------------------------------------------------------            
-train_layers = args.fcn_layers
+train_layers = fcn_model.config.TRAINING_LAYERS
 # loss_names   = ['fcn_CE_loss']
 loss_names   = ['fcn_MSE_loss']
 fcn_model.epoch                  = fcn_config.LAST_EPOCH_RAN

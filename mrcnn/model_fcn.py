@@ -187,7 +187,7 @@ class FCN(ModelBase):
 
         # Image size must be dividable by 2 multiple times
         h, w = config.FCN_INPUT_SHAPE[:2]
-        
+        num_scores_columns = 16
         if h / 2**6 != int(h / 2**6) or w / 2**6 != int(w / 2**6):
             raise Exception("Image size must be dividable by 2 at least 6 times "
                             "to avoid fractions when downscaling and upscaling."
@@ -206,14 +206,14 @@ class FCN(ModelBase):
         # input_image      = KL.Input(shape=config.IMAGE_SHAPE.tolist(), name="input_image")
         input_image_meta = KL.Input(shape=[None], name="input_image_meta")
         pr_hm            = KL.Input(shape=[h,w, num_classes], name="input_pr_hm_norm" , dtype=tf.float32 )
-        pr_hm_scores     = KL.Input(shape=[num_classes, num_bboxes, 11], name="input_pr_hm_scores", dtype=tf.float32)
+        pr_hm_scores     = KL.Input(shape=[num_classes, num_bboxes, num_scores_columns], name="input_pr_hm_scores", dtype=tf.float32)
         
         ##----------------------------------------------------------------------------                
         ## FCN Training Mode Layers
         ##----------------------------------------------------------------------------                
         if mode == "training":
             gt_hm        = KL.Input(shape=[ h,w, num_classes], name="input_gt_hm_norm"  , dtype=tf.float32)
-            gt_hm_scores = KL.Input(shape=[ num_classes, num_bboxes, 11], name="input_gt_hm_scores", dtype=tf.float32)
+            gt_hm_scores = KL.Input(shape=[ num_classes, num_bboxes, num_scores_columns], name="input_gt_hm_scores", dtype=tf.float32)
 
             # _, _, _, active_class_ids = KL.Lambda(lambda x:  parse_image_meta_graph(x), mask=[None, None, None, None],
                                                   # name = 'active_class_ids')(input_image_meta)
@@ -403,13 +403,16 @@ class FCN(ModelBase):
                 "image"        : images[i],
                 "image_meta"   : image_metas[i],
                 "rois"         : mrcnn_rois,
+                "molded_rois"  : mrcnn_detections[i][:4],
                 "class_ids"    : mrcnn_class_ids,
                 "mrcnn_scores" : mrcnn_scores, 
+
                 "pr_scores"    : pr_scores_by_image,
                 "pr_scores_by_class"    : pr_scores_by_class,
+                "pr_hm"        : pr_hm[i],
+
                 "fcn_scores"   : fcn_scores_by_image,
                 "fcn_scores_by_class"   : fcn_scores_by_class,
-                "pr_hm"        : pr_hm[i],
                 "fcn_hm"       : fcn_hm[i],
                 "fcn_sm"       : fcn_sm[i]
             })

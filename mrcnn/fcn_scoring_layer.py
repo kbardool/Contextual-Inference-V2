@@ -33,6 +33,7 @@ def normalize(x, low = 0.0, high = 1.0):
 
     return y
 
+    
 ##--------------------------------------------------------------------------------------------------------
 ##
 ##--------------------------------------------------------------------------------------------------------        
@@ -55,22 +56,32 @@ def build_fcn_score(input_list):
         end_y        = tf.minimum(cy+covar[1], KB.int_shape(heatmap_tensor)[0])
         start_x      = tf.maximum(cx-covar[0],0)
         end_x        = tf.minimum(cx+covar[0], KB.int_shape(heatmap_tensor)[1])
+        
+        #---------------------------------------------------------------------------------------
+        # though rounding was an option, after analyzig the output data, opted to not use it. 
+        # Also not used in FCN Scoring layer routine    11-26-2018
+        #---------------------------------------------------------------------------------------
+        # y_extent     = tf.range(tf.round(start_y), tf.round(end_y))  ##  Rounding is NOT USED 
+        # x_extent     = tf.range(tf.round(start_x), tf.round(end_x))  ##  here or in FCN scoring
         y_extent     = tf.range(start_y, end_y)
         x_extent     = tf.range(start_x, end_x)
         Y,X          = tf.meshgrid(y_extent, x_extent)
+
         mask_indices = tf.stack([Y,X],axis=2)        
         mask_indices = tf.reshape(mask_indices,[-1,2])
         mask_indices = tf.to_int32(mask_indices)
         mask_size    = tf.shape(mask_indices)[0]
         mask_updates = tf.ones([mask_size], dtype = tf.float32)    
+        
         mask         = tf.scatter_nd(mask_indices, mask_updates, tf.shape(heatmap_tensor))
 
         heatmap_tensor = tf.multiply(heatmap_tensor, mask, name = 'mask_applied')
         score        = tf.reduce_sum(heatmap_tensor)
-        print('       heatmapshape:', heatmap_tensor.get_shape())
-    return score        
 
-
+        mask_area    = tf.to_float((end_y -start_y) * (end_x-  start_x))        
+        mask_sum     = tf.reduce_sum(mask)
+    
+    return tf.stack([ score, mask_area, mask_sum,  score/mask_area, score/mask_sum], axis = -1)          
     
     
 ##-------------------------------------------------------------------------------------------------------
@@ -160,13 +171,15 @@ def fcn_scoring_graph(input, config):
     ## generate score based on gaussian using bounding box masks 
     ##---------------------------------------------------------------------------------------------
     scores = tf.map_fn(build_fcn_score, [pt2_heatmaps, cy, cx,covar], dtype=tf.float32)    
-    scores = tf.expand_dims(scores, axis = -1)
+    # scores = tf.expand_dims(scores, axis = -1)
     print('    scores                  : ', scores.shape ,' Keras tensor ', KB.is_keras_tensor(scores) )  
 
     ##---------------------------------------------------------------------------------------------
     ##  Scatter back to per-class tensor 
     ##---------------------------------------------------------------------------------------------
-    scores_by_class = tf.scatter_nd(pt2_ind, scores, [batch_size, num_classes, detections_per_image, 1], name='scores_by_class')
+    scores_by_class = tf.scatter_nd(pt2_ind, scores, 
+                                    [batch_size, num_classes, detections_per_image, KB.int_shape(scores)[-1]],
+                                    name='scores_by_class')
     print('    scores_by_class        : ', scores_by_class.shape ,' Keras tensor ', KB.is_keras_tensor(scores_by_class) )  
     norm_scores = normalize(scores_by_class)
     print('    norm_score_by_class    : ', norm_scores.shape, KB.int_shape(norm_scores))
@@ -176,7 +189,7 @@ def fcn_scoring_graph(input, config):
     ##--------------------------------------------------------------------------------------------
     ##  Append scores, norm_scores to yield fcn_scores_dense 
     ##--------------------------------------------------------------------------------------------
-    fcn_scores_dense = tf.concat([pt2_dense , scores, norm_scores], axis = -1, name = 'fcn_scores_dense')
+    fcn_scores_dense = tf.concat([pt2_dense, scores, norm_scores], axis = -1, name = 'fcn_scores_dense')
     print('    fcn_scores_dense    : ', fcn_scores_dense.shape, KB.int_shape(fcn_scores_dense) ,
                 ' Keras tensor ', KB.is_keras_tensor(fcn_scores_dense) )  
 
@@ -256,7 +269,7 @@ class FCNScoringLayer(KE.Layer):
         # else:
             # detection_count = self.config.DETECTION_MAX_INSTANCES
             
-        return [ (None, input_num_classes, input_detections , input_columns + 2)  ]
+        return [ (None, input_num_classes, input_detections , input_columns + 10)  ]
 
               
 """

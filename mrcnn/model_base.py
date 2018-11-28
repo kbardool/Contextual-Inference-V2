@@ -28,7 +28,6 @@ from   mrcnn.utils            import log
 from   mrcnn.utils            import parse_image_meta_graph, parse_image_meta
 
 # from   mrcnn.fpn_layers       import fpn_graph, fpn_classifier_graph, fpn_mask_graph
-from   mrcnn.callbacks        import MyCallback
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 from distutils.version import LooseVersion
@@ -310,7 +309,7 @@ class ModelBase():
         '''
         
         # Get directory names. Each directory corresponds to a model
-        
+        dir_name, checkpoint = None, None    
         print('>>> find_last checkpoint in : ', self.model_dir)
         dir_names = next(os.walk(self.model_dir))[1]
         key = self.config.NAME.lower()
@@ -330,8 +329,8 @@ class ModelBase():
             checkpoints = filter(lambda f: f.startswith(key), checkpoints)
 
             checkpoints = sorted(checkpoints)
-            # print('    Folder: ' ,dir_name)
-            # print('    Checkpoints: ', checkpoints)
+            print('    Folder: ' ,dir_name)
+            print('    Checkpoints: ', checkpoints)
             if not checkpoints:
                 continue
                 # return dir_name, None
@@ -703,5 +702,90 @@ class ModelBase():
         
         return
         
+    ##----------------------------------------------------------------------------------------------
+    ## 
+    ##----------------------------------------------------------------------------------------------        
+    def get_layer_outputs(self, model_input, requested_layers = None , verbose = True, training_flag = True):
+        ''' get model layer outputs using a list of layer indices 
+        '''
+        # _my_input = model_input + [training_flag]
+        if verbose: 
+            print('/* Inputs */')
+            for i, (input_layer,input) in enumerate(zip(self.keras_model.input, model_input)):
+                print('Input {:2d}:  ({:40s}) \t  Input shape: {}'.format(i, input_layer.name, input.shape))
         
-            
+        if requested_layers is not None:
+            requested_layers_tensors = [self.keras_model.outputs[x] for x in requested_layers]    
+        else:
+            requested_layers = range(len(self.keras_model.outputs))
+            requested_layers_tensors = [x for x in self.keras_model.outputs]    
+
+        if verbose:
+            print('\nRequested layers:')
+            print('-----------------')
+            for i,j in zip(requested_layers, requested_layers_tensors):
+                print('Layer:  ',i, '   ', j.name, '   ', j.shape)
+        
+        get_output = KB.function(self.keras_model.input, requested_layers_tensors)   
+        results = get_output(model_input)                    
+        
+        if verbose:
+            print('\n/* Outputs */')    
+            for line, (i, output_layer, output) in  enumerate(zip (requested_layers, requested_layers_tensors , results)):
+                print('Output idx: {:2d}    Layer: {:2d}: ({:40s}) \t  Output shape: {}'.format(line, i, output_layer.name, output.shape))
+            print('\nNumber of layers generated: ', len(results), '\n')
+
+            for line, (i, output_layer, output) in  enumerate(zip (requested_layers, requested_layers_tensors , results)):
+                m = re.fullmatch(r"^.*/(.*):.*$", output_layer.name )
+                varname  = m.group(1) if m else "<varname>"
+                print('{:25s} = model_output[{:d}]          # layer: {:2d}   shape: {}' .format(varname, line, i, output.shape ))
+        return results
+    
+    def get_layer_output_1(self, model_input, requested_layers, training_flag = True, verbose = True):
+        ''' get model layer outputs using a list of layer indices 
+        '''
+        # _my_input = model_input + [training_flag]
+        if verbose: 
+            print('/* Inputs */')
+            for i, (input_layer,input) in enumerate(zip(self.input, model_input)):
+                print('Input {:2d}:  ({:40s}) \t  Input shape: {}'.format(i, input_layer.name, input.shape))
+                
+        requested_layers_tensors = [self.outputs[x] for x in requested_layers]
+        
+        get_output = KB.function(self.input, requested_layers_tensors)   
+        results = get_output(model_input)                    
+        
+        if verbose:
+            print('\n/* Outputs */')    
+            for line, (i, output_layer, output) in  enumerate(zip (requested_layers, requested_layers_tensors , results)):
+                print('Output idx: {:2d}    Layer: {:2d}: ({:40s}) \t  Output shape: {}'.format(line, i, output_layer.name, output.shape))
+            print('\nNumber of layers generated: ', len(results), '\n')
+
+            for line, (i, output_layer, output) in  enumerate(zip (requested_layers, requested_layers_tensors , results)):
+                m = re.fullmatch(r"^.*/(.*):.*$", output_layer.name )
+                varname  = m.group(1) if m else "<varname>"
+                print('{:25s} = model_output[{:d}]          # layer: {:2d}   shape: {}' .format(varname, line, i, output.shape ))
+        return results
+
+        
+        
+    def get_layer_output_2(self, model_input, training_flag = True, verbose = True):
+        if verbose: 
+            print('/* Inputs */')
+            for i, (input_layer,input) in enumerate(zip(self.input, model_input)):
+                print('Input {:2d}:  ({:40s}) \t  Input shape: {}'.format(i, input_layer.name, input.shape))
+
+        get_output = KB.function(self.input , self.outputs)
+        results = get_output(model_input)                  
+        
+        if verbose:
+            print('\n/* Outputs */')    
+            for line, ( output_layer, output) in  enumerate(zip (self.outputs, results)):
+                print('Output idx: {:2d}    Layer: {:2d}: ({:40s}) \t  Output shape: {}'.format(line, line, output_layer.name, output.shape))
+            print('\nNumber of layers generated: ', len(results), '\n')
+
+            for line, ( output_layer, output) in  enumerate(zip (self.outputs, results)):
+                m = re.fullmatch(r"^.*/(.*):.*$", output_layer.name )
+                varname  = m.group(1) if m else "<varname>"
+                print('{:25s} = model_output[{:d}]          # layer: {:2d}   shape: {}' .format(varname, line, line, output.shape ))            
+        return results    
