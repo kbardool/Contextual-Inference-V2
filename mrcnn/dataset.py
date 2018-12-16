@@ -133,20 +133,17 @@ class Dataset(object):
             self.int_to_ext_id.setdefault(internal_id, cls_info['id'])
             # if cls_info.
 
+         
         self.active_class_info = {}    
         for cls in  self.active_class_ids:
             int_id = self.ext_to_int_id[cls]
             self.active_class_info.setdefault(int_id, {'name':self.class_names[int_id], 'ext_id':cls})
-                
+        
+        self.active_class_ids  = [i for i in sorted(self.active_class_info)]
         self.build_category_to_class_map()
         self.build_category_to_external_class_map()
         
         print('Prepares complete')
-        print('-----------------')
-        for cls_info in self.class_info:
-            print('{:25s}  class:  source: {:10s}   (external) id: {:3d}   internal_id: {:3d}  category: {:20}  img_count: {:6d}' .format(
-                    cls_info['name'], cls_info['source'], cls_info['id'], cls_info['internal_id'] , cls_info['category'], cls_info["img_count"]))
-    
         
     def build_category_to_class_map(self):
         self.category_to_class_map = {}
@@ -173,14 +170,23 @@ class Dataset(object):
         # print('Total classes: ', ttl)          
         return 
         
-    def display_active_classes(self):
+    def display_active_class_info(self):
 
         print(self.active_class_ids)
         for ext_cls in self.active_class_ids:
             class_id = self.map_source_class_id( "coco.{}".format(ext_cls))
             print('ext_cls:',ext_cls, 'internal_class: ', class_id, 'name:', self.class_info[class_id]['category'],'-',self.class_info[class_id]['name'])        
         return
-            
+
+    def display_class_info(self):
+        print(' Class Information ')
+        print('-------------------')
+        for cls_info in self.class_info:
+            print('{:25s}  source: {:10s}   ext_id: {:3d}   internal_id: {:3d}  category: {:20}  img_count: {:6d}' .format(
+                    cls_info['name'], cls_info['source'], cls_info['id'], cls_info['internal_id'] , cls_info['category'], cls_info["img_count"]))
+
+
+                
     def map_source_class_id(self, source_class_id):
         """
         Takes a source class ID and returns the int class ID assigned to it.

@@ -15,6 +15,7 @@ import keras.initializers as KI
 import keras.engine  as KE
 import keras.losses  as KLosses
 import mrcnn.utils   as utils
+from mrcnn.utils import logt
 import pprint
 pp = pprint.PrettyPrinter(indent=2, width=100)
 
@@ -75,50 +76,7 @@ def rpn_class_loss_graph(rpn_match, rpn_class_logits):
     print('    reshaped mean loss :', loss.get_shape(), KB.shape(loss), 'KerasTensor: ', KB.is_keras_tensor(loss))
     return loss
 
-##-----------------------------------------------------------------------
-##  RPN bbox loss - obsolete -- use rpn_bbox_loss_graph()
-##-----------------------------------------------------------------------    
-# def rpn_bbox_loss_graph_old(config, target_bbox, rpn_match, rpn_bbox):
-    # '''
-    # Return the RPN bounding box loss graph.
 
-    # config:             the model config object.
-    
-    # target_bbox:        [batch, max positive anchors, (dy, dx, log(dh), log(dw))].
-                        # Uses 0 padding to fill in unsed bbox deltas.
-    
-    # rpn_match:          [batch, anchors, 1]. Anchor match type. 1=positive,
-                        # -1=negative, 0=neutral anchor.
-    
-    # rpn_bbox:           [batch, anchors, (dy, dx, log(dh), log(dw))]
-    
-    # '''
-    # # Positive anchors contribute to the loss, but negative and
-    # # neutral anchors (match value of 0 or -1) don't.
-    # rpn_match = KB.squeeze(rpn_match, -1)
-    # indices   = tf.where(KB.equal(rpn_match, 1))
-
-    # print('>>> rpn_bbox_loss_graph_old' )
-    # print('    rpn_match size    : ', rpn_match.shape)
-    # print('    rpn_bbox  size    : ', rpn_bbox.shape)
-    # print('    target_bbox size n: ', target_bbox.shape)
-    
-    # # Pick bbox deltas that contribute to the loss
-    # rpn_bbox  = tf.gather_nd(rpn_bbox, indices)
-
-    # # Trim target bounding box deltas to the same length as rpn_bbox.
-    # batch_counts = KB.sum(KB.cast(KB.equal(rpn_match, 1), tf.int32), axis=1)
-    # target_bbox  = utils.batch_pack_graph(target_bbox, batch_counts,
-                                   # config.IMAGES_PER_GPU)
-
-    # # TODO: use smooth_l1_loss() rather than reimplementing here
-    # #       to reduce code duplication
-    # diff = KB.abs(target_bbox - rpn_bbox)
-    # less_than_one = KB.cast(KB.less(diff, 1.0), "float32")
-    # loss = (less_than_one * 0.5 * diff**2) + (1 - less_than_one) * (diff - 0.5)
-    # loss = KB.switch(tf.size(loss) > 0, KB.mean(loss), tf.constant(0.0))
-    
-    # return loss
 
 ##-----------------------------------------------------------------------
 ##  RPN bbox loss  
@@ -435,8 +393,6 @@ def fcn_heatmap_MSE_loss_graph(target_heatmap, pred_heatmap):
     print('    loss         :', loss.get_shape()       , KB.int_shape(loss)       , 'KerasTensor: ', KB.is_keras_tensor(loss))
     print('    loss mean    :', loss_mean.get_shape()  , KB.int_shape(loss_mean)  , 'KerasTensor: ', KB.is_keras_tensor(loss_mean))
     print('    loss final   :', loss_final.get_shape() , KB.int_shape(loss_final) , 'KerasTensor: ', KB.is_keras_tensor(loss_final))
-    # loss_mean = tf.squeeze(loss_mean,axis =  [0, 1], name = 'fcn_heatmap_loss')
-    # print('    loss mean :', loss_mean.get_shape()  , KB.shape(loss_mean)  , 'KerasTensor: ', KB.is_keras_tensor(loss_mean))
 
     # Permute predicted & target heatmaps to [N, num_classes, height, width]
     
@@ -534,3 +490,123 @@ def fcn_heatmap_CE_loss_graph(target_heatmap, pred_heatmap, active_class_ids):
     
     return loss_final
 
+
+##-----------------------------------------------------------------------
+##  FCN Binary Cross Entropy loss  
+##-----------------------------------------------------------------------    
+def fcn_heatmap_BCE_loss_graph(target_heatmap, pred_heatmap):
+    '''
+    Binary Cross Entropy Loss for the FCN heatmaps.
+    
+    Apply a per-pixel sigmoid and binary loss, similar to the Lmask loss calculation
+    in MaskRCNN. 
+    Two approaches :
+    1- Only calaculate loss for classes which have active GT bounding boxes
+    2- Calculate for all classes 
+    
+    We will implement approach 1. 
+    
+    
+    target_heatmaps:    [batch, height, width, num_classes].
+                        A float32 tensor of values 0 or 1. Uses zero padding to fill array.
+
+    target_class_ids:   [batch, num_rois]. Integer class IDs. Zero padded.
+
+    pred_masks:         [batch, height, width, num_classes]  float32 tensor
+                        with values from 0 to 1.
+
+    # active_class_ids:       [batch, num_classes]. Has a value of 1 for
+                            # classes that are in the dataset of the image, and 0
+                            # for classes that are not in the dataset. 
+    '''
+    print()
+    print('-------------------------------' )
+    print('>>> fcn_heatmap_BCE_loss_graph  ' )
+    print('-------------------------------' )
+    logt('    target_class_ids  :', target_heatmap)
+    logt('    pred_class_logits :', pred_heatmap)
+    # target_class_ids = tf.cast(target_class_ids, 'int64')
+    
+    # Find predictions of classes that are active (present in the GT heatmaps)  
+    target_heatmap = tf.transpose(target_heatmap, [0,3,1,2])
+    pred_heatmap   = tf.transpose(  pred_heatmap, [0,3,1,2])
+    logt(' trgt_heatmap ', target_heatmap)
+    logt(' trgt_heatmap ', pred_heatmap  )
+
+    tgt_hm_sum = tf.reduce_sum(target_heatmap, axis = [2,3])
+    logt(' tgt_hm_sum ',tgt_hm_sum)
+
+    class_idxs = tf.where(tgt_hm_sum > 0)
+    logt(' class indeixes ', class_idxs)
+
+    active_tgt_heatmaps  = tf.gather_nd(target_heatmap, class_idxs)
+    active_pred_heatmaps = tf.gather_nd(pred_heatmap, class_idxs)
+    logt('active_tgt_heatmaps ',active_tgt_heatmaps)
+    logt('active_pred_heatmaps ',active_pred_heatmaps)
+    y_true = tf.reshape(active_tgt_heatmaps, (-1,))
+    y_pred = tf.reshape(active_pred_heatmaps, (-1,))
+    logt('y_true : ', y_true)
+    logt('y_pred : ', y_pred)
+
+    loss = KB.switch(tf.size(y_true) > 0,
+                    KB.binary_crossentropy(target=y_true, output=y_pred),
+                    tf.constant(0.0))
+    logt('loss', loss)
+    loss_mean = KB.mean(loss)
+    logt('mean loss ', loss_mean)  
+    loss_final = tf.reshape(loss_mean, [1, 1], name = 'fcn_BCE_loss')
+    logt('loss (final) ', loss_final)
+    # return loss    
+    print('    loss              :', loss.get_shape()       , KB.int_shape(loss)       , 'KerasTensor: ', KB.is_keras_tensor(loss))
+    print('    loss mean         :', loss_mean.get_shape()  , KB.int_shape(loss_mean)  , 'KerasTensor: ', KB.is_keras_tensor(loss_mean))
+    print('    loss final        :', loss_final.get_shape() , KB.int_shape(loss_final) , 'KerasTensor: ', KB.is_keras_tensor(loss_final))
+    
+    return loss_final
+
+"""    
+#-----------------------------------------------------------------------
+#  RPN bbox loss - obsolete -- use rpn_bbox_loss_graph()
+#-----------------------------------------------------------------------    
+# def rpn_bbox_loss_graph_old(config, target_bbox, rpn_match, rpn_bbox):
+    # '''
+    # Return the RPN bounding box loss graph.
+
+    # config:             the model config object.
+    
+    # target_bbox:        [batch, max positive anchors, (dy, dx, log(dh), log(dw))].
+                        # Uses 0 padding to fill in unsed bbox deltas.
+    
+    # rpn_match:          [batch, anchors, 1]. Anchor match type. 1=positive,
+                        # -1=negative, 0=neutral anchor.
+    
+    # rpn_bbox:           [batch, anchors, (dy, dx, log(dh), log(dw))]
+    
+    # '''
+    # # Positive anchors contribute to the loss, but negative and
+    # # neutral anchors (match value of 0 or -1) don't.
+    # rpn_match = KB.squeeze(rpn_match, -1)
+    # indices   = tf.where(KB.equal(rpn_match, 1))
+
+    # print('>>> rpn_bbox_loss_graph_old' )
+    # print('    rpn_match size    : ', rpn_match.shape)
+    # print('    rpn_bbox  size    : ', rpn_bbox.shape)
+    # print('    target_bbox size n: ', target_bbox.shape)
+    
+    # # Pick bbox deltas that contribute to the loss
+    # rpn_bbox  = tf.gather_nd(rpn_bbox, indices)
+
+    # # Trim target bounding box deltas to the same length as rpn_bbox.
+    # batch_counts = KB.sum(KB.cast(KB.equal(rpn_match, 1), tf.int32), axis=1)
+    # target_bbox  = utils.batch_pack_graph(target_bbox, batch_counts,
+                                   # config.IMAGES_PER_GPU)
+
+    # # TODO: use smooth_l1_loss() rather than reimplementing here
+    # #       to reduce code duplication
+    # diff = KB.abs(target_bbox - rpn_bbox)
+    # less_than_one = KB.cast(KB.less(diff, 1.0), "float32")
+    # loss = (less_than_one * 0.5 * diff**2) + (1 - less_than_one) * (diff - 0.5)
+    # loss = KB.switch(tf.size(loss) > 0, KB.mean(loss), tf.constant(0.0))
+    
+    # return loss
+"""
+    

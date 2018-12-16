@@ -31,7 +31,7 @@ import keras.layers as KL
 # sys.path.append('..')
 
 from  mrcnn.helper_layers import BatchNorm
-
+from  mrcnn.utils         import logt
 # import mrcnn.utils as utils
 # from   mrcnn.datagen import data_generator
 # import mrcnn.loss  as loss
@@ -121,7 +121,8 @@ def conv_block(input_tensor, kernel_size, filters, stage, block,
     return x
 
 
-def resnet_graph(input_image, architecture, stage5=False):
+def resnet_graph(input_image, architecture, stage5=False, verbose = 0):
+
     assert architecture in ["resnet50", "resnet101"]
     print()
     print('----------------------------')
@@ -136,28 +137,33 @@ def resnet_graph(input_image, architecture, stage5=False):
     #   apply Relu activation 
     #   apply max pooling (3,3) stride (2,2)
     x = KL.ZeroPadding2D((3, 3))(input_image)
-    print('     After ZeroPadding2D  :', x.get_shape(), x.shape)
+    logt('After ZeroPadding2D  ', x, verbose = verbose)
+    
     x = KL.Conv2D(64, (7, 7), strides=(2, 2), name='conv1', use_bias=True)(x)
-    print('     After Conv2D padding :', x.get_shape(), x.shape)
+    logt('After Conv2D padding :', x, verbose = verbose)
+    
     x = BatchNorm(axis=3, name='bn_conv1')(x)
-    print('     After BatchNorm      :', x.get_shape(), x.shape)   
+    logt('After BatchNorm', x, verbose = verbose)
+    
     x = KL.Activation('relu')(x)
     
     C1 = x = KL.MaxPooling2D((3, 3), strides=(2, 2), padding="same")(x)
-    print('     C1 Shape:', C1.get_shape(), C1.shape)
+    logt('C1 ', C1, verbose = verbose)
     
     # Stage 2
     #   conv block , kernel size: 3, filters: [64, 64, 256]
     x = conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='b')
+    
     C2 = x = identity_block(x, 3, [64, 64, 256], stage=2, block='c')
-    print('     C2 Shape: ', C2.get_shape(), C2.shape)
+    logt('C2  ', C2, verbose = verbose)
+    
     # Stage 3
     x = conv_block(x, 3, [128, 128, 512], stage=3, block='a')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='b')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='c')
     C3 = x = identity_block(x, 3, [128, 128, 512], stage=3, block='d')
-    print('     C3 Shape: ', C3.get_shape(), C3.shape)
+    logt('C3  ', C3, verbose = verbose)
     
     # Stage 4
     x = conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
@@ -165,7 +171,7 @@ def resnet_graph(input_image, architecture, stage5=False):
     for i in range(block_count):
         x = identity_block(x, 3, [256, 256, 1024], stage=4, block=chr(98 + i))
     C4 = x
-    print('     C4 Shape: ', C4.get_shape(), C4.shape)
+    logt('C4 ', C4, verbose = verbose)
     
     # Stage 5
     if stage5:
@@ -174,6 +180,7 @@ def resnet_graph(input_image, architecture, stage5=False):
         C5 = x = identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
     else:
         C5 = None
-    print('     C5 Shape: ', C5.get_shape(), C5.shape)    
+    logt('C5 ', C5, verbose = verbose)
+    
     return [C1, C2, C3, C4, C5]
 

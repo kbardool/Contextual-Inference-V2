@@ -6,10 +6,10 @@ import cv2
 from mrcnn.visualize import display_images
 from mrcnn.dataset   import Dataset
 # from mrcnn.shapes    import ShapesConfig
-from mrcnn.datagen   import load_image_gt
+from mrcnn.datagen   import load_image_gt, data_generator
 from mrcnn.visualize import draw_boxes
-from   mrcnn.config  import Config
-from   mrcnn.dataset import Dataset
+from mrcnn.config    import Config
+from mrcnn.dataset   import Dataset
 from mrcnn.utils     import non_max_suppression, mask_string
 # import mrcnn.utils as utils
 import pprint
@@ -17,6 +17,26 @@ p4 = pprint.PrettyPrinter(indent=4, width=100)
 p8 = pprint.PrettyPrinter(indent=8, width=100)
 
  
+##------------------------------------------------------------------------------------
+## Build  NewShapes Training and Validation datasets
+##------------------------------------------------------------------------------------
+def prep_newshape_dataset(config, image_count, shuffle = True, augment = False, generator = False):
+    '''
+    '''
+    dataset = NewShapesDataset(config)
+    dataset.load_shapes(image_count) 
+    dataset.prepare()
+
+    results = dataset
+    
+    if generator:
+        generator = data_generator(dataset, config, 
+                                   batch_size=config.BATCH_SIZE,
+                                   shuffle = True, augment = False) 
+        return [dataset, generator]
+    else:
+        return results
+    
 
 
 class NewShapesConfig(Config):
@@ -91,6 +111,7 @@ class NewShapesDataset(Dataset):
         self.add_class("shapes", 4, "building")
         self.add_class("shapes", 5, "tree")
         self.add_class("shapes", 6, "cloud")
+        self.active_class_ids=[1,2,3,4,5,6]
         buffer = self.buffer
         height = self.height
         width  = self.width
@@ -539,7 +560,7 @@ class NewShapesDataset(Dataset):
         return bg_color, shapes    
     
     
-from mrcnn.utils import compute_iou
+ 
 def debug_non_max_suppression(boxes, scores, threshold):
     '''
     Performs non-maximum supression and returns indicies of kept boxes.

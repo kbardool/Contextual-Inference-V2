@@ -14,7 +14,7 @@ import scipy.misc
 import skimage.color
 import skimage.io
 import skimage.transform
-import keras.backend as K
+import keras.backend as KB
 import keras
 from distutils.version import LooseVersion
 if LooseVersion(keras.__version__) >= LooseVersion('2.2.0'):
@@ -169,8 +169,8 @@ def parse_image_meta_graph(meta):
 
     meta:       [batch, meta length] where meta length depends on NUM_CLASSES
     '''
-    print(' Parse Image Meta Graph ')
-    print('     meta : ' , type(meta), K.int_shape(meta))
+    # print('    Parse Image Meta Graph ')
+    # print('        meta : ' , type(meta), KB.int_shape(meta))
     image_id         = meta[:, 0:1]
     image_shape      = meta[:, 1:4]
     window           = meta[:, 4:8]
@@ -185,7 +185,7 @@ def parse_active_class_ids_graph(meta):
     meta:       [batch, meta length] where meta length depends on NUM_CLASSES
     '''
     print(' Parse Image Meta Graph ')
-    print('     meta : ' , type(meta), K.int_shape(meta))
+    print('     meta : ' , type(meta), KB.int_shape(meta))
     active_class_ids = meta[:, 8:]
     return active_class_ids
 
@@ -333,33 +333,6 @@ def unresize_image(image, image_meta, upscale = None):
 
     return image
      
-"""    
-    # Scale?
-    if min_dim:
-        # Scale up but not down
-        scale = max(1, min_dim / min(h, w))
-        # print(' Scale based on min_dim is :', scale)
-        
-    # Does it exceed max dim?
-    if max_dim:
-        image_max = max(h, w)
-        # print(' Round(image_max * scale) > max_dim :  {} *{} = {} >? {}'.format(image_max,scale,image_max*scale, max_dim)) 
-        if round(image_max * scale) > max_dim:
-            scale = max_dim / image_max
-            # print(' Scale based on max_dim is :', scale)
-            
-    # Resize image and mask
-    if scale != 1:
-        image = scipy.misc.imresize(image, (round(h * scale), round(w * scale)))
-    
-    # print(' Finalized scale is : ', scale)
-    # print(' Resized image shape is :', image.shape)
-    # Need padding?
-
-        # print(' Padding:  top: {}  bottom: {} left: {} right:{} '.format(top_pad, bottom_pad,left_pad,right_pad))
-            
-    return image, window, scale, padding
-"""
 
 
 ##------------------------------------------------------------------------------------------
@@ -413,13 +386,59 @@ def unresize_heatmap(image, image_meta, upscale = None):
 
 
 
-###############################################################################
+################################################################################################
 ##  Bounding Box utility functions
-###############################################################################
+################################################################################################
+
+##------------------------------------------------------------------------------------------
+##  clip_to_window - - numpy version 
+##------------------------------------------------------------------------------------------
+def clip_to_window_np(window, boxes):
+    '''
+    window: (y1, x1, y2, x2). The window in the image we want to clip to.
+    boxes : [N, (y1, x1, y2, x2)]
+    '''
+    new_boxes = np.zeros_like(boxes)
+    # print('clip_to_window_np()')
+    # print('     boxes.shape: ', boxes.shape)
+    # print('     window     : ', window)
+    new_boxes[..., 0] = np.maximum(np.minimum(boxes[..., 0], window[2]), window[0])
+    new_boxes[..., 1] = np.maximum(np.minimum(boxes[..., 1], window[3]), window[1])
+    new_boxes[..., 2] = np.maximum(np.minimum(boxes[..., 2], window[2]), window[0])
+    new_boxes[..., 3] = np.maximum(np.minimum(boxes[..., 3], window[3]), window[1])
+    return new_boxes
+    
+##------------------------------------------------------------------------------------------
+##  clip_to_window - - tensorflow version 
+##------------------------------------------------------------------------------------------
+def clip_to_window_tf(window, boxes):
+    '''
+    window: (y1, x1, y2, x2). The window in the image we want to clip to.
+    boxes:  [N, (y1, x1, y2, x2)]
+    '''
+    window = tf.cast(window, tf.float32) 
+
+    num_images = tf.shape(boxes)[0]
+    num_rois   = tf.shape(boxes)[1]
+    
+    low_vals   = tf.stack([window[:,0],window[:,1], window[:,0], window[:,1]], axis = -1)
+    high_vals  = tf.stack([window[:,2],window[:,3], window[:,2], window[:,3]], axis = -1)
+    
+    low_vals   = tf.expand_dims(low_vals, axis = 1)
+    high_vals  = tf.expand_dims(high_vals, axis = 1)
+    
+    low_vals   = tf.tile(low_vals ,[num_images, num_rois,1])    
+    high_vals  = tf.tile(high_vals,[num_images, num_rois,1])    
+    
+    tmp1 = tf.where(boxes < high_vals , boxes,  high_vals)
+    tmp2 = tf.where( tmp1 > low_vals  , tmp1 ,  low_vals )
+    return tmp2
+        
+        
 ##----------------------------------------------------------------------------------------------
 ## byclass_to_byimage_np/tf
 ##----------------------------------------------------------------------------------------------
-def byclass_to_byimage_np(in_array, seqid_column = 6):    
+def byclass_to_byimage_np(in_array, seqid_column = 7):    
     ''' 
     convert a per-class tensor, shaped as  [ num_classes, num_bboxes, columns ]
          to                                  
@@ -476,6 +495,7 @@ def boxes_to_image_domain(boxes, image_meta):
         boxes       bounding box in image domain coordinates
        
     '''
+    # print('   boxes_to_image_domain(): image_meta: ', type(image_meta), image_meta.shape)
     # image_id    = image_meta[0]
     image_shape = image_meta[1:4]
     window      = image_meta[4:8]
@@ -534,6 +554,108 @@ def extract_bboxes(mask):
         boxes[i] = np.array([y1, x1, y2, x2])
     return boxes.astype(np.int32)
 
+    
+def flip_bbox(bbox, size, flip_x=False, flip_y=False):
+    """Flip bounding boxes according to image flipping directions.
+
+    Parameters
+    ----------
+    bbox : numpy.ndarray
+        Numpy.ndarray with shape (N, 4+) where N is the number of bounding boxes.
+        The second axis represents attributes of the bounding box.
+        Specifically, these are :math:`(y1_{min}, x1_{min}, y2_{max}, x2_{max})`,
+        we allow additional attributes other than coordinates, which stay intact
+        during bounding box transformations.
+        
+    size : tuple
+        Tuple of length 2: (width, height).
+    flip_x : bool
+        Whether flip horizontally.
+    flip_y : bool
+        Whether flip vertically.
+
+    Returns
+    -------
+    numpy.ndarray
+        Flipped bounding boxes with original shape.
+    """
+    if not len(size) == 2:
+        raise ValueError("size requires length 2 tuple, given {}".format(len(size)))
+    width, height = size
+    bbox = bbox.copy()
+    if flip_y:
+        ymax = height - bbox[:, 0]
+        ymin = height - bbox[:, 2]
+        bbox[:, 0] = ymin
+        bbox[:, 2] = ymax
+    if flip_x:
+        xmax = width - bbox[:, 1]
+        xmin = width - bbox[:, 3]
+        bbox[:, 1] = xmin
+        bbox[:, 3] = xmax
+    return bbox
+    
+
+############################################################################################
+##  Computation of IoU, AP,  Precision / Recall calculations
+############################################################################################
+##------------------------------------------------------------------------------------------
+##  Computes IoU overlaps between two sets of boxes.in normalized coordinates
+##------------------------------------------------------------------------------------------    
+def overlaps_graph_np(proposals, gt_boxes):
+    '''
+    Computes IoU overlaps between two sets of boxes.in normalized coordinates
+    
+    boxes1 - proposals :  [batch_size,  proposal_counts, 4 (y1, x1, y2, x2)] <-- Region proposals
+    boxes2 - gt_boxes  :  [batch_size, max_gt_instances, 4 (y1, x1, y2, x2)] <-- input_normlzd_gt_boxes
+    
+    proposal_counts : 2000 (training) or 1000 (inference)
+    max_gt_instances: 100
+    
+    returns :
+    ---------
+    overlaps :          [ proposal_counts, max_gt_instances] 
+                        IoU of all proposal box / gt_box pairs
+                        The dimensionality :
+                            row:  number of non_zero proposals 
+                            cols: number of non_zero gt_bboxes
+    '''
+    # print(proposals.shape)
+    # print(gt_boxes.shape)
+    ##------------------------------------------------------------------------------------------------------------
+    ## 1. Tile boxes2 and repeat boxes1. This allows us to compare every boxes1 against every boxes2 without loops.
+    ##    TF doesn't have an equivalent to np.repeat() so simulate it using tf.tile() and tf.reshape.
+    ##  b1: duplicate each row of boxes1 <boxes2.shape[0]> times 
+    ##      R1,R2, R3 --> R1,R1,R1,..,R2,R2,R2,...,R3,R3,R3
+    ##  b2: duplicate the set of rows in boxes2 <boxes1.shape[0]> times 
+    ##      R1,R2,R3 --> R1,R2,R3,R1,R2,R3,....,R1,R2,R3
+    ##------------------------------------------------------------------------------------------------------------
+    b1 = np.repeat(proposals, gt_boxes.shape[0],axis =0)
+    b2 = np.tile(gt_boxes, (proposals.shape[0],1))    # repeat number of times of r_gt_boxes
+    
+    ##------------------------------------------------------------------------------------------------------------
+    ## 2. Compute intersections
+    ## b1_y1, b1_x1, b1_y2, b1_x2 = tf.split(b1, 4, axis=1)
+    ## b2_y1, b2_x1, b2_y2, b2_x2 = tf.split(b2, 4, axis=1)
+    ##------------------------------------------------------------------------------------------------------------
+    y1 = np.maximum(b1[:,0], b2[:,0])
+    x1 = np.maximum(b1[:,1], b2[:,1])
+    y2 = np.minimum(b1[:,2], b2[:,2])
+    x2 = np.minimum(b1[:,3], b2[:,3])
+
+    intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
+
+    ##------------------------------------------------------------------------------------------------------------
+    ## 3. Compute unions
+    ##------------------------------------------------------------------------------------------------------------
+    b1_area = (b1[:,2] - b1[:,0]) * (b1[:,3] - b1[:,1])
+    b2_area = (b2[:,2] - b2[:,0]) * (b2[:,3] - b2[:,1])
+    union = b1_area + b2_area - intersection
+    iou = intersection / union
+
+    overlaps = np.reshape(iou, (proposals.shape[0], gt_boxes.shape[0]))
+    return  overlaps,np.expand_dims(intersection, axis =1), np.expand_dims(union,axis = 1), np.expand_dims(iou, axis = 1)
+   
 ##------------------------------------------------------------------------------------------
 ##  Compute IoU between a box and an array of boxes  
 ##------------------------------------------------------------------------------------------
@@ -555,10 +677,12 @@ def compute_iou(box, boxes, box_area, boxes_area):
     x2 = np.minimum(box[3], boxes[:, 3])
     intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
     union = box_area + boxes_area[:] - intersection[:]
+    
     # print(' Intersection: \n', intersection)
     # print(' Union       : \n', union)
     # if union == 0 :
         # print('Warning!! Union is 0')
+    
     iou = intersection / union  
     return iou
 
@@ -580,16 +704,17 @@ def compute_overlaps(boxes1, boxes2):
     # Compute overlaps to generate matrix [boxes1 count, boxes2 count]
     # Each cell contains the IoU value.
     overlaps = np.zeros((boxes1.shape[0], boxes2.shape[0]))
+    
+    ## loop over boxes in boxes2
     for i in range(overlaps.shape[1]):
         box2 = boxes2[i]
         overlaps[:, i] = compute_iou(box2, boxes1, area2[i], area1)
     return overlaps
 
 
-    
-###############################################################################
-## Precision / Recall calculations
-###############################################################################
+##------------------------------------------------------------------------------------------
+##  Compute Average Precision 
+##------------------------------------------------------------------------------------------
 def compute_ap(gt_boxes, gt_class_ids,
                pred_boxes, pred_class_ids, pred_scores,
                iou_threshold=0.5):
@@ -607,7 +732,7 @@ def compute_ap(gt_boxes, gt_class_ids,
     gt_boxes   = trim_zeros(gt_boxes)
     pred_boxes = trim_zeros(pred_boxes)
     pred_scores= pred_scores[:pred_boxes.shape[0]]
-    indices    = np.argsort(pred_scores)[::-1]
+    indices    = np.argsort(pred_scores)[::-1]   ## sort indices from largest to smallest
   
     pred_boxes     = pred_boxes[indices]
     pred_class_ids = pred_class_ids[indices]
@@ -615,7 +740,7 @@ def compute_ap(gt_boxes, gt_class_ids,
 
     # Compute IoU overlaps [pred_boxes, gt_boxes]
     overlaps = compute_overlaps(pred_boxes, gt_boxes)
-
+    
     # Loop through ground truth boxes and find matching predictions
     match_count = 0
     pred_match = np.zeros([pred_boxes.shape[0]])
@@ -733,7 +858,12 @@ def non_max_suppression(boxes, scores, threshold):
     # print('====> Final Picks: ', pick)
     return np.array(pick, dtype=np.int32)
 
+
     
+############################################################################################
+##  Bounding box refinement - Compute Refinements/ Apply Refinements
+############################################################################################
+   
 ##------------------------------------------------------------------------------------------
 ##  Bounding box refinement - apply delta bbox refinement - single bbox
 ##------------------------------------------------------------------------------------------
@@ -937,51 +1067,6 @@ def box_refinement_graph(box, gt_box):
 
 
 
-##------------------------------------------------------------------------------------------
-##  clip_to_window - - numpy version 
-##------------------------------------------------------------------------------------------
-def clip_to_window_np(window, boxes):
-    '''
-    window: (y1, x1, y2, x2). The window in the image we want to clip to.
-    boxes : [N, (y1, x1, y2, x2)]
-    '''
-    new_boxes = np.zeros_like(boxes)
-    # print('clip_to_window_np()')
-    # print('     boxes.shape: ', boxes.shape)
-    # print('     window     : ', window)
-    new_boxes[..., 0] = np.maximum(np.minimum(boxes[..., 0], window[2]), window[0])
-    new_boxes[..., 1] = np.maximum(np.minimum(boxes[..., 1], window[3]), window[1])
-    new_boxes[..., 2] = np.maximum(np.minimum(boxes[..., 2], window[2]), window[0])
-    new_boxes[..., 3] = np.maximum(np.minimum(boxes[..., 3], window[3]), window[1])
-    return new_boxes
-    
-##------------------------------------------------------------------------------------------
-##  clip_to_window - - tensorflow version 
-##------------------------------------------------------------------------------------------
-def clip_to_window_tf(window, boxes):
-    '''
-    window: (y1, x1, y2, x2). The window in the image we want to clip to.
-    boxes:  [N, (y1, x1, y2, x2)]
-    '''
-    window = tf.cast(window, tf.float32) 
-
-    num_images = tf.shape(boxes)[0]
-    num_rois   = tf.shape(boxes)[1]
-    
-    low_vals   = tf.stack([window[:,0],window[:,1], window[:,0], window[:,1]], axis = -1)
-    high_vals  = tf.stack([window[:,2],window[:,3], window[:,2], window[:,3]], axis = -1)
-    
-    low_vals   = tf.expand_dims(low_vals, axis = 1)
-    high_vals  = tf.expand_dims(high_vals, axis = 1)
-    
-    low_vals   = tf.tile(low_vals ,[num_images, num_rois,1])    
-    high_vals  = tf.tile(high_vals,[num_images, num_rois,1])    
-    
-    tmp1 = tf.where(boxes < high_vals , boxes,  high_vals)
-    tmp2 = tf.where( tmp1 > low_vals  , tmp1 ,  low_vals )
-    return tmp2
-        
-        
 ###############################################################################
 ## Mask Operations 
 ###############################################################################
@@ -1199,14 +1284,11 @@ def generate_pyramid_anchors(anchor_scales, anchor_ratios, feature_shapes, featu
     return pp
    
 
-
-
-
 ###############################################################################
 ##  Utility Functions
 ###############################################################################
-def tensor_info(x):
-    print('     {:25s} : {}- {}  KerasTensor: {} '.format(x.name, x.shape, KB.int_shape(x), KB.is_keras_tensor(X)))
+# def tensor_info(x):
+    # print('     {:25s} : {}- {}  KerasTensor: {} '.format(x.name, x.shape, KB.int_shape(x), KB.is_keras_tensor(X)))
 
   
 def log(text, array=None):
@@ -1221,6 +1303,28 @@ def log(text, array=None):
             array.max() if array.size else ""))
     print(text)
 
+def logt(text, tensor=None, indent=1, verbose = 1):
+    """Prints a text message. And, optionally, if a Numpy array is provided it
+    prints it's shape, min, and max values.
+    """
+    if not verbose:
+        return
+        
+    text = '    '*indent+ text.strip()
+    text = text.ljust(35)
+    
+    if tensor is None : 
+        pass
+    elif isinstance(tensor, np.ndarray):
+        text += (":  shape: {}".format(tensor.shape))
+    else:
+        text = '    '*indent+ text.strip()
+        text = text.ljust(35)
+        text += (":  shape: {:20}  KB.shape:{:20}  Keras Tensor: {}".format(
+            str(tensor.shape),
+            str(KB.int_shape(tensor)),
+            KB.is_keras_tensor(tensor)))
+    print(text)
 
 def mask_string(mask):
     return np.array2string(np.where(mask,1,0),max_line_width=134, separator = '')    
@@ -1377,7 +1481,7 @@ def load_weights_from_hdf5_group(f, layers, reshape=False, verbose = 0):
                              str(len(weight_values)) +
                              ' elements.')
         weight_value_tuples += zip(symbolic_weights, weight_values)
-    K.batch_set_value(weight_value_tuples)
+    KB.batch_set_value(weight_value_tuples)
 
 
 ##----------------------------------------------------------------------------------------------
@@ -1425,14 +1529,16 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False, reshape
         if layer.name:
             index.setdefault(layer.name, []).append(layer)
 
-    print('layers type: ', type(layers), 'length: ', len(layers))
+    if verbose > 1:        
+        print('    load_weights_from_hdf5_group_by_name()  model layers: type: ', type(layers), 'length: ', len(layers))    
+        print('    load_weights_from_hdf5_group_by_name()  HDF5  layers: type: ', type(layer_names), 'length: ', len(layer_names))
             
-    # if verbose > 0:
-        # print("=========================================")
-        # print(" Layer names loaded from hd5 file:       ")
-        # print("=========================================")
-        # for idx,layer in enumerate(layer_names):
-            # print(' {:4d}  {} '.format(idx, layer ))
+    if verbose > 1:
+        print("=========================================")
+        print(" Layer names loaded from hd5 file:       ")
+        print("=========================================")
+        for idx,layer in enumerate(layer_names):
+            print(' {:4d}  {} '.format(idx, layer ))
 
     if verbose > 2:
         # print(" Load weights from hd5 by name ")
@@ -1447,23 +1553,23 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False, reshape
         for key  in index.keys():
             print(' {:.<30s}     {}'.format(key, index[key]))
 
-    if verbose > 1:
+    if verbose > 2:
         print("=====================================================================")
         print(" List Defined Model  and matching hd5 layers, if present       ")
         print("       Model Layer                     HD5 Layer ")
         print("=====================================================================")
         for idx, layer in enumerate(layers):
             hdf5_layer_count = layer_names.count(layer.name) 
-            print(' {:4d}  {:.<30s}  {} '.format(idx, layer.name, hdf5_layer_count  if hdf5_layer_count  else '!!! Not Found !!!')) 
+            print(' {:4d}  {:.<30s}  {} '.format(idx, layer.name, hdf5_layer_count  if hdf5_layer_count  else '!!! Not Found in HDF5 file !!!')) 
         print("=====================================================================")
         print(" List hd5 layers and matching layers from Defined Model, if present  ")
         print("       HDF5 Layer                      Model Layer")
         print("=====================================================================")
         for idx, name in enumerate(layer_names):
             mdl_layer_name = index.get(name, []) 
-            print(' {:4d}  {:.<30s}  {} '.format(idx, name, mdl_layer_name[0].name  if mdl_layer_name else '!!! NotFound !!!'))
+            print(' {:4d}  {:.<30s}  {} '.format(idx, name, mdl_layer_name[0].name  if mdl_layer_name else '!!! NotFound in Defined Model !!!'))
             
-    if verbose > 0:
+    if verbose > 1:
         print("=====================================================================")
         print(" Weight Matchup between model and HDF5 weights ")
         print("=====================================================================")
@@ -1480,7 +1586,7 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False, reshape
         weight_values = [np.asarray(g[weight_name]) for weight_name in weight_names]
         
         model_layers = index.get(name,[])
-        if verbose > 0:
+        if verbose > 1:
             if not model_layers:
                 print('\n{:3d} {:25s} *** No corresponding layers found in model ***'.format(k,name))
                 print('    HDF5 Weights  : {} \n'.format(weight_names))
@@ -1488,7 +1594,7 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False, reshape
                     print('{:5d} {:35s}  hdf5 Weights: {}'.format( i, weight_names[i], weight_values[i].shape))
             else:
                 print('\n{:3d} {:25s} Model Layer Name/Type : {} '.format(k,name, [ [i.name, i.__class__.__name__] for i in model_layers]))
-                # print('    HDF5 Weights  : {} \n'.format(weight_names))
+                print('    HDF5 Weights  : {} \n'.format(weight_names))
         
         
         for layer in index.get(name, []):
@@ -1523,13 +1629,13 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False, reshape
             
             # Set values.
             for i in range(len(weight_values)):
-                if verbose > 0:
+                if verbose > 1:
                     status = " " if weight_values[i].shape == symbolic_weights[i].shape  else  " ***** MISMATCH ***** "
                     print('{:5d} {:35s}  hdf5 Weights: {}  \t\t Symbolic Wghts: {}  {}'.format(
                                      i, weight_names[i], weight_values[i].shape, symbolic_weights[i].shape, status))
                 
                 if skip_mismatch:
-                    if K.int_shape(symbolic_weights[i]) != weight_values[i].shape:
+                    if KB.int_shape(symbolic_weights[i]) != weight_values[i].shape:
                         print('{}  {} {:35s}  Weight MISMATCH {}'.format(' '*30, i, weight_names[i],weight_values[i].shape))
                         warnings.warn('Skipping loading of weights for layer {}'.format(layer.name) +
                                       ' due to mismatch in shape' +
@@ -1539,8 +1645,33 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False, reshape
                         continue
                         
                 weight_value_tuples.append((symbolic_weights[i], weight_values[i]))
-    K.batch_set_value(weight_value_tuples)
+    KB.batch_set_value(weight_value_tuples)
 
+    
+##----------------------------------------------------------------------------------------------
+## Load class predictions avergaes for evaluatin mode
+##----------------------------------------------------------------------------------------------                    
+def load_class_prediction_avg(filename, verbose = 0):
+    import pickle
+    print(' load class+predcition_info from :', filename)
+    
+    with open(filename, 'rb') as infile:
+        class_prediction_info = pickle.load(infile)
+     
+    # print(type(class_prediction_info))    
+    # pp.pprint(load_gt_info)
+    class_prediction_avg = [cls['avg'] for cls in class_prediction_info]
+    # pp.pprint(class_prediction_avg)    
+    
+    for avg, cls in zip(class_prediction_avg, class_prediction_info):
+        if verbose:
+            print('  ', cls['id'], cls['name'], ' bboxes:', len(cls['bboxes']) , 'avg: ' , cls['avg'], '  ', avg)
+            
+        assert avg == cls['avg'], 'mismtach between class_prediction_avg and class_prediction_info.'
+    return class_prediction_avg
+
+    
+    
 ##------------------------------------------------------------------------------------
 ## FILE PATHS CLASS  
 ##------------------------------------------------------------------------------------
@@ -1578,9 +1709,11 @@ class Paths(object):
         self.COCO_DATASET_PATH     = os.path.join(self.DIR_DATASET   , "coco2014")
         self.COCO_HEATMAP_PATH     = os.path.join(self.DIR_DATASET   , "coco2014_heatmaps")
         self.COCO_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED, "mask_rcnn_coco.h5")
+        self.SHAPES_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED, "mask_rcnn_shapes.h5")
         self.RESNET_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED, "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
         self.VGG16_MODEL_PATH      = os.path.join(self.DIR_PRETRAINED, "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5")
         self.FCN_VGG16_MODEL_PATH  = os.path.join(self.DIR_PRETRAINED, "fcn_vgg16_weights_tf_dim_ordering_tf_kernels.h5")
+        self.PRED_CLASS_INFO_PATH  = os.path.join(self.DIR_PRETRAINED, "predicted_classes_info.pkl")
         return 
         
     def display(self):
@@ -1636,7 +1769,7 @@ def command_line_parser():
                         help='FCN Logs and checkpoints directory (default=logs/)')
 
     parser.add_argument('--fcn_arch', required=False,
-                        choices=['FCN32', 'FCN16', 'FCN8', 'FCN8L2'],
+                        choices=['FCN32', 'FCN16', 'FCN8', 'FCN8L2', 'FCN32L2'],
                         default='FCN32', type=str.upper, 
                         metavar="/path/to/weights.h5",
                         help="FCN Architecture : fcn32, fcn16, or fcn8")
@@ -1652,6 +1785,12 @@ def command_line_parser():
                         default='fcn32+', type=str.lower, 
                         metavar="/path/to/weights.h5",
                         help="layers to train" )
+
+    parser.add_argument('--fcn_losses', required=False,
+                        nargs = '+',
+                        default='fcn_BCE_loss', 
+                        metavar="/path/to/weights.h5",
+                        help="FCN Losses: fcn_CE_loss, fcn_BCE_loss, fcn_MSE_loss" )
 
     parser.add_argument('--last_epoch', required=False,
                         default=0,
@@ -1677,6 +1816,11 @@ def command_line_parser():
                         default=5,
                         metavar="<batch size>",
                         help='Number of data samples in each batch (default=5)')                    
+
+    parser.add_argument('--scale_factor', required=False,
+                        default=4,
+                        metavar="<heatmap scale>",
+                        help='Heatmap scale factor')                    
 
     parser.add_argument('--lr', required=False,
                         default=0.001,
@@ -1715,26 +1859,7 @@ def display_input_parms(args):
         if not a.startswith("__") and not callable(getattr(args, a)):
             print("{:30} {}".format(a, getattr(args, a)))
     print("\n")
-
-    # print("    Input Parameters        ")
-    # print("   -------------------------")
-    # print("       MRCNN Model        : ", args.mrcnn_model)
-    # print("       FCN Model          : ", args.fcn_model)
-    # print("       MRCNN Log/Ckpt Dir : ", args.mrcnn_logs_dir)
-    # print("       FCN Log/Ckpt  Dir  : ", args.fcn_logs_dir)
-    # print("       FCN architecture   : ", args.fcn_arch)
-    # print("       FCN layers to train: ", args.fcn_layers)
-    # print("       Optimizer          : ", type(args.opt), args.opt)
-    # print()   
-    # print("       Last Epoch         : ", args.last_epoch)
-    # print("       Epochs to run      : ", args.epochs)
-    # print("       Steps in each epoch: ", args.steps_in_epoch)
-    # print("       Validation steps   : ", args.val_steps)
-    # print("       Batch Size         : ", args.batch_size)
-    # print()   
-    # print("       New Log Folder     : ", type(args.new_log_folder), args.new_log_folder)
-    # print("       Sysout             : ", type(args.sysout), args.sysout)
-    # return
+ 
     
     
     

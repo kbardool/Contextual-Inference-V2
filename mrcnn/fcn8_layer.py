@@ -21,7 +21,9 @@ from   keras.regularizers     import l2
 
 sys.path.append('..')
 
-from   mrcnn.helper_layers   import BilinearUpSampling2D
+from  mrcnn.utils           import logt
+
+# from  mrcnn.helper_layers   import BilinearUpSampling2D
 # from   mrcnn.batchnorm_layer import BatchNorm
 # import mrcnn.utils as utils
 # from   mrcnn.datagen import data_generator
@@ -32,7 +34,7 @@ from   mrcnn.helper_layers   import BilinearUpSampling2D
 ###############################################################
 ## Fully Convolutional Network Layer 
 ###############################################################
-def fcn8_graph(feature_map , config):
+def fcn8_graph(feature_map , config, mode = None ):
     '''Builds the computation graph of Region Proposal Network.
 
     feature_map:            Contextual Tensor [batch, num_classes, width, depth]
@@ -43,23 +45,33 @@ def fcn8_graph(feature_map , config):
     '''
     print()
     print('---------------')
-    print('>>> FCN8 Layer ')
+    print('>>> FCN8 Layer - mode:', mode)
     print('---------------')
     batch_size        = config.BATCH_SIZE
     height, width     = config.FCN_INPUT_SHAPE[0:2]
     num_classes       = config.NUM_CLASSES
     rois_per_class    = config.TRAIN_ROIS_PER_IMAGE
     weight_decay      = config.WEIGHT_DECAY
-    batch_momentum    = config.BATCH_MOMENTUM
+    # In the original implementatoin , batch_momentum was used for batch normalization layers for the ResNet
+    # backbone. We are not using this backbone in FCN, therefore it is unused.
+    # batch_momentum    = config.BATCH_MOMENTUM
+    verbose           = config.VERBOSE
     feature_map_shape = (width, height, num_classes)
     print('     feature map      :', feature_map.shape)
     print('     height :', height, 'width :', width, 'classes :' , num_classes)
     print('     image_data_format: ', KB.image_data_format())
     print('     rois_per_class   : ', KB.image_data_format())
+
     
+    if mode == 'training':
+        KB.set_learning_phase(1)
+    else:
+        KB.set_learning_phase(0)
+    print('     Set learning phase to :', KB.learning_phase())
+
     # feature_map = KL.Input(shape= feature_map_shape, name="input_fcn_feature_map")
-    # TODO: Assert proper shape of input [batch_size, width, height, num_classes]
     
+    # TODO: Assert proper shape of input [batch_size, width, height, num_classes]    
     # TODO: check if stride of 2 causes alignment issues if the featuremap is not even.
     
     # if batch_shape:
@@ -75,79 +87,84 @@ def fcn8_graph(feature_map , config):
     x = KL.Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv1', 
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(feature_map)
     print('   Input feature map                   : ', feature_map.shape)
-    print('   FCN Block 11 shape is               : ' , KB.int_shape(x))
+    logt('Input feature map ', feature_map, verbose = 1)
+    
+    logt('FCN Block 11 ' , x, verbose = verbose)
     
     x = KL.Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv2', 
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 12 shape is               : ' , KB.int_shape(x))         
+    logt('FCN Block 12 ' , x, verbose = verbose)
     
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block1_pool')(x)
-    print('   FCN Block 13 (Max pooling) shape is : ' , KB.int_shape(x))
+    logt('FCN Block 13 (Max pooling) ', x, verbose = verbose)
     
     ##-------------------------------------------------------------------------------------------------------
     ## Block 2
     ##-------------------------------------------------------------------------------------------------------
     x = KL.Conv2D(128, (3, 3), activation='relu', padding='same', name='block2_conv1', 
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 21 shape is               : ' , x.get_shape())
+    logt('FCN Block 21  ', x, verbose = verbose)
     
     x = KL.Conv2D(128, (3, 3), activation='relu', padding='same', name='block2_conv2',
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 22 shape is               : ' , KB.int_shape(x))    
+    logt('FCN Block 22 ', x, verbose = verbose)
     
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool')(x)
-    print('   FCN Block 23 (Max pooling) shape is : ' , KB.int_shape(x))    
+    logt('FCN Block 23 (Max pooling) ', x, verbose = verbose)
     
     ##-------------------------------------------------------------------------------------------------------
     ## Block 3
     ##-------------------------------------------------------------------------------------------------------
     x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv1',
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 31 shape is               : ' , KB.int_shape(x))            
+    logt('FCN Block 31  ', x, verbose = verbose)
     
     x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv2', 
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 32 shape is               : ' , KB.int_shape(x))    
+    logt('FCN Block 32 ', x, verbose = verbose)
     
     x = KL.Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv3',
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 33 shape is               : ' , KB.int_shape(x))            
+    logt('FCN Block 33 ', x, verbose = verbose)
     
     Pool3 = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool')(x)
-    print('   FCN Block 34 (Max pooling) shape is : ' ,Pool3.get_shape())    
+    logt('FCN Block 34 (Max pooling) ', Pool3, verbose = verbose)
     
     ##-------------------------------------------------------------------------------------------------------
     ## Block 4
     ##-------------------------------------------------------------------------------------------------------
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv1', 
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(Pool3)
-    print('   FCN Block 41 shape is               : ' , KB.int_shape(x))            
+    logt('FCN Block 41 ', x, verbose = verbose)
+    
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv2',
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 42 shape is               : ' , KB.int_shape(x))            
+    logt('FCN Block 42 ', x, verbose = verbose)
+    
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv3',
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 43 shape is               : ' , KB.int_shape(x))                
+    logt('FCN Block 43 ', x, verbose = verbose)           
+    
     Pool4 = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool')(x)
-    print('   FCN Block 44 (Max pooling) shape is : ' ,Pool4.get_shape())    
+    logt('FCN Block 44 (Max pooling) ', Pool4, verbose = verbose)
     
     ##-------------------------------------------------------------------------------------------------------
     ## Block 5
     ##-------------------------------------------------------------------------------------------------------
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv1',
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(Pool4)
-    print('   FCN Block 51 shape is               : ' , KB.int_shape(x))
+    logt('FCN Block 51 ' , x, verbose = verbose)
     
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv2',
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 52 shape is               : ' , KB.int_shape(x))                 
+    logt('FCN Block 52 ' , x, verbose = verbose)
 
     x = KL.Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv3',
                     kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN Block 53 shape is               : ' , KB.int_shape(x))                    
+    logt('FCN Block 53 ' , x, verbose = verbose)
 
     x = KL.MaxPooling2D((2, 2), strides=(2, 2), name='block5_pool')(x)
-    print('   FCN Block 54 (Max pooling) shape is : ' , KB.int_shape(x))    
+    logt('FCN Block 54 (Max pooling) ' , x, verbose = verbose)
 
     ##-------------------------------------------------------------------------------------------------------
     ## FCN32 Specific Structure 
@@ -161,18 +178,18 @@ def fcn8_graph(feature_map , config):
                         kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
     print()
     print('   --- FCN32 ----------------------------')
-    print('   FCN fully connected 1 (fc1) shape   : ' , KB.int_shape(x))        
+    logt(' FCN fully connected 1 (fc1) ' , x, verbose = verbose) 
+    
     x = KL.Dropout(0.5)(x)
     x = KL.Conv2D(FC_SIZE, (1, 1), activation='relu', padding='same', name='fcn32_fc2',
                         kernel_initializer='glorot_uniform', bias_initializer='zeros')(x)
-    print('   FCN fully connected 2 (fc2) shape   : ' , KB.int_shape(x))        
-    x = KL.Dropout(0.5)(x)
+    logt('FCN fully connected 2 (fc2) ' , x, verbose = verbose)
     
+    x = KL.Dropout(0.5)(x)
     # Classifying layer
     x = KL.Conv2D(num_classes, (1, 1), activation='linear', padding='valid', strides=(1, 1), name='fcn32_deconv2D',
-                  kernel_initializer='he_normal',  bias_initializer='zeros')(x)
-                  
-    print('   FCN conv2d (fcn32_deconv2D) shape   : ' , x.get_shape(),' keras_tensor ', KB.is_keras_tensor(x))                      
+                  kernel_initializer='he_normal',  bias_initializer='zeros')(x)                  
+    logt('FCN conv2d (fcn32_deconv2D)  ' , x, verbose = verbose)
     
     ##-------------------------------------------------------------------------------------------------------
     ## FCN16 Specific Structure 
@@ -182,33 +199,27 @@ def fcn8_graph(feature_map , config):
                            kernel_initializer='glorot_uniform', bias_initializer='zeros')(Pool4)                    
     print()
     print('   --- FCN16 ----------------------------')
-    print('   FCN scorePool4 (Conv2D(Pool4)) shape is                   : ' , KB.int_shape(scorePool4),
-          '   keras_tensor ', KB.is_keras_tensor(scorePool4))                      
+    logt('FCN scorePool4 (Conv2D(Pool4)) ' , scorePool4, verbose = verbose)
                   
     # 2x Upsampling of fcn_deconv2D  to generate Score2 (padding was originally "valid")
     x  = KL.Deconvolution2D(num_classes,kernel_size=(4,4), activation=None, padding = 'valid', name = 'fcn16_score2', 
-                            strides = (2,2))(x)
-                            
-    print('   FCN 2x Upsampling (Deconvolution2D(fcn32_classify)) shape : ' , KB.int_shape(x),
-          '   keras_tensor ', KB.is_keras_tensor(x))                      
+                            strides = (2,2))(x)                    
+    logt('FCN 2x Upsampling (Deconvolution2D(fcn32_classify))  ' , x, verbose = verbose)
     
     # Crop to appropriate shape if required      
-    score2_c = KL.Cropping2D(cropping=((1,1),(1,1)), name='fcn16_crop_score2' )(x)
-                                
-    print('   FCN 2x Upsampling/Cropped (Cropped2D(score2)) shape       : ' , KB.int_shape(score2_c),
-          '   keras_tensor ', KB.is_keras_tensor(score2_c))
+    score2_c = KL.Cropping2D(cropping=((1,1),(1,1)), name='fcn16_crop_score2' )(x)                                
+    logt('FCN 2x Upsampling/Cropped (Cropped2D(score2)) ', score2_c, verbose = verbose)
    
     # Sum Score2, scorePool4
     x = KL.Add(name='fcn16_fuse_pool4')([score2_c,scorePool4])    
-    print('   FCN Add Score2,scorePool4 Add(score2_c, scorePool4) shape : ' , KB.int_shape(x), 
-          '   keras_tensor ', KB.is_keras_tensor(x))                      
+    logt('FCN Add Score2,scorePool4 Add(score2_c, scorePool4)  ' , x, verbose = verbose)
+       
 
     # 2x Upsampling  (padding was originally "valid", I changed it to "same" )
     x  = KL.Deconvolution2D(num_classes, kernel_size=(4,4),  activation = None,  padding = 'same',  name = 'fcn16_upscore_pool4',
                            kernel_initializer='glorot_uniform', bias_initializer='zeros', strides = (2,2) )(x)
                                        
-    print('   FCN upscore_pool4 (Deconv(fuse_Pool4)) shape              : ' , KB.int_shape(x),
-          '   keras_tensor ', KB.is_keras_tensor(x))                          
+    logt('FCN upscore_pool4 (Deconv(fuse_Pool4)) ' , x, verbose = verbose)
     
     ##-------------------------------------------------------------------------------------------------------
     ## FCN8 Specific Structure 
@@ -218,36 +229,31 @@ def fcn8_graph(feature_map , config):
                            kernel_initializer='glorot_uniform',  bias_initializer='zeros')(Pool3)                    
     print()
     print('   --- FCN8 ----------------------------')
-    print('   FCN scorePool4 (Conv2D(Pool4)) shape                      : ' , KB.int_shape(scorePool3),
-          '   keras_tensor ', KB.is_keras_tensor(scorePool3))                      
+    logt('FCN scorePool3 (Conv2D(Pool3))  ' , scorePool3, verbose = verbose)
 
-    upscore_pool4_c = KL.Cropping2D(cropping=((0,0),(0,0)), name='fcn8_crop_pool4')(x)
-    
-    print('   FCN 2x Upsampling/Cropped (Cropped2D(score2)) shape       : ' , KB.int_shape(upscore_pool4_c),
-          '   keras_tensor ', KB.is_keras_tensor(upscore_pool4_c))                      
+    upscore_pool4_c = KL.Cropping2D(cropping=((0,0),(0,0)), name='fcn8_crop_pool4')(x)    
+    logt('FCN 2x Upsampling/Cropped (Cropped2D(score2)) ' , upscore_pool4_c, verbose = verbose)
 
     # Sum  upscore_pool4_c, scorePool3
     x = KL.Add(name='fcn8_fuse_pool3')([upscore_pool4_c,scorePool3])    
+    logt('FCN Add Score2,scorePool4' ,  x, verbose = verbose) 
     
-    print('   FCN Add Score2,scorePool4 shape is                        : ' ,  KB.int_shape(x), 
-          '   keras_tensor ', KB.is_keras_tensor(x))                      
+    print()
 
     
     ##-------------------------------------------------------------------------------------------------------
-    ## fcn output heatmap
+    ## fcn_heatmap
     ##-------------------------------------------------------------------------------------------------------    
     # 8x Upsampling  (padding was originally "valid", I changed it to "same" )
     fcn_hm = KL.Deconvolution2D(num_classes, kernel_size=(16,16), activation = None, padding = 'same', name = 'fcn8_heatmap',
                            kernel_initializer='glorot_uniform', bias_initializer='zeros' , strides = (8,8))(x)
     # fcn_hm = tf.identity(fcn_hm)                           
     fcn_hm.set_shape(feature_map.shape)
+    logt('FCN fcn8_classify/heatmap  (Deconv(fuse_Pool4)) ' , fcn_hm, verbose = verbose) 
+    fcn_hm = KL.Lambda(lambda z: tf.identity(z, name='fcn_hm'), name='fcn_heatmap_lambda') (fcn_hm)
+    logt('fcn_hm (final)' , fcn_hm, verbose = verbose) 
     print()
-    print('   FCN fcn8_classify/heatmap  (Deconv(fuse_Pool4)) shape: ' , fcn_hm.shape, KB.int_shape(fcn_hm),
-          '   keras_tensor ', KB.is_keras_tensor(fcn_hm))                      
-    # print(fcn_hm)
-    fcn_sm = KL.Activation("softmax", name = "fcn8_softmax")(fcn_hm)
-    print('   fcn_softmax shape :',fcn_sm.shape, KB.int_shape(fcn_sm))
-    
+
     # fcn_classify_shape = KB.int_shape(fcn_hm)
     # h_factor = height / fcn_classify_shape[1]
     # w_factor = width  / fcn_classify_shape[2]
@@ -255,7 +261,14 @@ def fcn8_graph(feature_map , config):
     
     # x = BilinearUpSampling2D(size=(h_factor, w_factor), name='fcn_bilinear')(x)
     # print('   FCN Bilinear upsmapling layer  shape is : ' , KB.int_shape(x), ' Keras tensor ', KB.is_keras_tensor(x) )  
-    # fcn_hm = KL.Lambda(lambda z: tf.identity(z, name='fcn_heatmap'), name='fcn_heatmap') (fcn_hm)
+    
+    ##-------------------------------------------------------------------------------------------------------
+    ## fcn_heatmap
+    ##-------------------------------------------------------------------------------------------------------    
+    fcn_sm = KL.Activation("softmax", name = "fcn8_softmax")(fcn_hm)
+    logt('fcn8_softmax  ', fcn_sm, verbose = verbose) 
+    fcn_sm = KL.Lambda(lambda z: tf.identity(z, name='fcn_sm'), name='fcn_softmax_lambda') (fcn_hm)
+    logt('fcn_sm (final)', fcn_sm, verbose = verbose) 
     print()
     
     #---------------------------------------------------------------------------------------------

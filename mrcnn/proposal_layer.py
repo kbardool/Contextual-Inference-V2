@@ -119,6 +119,7 @@ def suppress_small_boxes_graph(boxes, scores, min_area_threshold ):
     selected_scores = tf.pad(selected_scores, [(0, padding)])    
     return selected_boxes, selected_scores    
 
+    
 class ProposalLayer(KE.Layer):
     '''
     Receives anchor scores and selects a subset to pass as proposals
@@ -190,11 +191,11 @@ class ProposalLayer(KE.Layer):
         boxes = utils.batch_slice([anchors, deltas],
                                   lambda x, y: apply_box_deltas_graph(x, y),self.config.IMAGES_PER_GPU,
                                   names=["refined_anchors"])
-                                  
-        print('     Scores : ' , scores.shape)
-        print('     Deltas : ' , deltas.shape)
-        print('     Anchors: ' , anchors.shape)
-        print('     Boxes shape / type after processing: ')
+        if self.config.VERBOSE:
+            print('     Scores : ' , scores.shape)
+            print('     Deltas : ' , deltas.shape)
+            print('     Anchors: ' , anchors.shape)
+
 
         #------------------------------------------------------------------------------------------
         ## Clip to image boundaries. [batch, N, (y1, x1, y2, x2)]
@@ -274,7 +275,9 @@ class ProposalLayer(KE.Layer):
         proposals = utils.batch_slice([normalized_boxes, scores], nms, 
                                        self.config.IMAGES_PER_GPU, 
                                        names=["rpn_roi_proposals"])
-        print('     Output: Prposals shape : ', proposals.shape, KB.int_shape(proposals))
+        if self.config.VERBOSE:
+            print('     Boxes shape / type after processing: ')
+            print('     Output: Proposals shape : ', proposals.shape, KB.int_shape(proposals))
 
         return proposals
 

@@ -10,19 +10,11 @@ Written by Waleed Abdulla
  
 import numpy as np
 import tensorflow as tf
-# import keras
-# import scipy.misc
 import keras.backend as KB
 import keras.engine as KE
-# import keras.models as KM
-# import keras.layers as KL
-# import keras.initializers as KI
-# from collections import OrderedDict
-
-# sys.path.append('..')
-# import mrcnn.utils as utils
-from mrcnn.utils import apply_box_deltas_np, non_max_suppression
+from mrcnn.utils import apply_box_deltas_np, non_max_suppression, logt
 import pprint
+
 pp = pprint.PrettyPrinter(indent=2, width=100)
 np.set_printoptions(linewidth=100)
 
@@ -52,16 +44,23 @@ def refine_detections(rois, probs, deltas, window, config):
     ------
         
     rois:           rpn_rois    - [N, (y1, x1, y2, x2)] in normalized coordinates
+    
+                    passed from PROPOSAL_LAYER
+                                  
     probs:          mrcnn_class - [N, num_classes]. Class probabilities.
     deltas:         mrcnn_bbox  - [N, num_classes, (dy, dx, log(dh), log(dw))]. 
                                   Class-specific bounding box deltas.
-                                  
-    window:         (y1, x1, y2, x2) in image coordinates. The part of the image
+                    
+                    passed from FPN_CLASSIFIER_GRAPH              
+    window:         
+    (y1, x1, y2, x2) in image coordinates. The part of the image
                     that contains the image excluding the padding.
 
     Returns:
     --------
-    detections      [N, (y1, x1, y2, x2, class_id, score)]
+    detections      [M, (y1, x1, y2, x2, class_id, score)]
+                    M - determined by DETECTION_MAX_INSTANCES
+                    
                     detection bounding boxes -- these have had the corresponding 
                     deltas applied, and their boundries clipped to the image window
     '''
@@ -86,19 +85,13 @@ def refine_detections(rois, probs, deltas, window, config):
     
     ##----------------------------------------------------------------------------
     ##  4. Convert the refined roi coordiates from normalized to NN image domain
+    ##  5.  Clip boxes to image window
+    ##  6.  Round and cast to int since we're deadling with pixels now
     ##----------------------------------------------------------------------------
     # TODO: better to keep them normalized until later   
     height, width   = config.IMAGE_SHAPE[:2]
     refined_rois   *= np.array([height, width, height, width])
-    
-    ##----------------------------------------------------------------------------
-    ##  5.  Clip boxes to image window
-    ##----------------------------------------------------------------------------
     refined_rois    = clip_to_window(window, refined_rois)
-    
-    ##----------------------------------------------------------------------------
-    ##  6.  Round and cast to int since we're deadling with pixels now
-    ##----------------------------------------------------------------------------
     refined_rois    = np.rint(refined_rois).astype(np.int32)
 
     ##----------------------------------------------------------------------------
@@ -111,7 +104,7 @@ def refine_detections(rois, probs, deltas, window, config):
     ##      config.DETECTION_MIN_CONFIDENCE == 0 
     ##      np.intersect: find indices into class_ids that satisfy:
     ##        -  class_id     >  0 
-    ##        -  class_scores >=            config.DETECTION_MIN_CONFIDENCE
+    ##        -  class_scores >=            config.DETECTION_MIN_CONFIDENCE (0.3)
     ##----------------------------------------------------------------------------
     keep = np.where(class_ids > 0)[0]
     # Filter out low confidence boxes
@@ -153,17 +146,24 @@ def refine_detections(rois, probs, deltas, window, config):
     keep      = keep[top_ids]
 
     ##----------------------------------------------------------------------------
+    ## 11.  Add a detect_ind = +1 to differentiate from false postives added in eval layer
+    ##----------------------------------------------------------------------------
+    detect_ind    = np.ones((top_ids.shape[0],1))
+ 
+
+    ##----------------------------------------------------------------------------
     ## 11.  Arrange output as [N, (y1, x1, y2, x2, class_id, score)]
     ##      Coordinates are in image domain.
     ##----------------------------------------------------------------------------
     result = np.hstack((refined_rois[keep],
                         class_ids   [keep][..., np.newaxis],
-                        class_scores[keep][..., np.newaxis]))
+                        class_scores[keep][..., np.newaxis],
+                        detect_ind))
 
     return result
 
 
-class DetectionLayer(KE.Layer):
+class DetectionInferenceLayer(KE.Layer):
     '''
     Takes classified proposal boxes and their bounding box deltas and
     returns the final detection boxes.
@@ -189,50 +189,53 @@ class DetectionLayer(KE.Layer):
         # super(DetectionLayer, self).__init__(**kwargs)
         super().__init__(**kwargs)
         print('\n>>> Detection Layer (Inference Mode)')
-
-        self.config = config
+        self.config  = config
+        self.verbose = config.VERBOSE
 
     def call(self, inputs):
         print('    Detection Layer : call() ', type(inputs), len(inputs))    
-        print('     rpn_proposals_roi  :',  inputs[0].shape , inputs[0].get_shape(), KB.int_shape(inputs[0]) )
-        print('     mrcnn_class.shape  :',  inputs[1].shape , inputs[1].get_shape(), KB.int_shape(inputs[1]) ) 
-        print('     mrcnn_bboxes.shape :',  inputs[2].shape , inputs[2].get_shape(), KB.int_shape(inputs[2]) )
-        print('     input_image_meta   :',  inputs[3].shape , inputs[3].get_shape(), KB.int_shape(inputs[3]) ) 
+        logt('rpn_proposals_roi ',  inputs[0], verbose = self.verbose)
+        logt('mrcnn_class.shape ',  inputs[1], verbose = self.verbose) 
+        logt('mrcnn_bboxes.shape',  inputs[2], verbose = self.verbose)
+        logt('input_image_meta  ',  inputs[3], verbose = self.verbose) 
     
         def wrapper(rois, mrcnn_class, mrcnn_bbox, image_meta):
             from mrcnn.utils import parse_image_meta
             detections_batch = []
-            print('    Wrapper for Detection Layer : call() ', type(inputs), len(inputs))    
-            print('     rpn_proposals_roi  :',  rois.shape, type(rois))               
-            print('     mrcnn_class.shape  :',  mrcnn_class.shape, type(mrcnn_class)) 
-            print('     mrcnn_bboxes.shape :',  mrcnn_bbox.shape, type(mrcnn_bbox))   
-            print('     image_meta         :',  image_meta.shape, type(image_meta))   
+            # logt('detection wrapper - rpn_proposals_roi  ',  rois       , verbose = self.verbose)
+            # logt('detection wrapper - mrcnn_class.shape  ',  mrcnn_class, verbose = self.verbose)
+            # logt('detection wrapper - mrcnn_bboxes.shape ',  mrcnn_bbox , verbose = self.verbose)
+            # logt('detection wrapper - image_meta         ',  image_meta , verbose = self.verbose)
             # process item per item in batch 
             
             for b in range(self.config.BATCH_SIZE):
                 _, _, window, _ =  parse_image_meta(image_meta)
 
                 detections = refine_detections(rois[b], mrcnn_class[b], mrcnn_bbox[b], window[b], self.config)
-                print('\n\n Detections are:')
-                print(detections)
+                # if self.verbose:
+                    # print('\n\n config.DETECTION_MAX_INSTANCES: ', self.config.DETECTION_MAX_INSTANCES)
+                    # print(' Detections shape:', detections.shape)
+                # print(detections)
                 
                 # Pad with zeros if detections < DETECTION_MAX_INSTANCES
                 gap = self.config.DETECTION_MAX_INSTANCES - detections.shape[0]
                 assert gap >= 0
                 if gap > 0:
                     detections = np.pad(detections, [(0, gap), (0, 0)], 'constant', constant_values=0)
+
                 detections_batch.append(detections)
 
             # Stack detections and cast to float32
             # TODO: track where float64 is introduced
             detections_batch = np.array(detections_batch).astype(np.float32)
+            num_columns = detections_batch.shape[-1]
+
             # Reshape output
             # [batch, num_detections, (y1, x1, y2, x2, class_score)] in pixels
-            return np.reshape(detections_batch, [self.config.BATCH_SIZE, self.config.DETECTION_MAX_INSTANCES, 6])
+            return np.reshape(detections_batch, [self.config.BATCH_SIZE, self.config.DETECTION_MAX_INSTANCES, num_columns])
 
         # Return wrapped function
-        return tf.py_func(wrapper, inputs, tf.float32)
+        return tf.py_func(wrapper, inputs, tf.float32, name="detections")
 
     def compute_output_shape(self, input_shape):
-        return (None, self.config.DETECTION_MAX_INSTANCES, 6)
-        
+        return (None, self.config.DETECTION_MAX_INSTANCES, 7)

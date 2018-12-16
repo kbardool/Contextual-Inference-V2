@@ -228,11 +228,13 @@ class PyramidROIAlign(KE.Layer):
     constructor.
     """
 
-    def __init__(self, pool_shape, image_shape, **kwargs):
+    def __init__(self, pool_shape, image_shape, verbose = 0, **kwargs):
         super(PyramidROIAlign, self).__init__(**kwargs)
         self.pool_shape  = tuple(pool_shape)
         self.image_shape = tuple(image_shape)
-
+        self.verbose     = verbose
+        
+        
     def call(self, inputs):
         # Crop boxes [batch, num_boxes, (y1, x1, y2, x2)] in normalized coords
         boxes = inputs[0]
@@ -240,9 +242,10 @@ class PyramidROIAlign(KE.Layer):
         # feature pyramid. Each is [batch, height, width, channels]
         feature_maps = inputs[1:]
 
-        print('   > PyramidRoI Alignment Layer Call() ', len(inputs))
         mrcnn_class , mrcnn_bbox,  output_rois, gt_class_ids, gt_bboxes = inputs
-        print('     boxes.shape    :',    KB.int_shape( mrcnn_class ))
+        if self.verbose:
+            print('   > PyramidRoI Alignment Layer Call() ', len(inputs))
+            print('     boxes.shape    :',    KB.int_shape( mrcnn_class ))
         
 
         # Assign each ROI to a level in the pyramid based on the ROI area.

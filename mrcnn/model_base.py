@@ -54,10 +54,11 @@ class ModelBase():
         model_dir: Directory to save training logs and trained weights
         """
         print('>>> Initialize ModelBase model ')
-
+            
         self.mode      = mode
         self.config    = config
         self.model_dir = config.TRAINING_PATH
+        self.verbose   = config.VERBOSE
         print('   Mode      : ', self.mode)
         print('   Model dir : ', self.model_dir)
 
@@ -88,9 +89,12 @@ class ModelBase():
         print('-----------------------------------------------')
        
 
-        if init_with == "imagenet":
-            # loc=model.load_weights(model.get_imagenet_weights(), by_name=True)
-            loc=self.load_weights(self.config.RESNET_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
+        if init_with == "last":
+            print(' ---> last')
+            # Load the last model you trained and continue training, placing checkpouints in same folder
+            # last_file = self.find_last()[1]
+            # print('   Last file is :', last_file)
+            loc= self.load_weights(self.find_last()[1], by_name=True, verbose = verbose)
             
         elif init_with == "init":
             print(' ---> init :', self.config.VGG16_MODEL_PATH)
@@ -98,10 +102,6 @@ class ModelBase():
             # are different due to the different number of classes
             # See README for instructions to download the COCO weights
             
-            loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
-            
-        elif init_with == "vgg16":
-            print(' ---> vgg16 :', self.config.VGG16_MODEL_PATH)
             loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
             
         elif init_with == "coco":
@@ -113,13 +113,21 @@ class ModelBase():
             # loc=self.load_weights(self.config.COCO_MODEL_PATH, by_name=True, exclude = exclude)
             loc=self.load_weights(self.config.COCO_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
             # exclude=["mrcnn_class_logits"])  # ,"mrcnn_bbox_fc", "mrcnn_bbox", "mrcnn_mask"])
-
-        elif init_with == "last":
-            print(' ---> last')
-            # Load the last model you trained and continue training, placing checkpouints in same folder
-            # last_file = self.find_last()[1]
-            # print('   Last file is :', last_file)
-            loc= self.load_weights(self.find_last()[1], by_name=True, verbose = verbose)
+            
+        elif init_with == "shapes":
+            print(' ---> coco :', self.config.SHAPES_MODEL_PATH)
+            # use pretrained coco weights file:  "mask_rcnn_coco.h5"
+            # Load weights trained on MS COCO, but skip layers that 
+            loc=self.load_weights(self.config.SHAPES_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
+            
+        elif init_with == "imagenet":
+            # loc=model.load_weights(model.get_imagenet_weights(), by_name=True)
+            loc=self.load_weights(self.config.RESNET_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
+            
+        elif init_with == "vgg16":
+            print(' ---> vgg16 :', self.config.VGG16_MODEL_PATH)
+            loc=self.load_weights(self.config.VGG16_MODEL_PATH, by_name=True, exclude = exclude, verbose = verbose)
+            
         else:
             assert init_with != "", "Provide path to trained weights"
             print(" ---> Explicit weight file")
@@ -157,7 +165,6 @@ class ModelBase():
         # pp.pprint([i for i in dir(f) if not inspect.ismethod(i)])
         
         if 'layer_names' not in f.attrs and 'model_weights' in f:
-            print('im here')
             f = f['model_weights']
             
         # In multi-GPU training, we wrap the model. Get layers
@@ -293,11 +300,10 @@ class ModelBase():
         return
         
 
-        
     ##----------------------------------------------------------------------------------------------
     ## Search for last checkpoint folder and weight file
     ##----------------------------------------------------------------------------------------------                    
-    def find_last(self):
+    def find_last(self, verbose = 0):
         '''
         Finds the last checkpoint file of the last trained model in the
         model directory.
@@ -310,11 +316,15 @@ class ModelBase():
         
         # Get directory names. Each directory corresponds to a model
         dir_name, checkpoint = None, None    
-        print('>>> find_last checkpoint in : ', self.model_dir)
+
         dir_names = next(os.walk(self.model_dir))[1]
         key = self.config.NAME.lower()
         dir_names = list(filter(lambda f: f.startswith(key), dir_names))
-        print('    Dir starting with ' , key, ' :', dir_names)
+        
+        if verbose:
+            print('>>> find_last checkpoint in : ', self.model_dir)
+            print('    Dir starting with       : ' , key, ' :', dir_names)
+        
         dir_names = sorted(dir_names)
         if not dir_names:
             return None, None
@@ -329,8 +339,9 @@ class ModelBase():
             checkpoints = filter(lambda f: f.startswith(key), checkpoints)
 
             checkpoints = sorted(checkpoints)
-            print('    Folder: ' ,dir_name)
-            print('    Checkpoints: ', checkpoints)
+            if verbose:
+                print('    Folder: ' ,dir_name)
+                print('    Checkpoints: ', checkpoints)
             if not checkpoints:
                 continue
                 # return dir_name, None
@@ -346,9 +357,9 @@ class ModelBase():
         # if not checkpoints:
             # return dir_name, None
         # checkpoint = os.path.join(dir_name, checkpoints[-1])
-        
-        log("    find_last():   dir_name: {}".format(dir_name))
-        log("    find_last(): checkpoint: {}".format(checkpoint))
+        if verbose:
+            log("    find_last():   dir_name: {}".format(dir_name))
+            log("    find_last(): checkpoint: {}".format(checkpoint))
 
         return dir_name, checkpoint
 
@@ -685,15 +696,13 @@ class ModelBase():
     ##----------------------------------------------------------------------------------------------
     ## 
     ##----------------------------------------------------------------------------------------------
-    def layer_info(self):
-        print('\n')
+    def display_layer_info(self):
         print(' Inputs:') 
         print(' -------')
     
         for i,x in enumerate(self.keras_model.inputs):
             print(' index: {:2d}    input name : {:40s}   Type: {:15s}   Shape: {}'.format( i, x.name, x.dtype.name, x.shape) )
 
-        print('\n')
         print(' Outputs:') 
         print(' --------')
 
@@ -706,7 +715,8 @@ class ModelBase():
     ## 
     ##----------------------------------------------------------------------------------------------        
     def get_layer_outputs(self, model_input, requested_layers = None , verbose = True, training_flag = True):
-        ''' get model layer outputs using a list of layer indices 
+        ''' 
+            get model layer outputs using a list of layer indices 
         '''
         # _my_input = model_input + [training_flag]
         if verbose: 
@@ -724,7 +734,8 @@ class ModelBase():
             print('\nRequested layers:')
             print('-----------------')
             for i,j in zip(requested_layers, requested_layers_tensors):
-                print('Layer:  ',i, '   ', j.name, '   ', j.shape)
+                print('Layer {:3d}:  ({:40s}) \t  Output shape: {}'.format(i, j.name, j.shape))
+                # print('Layer:  ',i, '   ', j.name, '   ', j.shape)
         
         get_output = KB.function(self.keras_model.input, requested_layers_tensors)   
         results = get_output(model_input)                    
@@ -742,7 +753,8 @@ class ModelBase():
         return results
     
     def get_layer_output_1(self, model_input, requested_layers, training_flag = True, verbose = True):
-        ''' get model layer outputs using a list of layer indices 
+        ''' 
+            get model layer outputs using a list of layer indices 
         '''
         # _my_input = model_input + [training_flag]
         if verbose: 
@@ -768,7 +780,7 @@ class ModelBase():
         return results
 
         
-        
+    """    
     def get_layer_output_2(self, model_input, training_flag = True, verbose = True):
         if verbose: 
             print('/* Inputs */')
@@ -789,3 +801,4 @@ class ModelBase():
                 varname  = m.group(1) if m else "<varname>"
                 print('{:25s} = model_output[{:d}]          # layer: {:2d}   shape: {}' .format(varname, line, line, output.shape ))            
         return results    
+    """

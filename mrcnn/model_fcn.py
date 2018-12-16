@@ -26,15 +26,15 @@ from   keras.utils.generic_utils import Progbar
 
 #sys.path.append('..')
 
-import mrcnn.utils            as utils
-import mrcnn.loss             as loss
+import mrcnn.utils                 as utils
+import mrcnn.loss                  as loss
 from   mrcnn.datagen               import data_generator
-from   mrcnn.utils                 import (log, parse_image_meta_graph, parse_image_meta, 
+from   mrcnn.utils                 import (log, logt,  parse_image_meta_graph, parse_image_meta, 
                                            parse_active_class_ids_graph)
 from   mrcnn.model_base            import ModelBase
-from   mrcnn.fcn16_layer           import fcn16_graph
+# from   mrcnn.fcn16_layer           import fcn16_graph
 # from   mrcnn.fcn_layer_no_L2       import fcn_graph
-from   mrcnn.fcn_scoring_layer     import FCNScoringLayer 
+# from   mrcnn.fcn_scoring_layer     import FCNScoringLayer 
 from   mrcnn.fcn_scoring_layer     import fcn_scoring_graph
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
@@ -44,32 +44,15 @@ assert LooseVersion(keras.__version__) >= LooseVersion('2.0.8')
 pp = pprint.PrettyPrinter(indent=4, width=100)
 tf.get_variable_scope().reuse_variables()
 
-############################################################
-#  Code                                     moved to 
-#  -----------------------------------      ----------------
-#  BatchNorm                              batchnorm_layer.py      
-#  Miscellenous Graph Functions                     utils.py 
-#  Loss Functions                                    loss.py
-#  Data Generator                                 datagen.py
-#  Data Formatting                                  utils.py
-#  Proposal Layer                          proposal_layer.py
-#  ROIAlign Layer                         roiialign_layer.py
-#  FPN Layers                                   fpn_layer.py
-#  FPN Head Layers                         fpnhead_layers.py
-#  Detection Target Layer                detect_tgt_layer.py
-#  Detection Layer                        detection_layer.py
-#  Region Proposal Network (RPN)                rpn_model.py
-#  Resnet Graph                              resnet_model.py
-############################################################
-from keras.callbacks import TensorBoard
-
-class LRTensorBoard(TensorBoard):
-    def __init__(self, log_dir):  # add other arguments to __init__ if you need
-        super().__init__(log_dir=log_dir)
-
-    def on_epoch_end(self, epoch, logs=None):
-        logs.update({'lr': KB.eval(self.model.optimizer.lr)})
-        super().on_epoch_end(epoch, logs)
+#  from keras.callbacks import TensorBoard
+#  
+#  class LRTensorBoard(TensorBoard):
+#      def __init__(self, log_dir):  # add other arguments to __init__ if you need
+#          super().__init__(log_dir=log_dir)
+#  
+#      def on_epoch_end(self, epoch, logs=None):
+#          logs.update({'lr': KB.eval(self.model.optimizer.lr)})
+#          super().on_epoch_end(epoch, logs)
         
 ############################################################
 ##  FCN Class
@@ -87,7 +70,7 @@ class FCN(ModelBase):
         model_dir: Directory to save training logs and trained weights
         """
         assert mode in ['training', 'inference']
-        assert arch in ['FCN32', 'FCN16', 'FCN8']
+        assert arch in ['FCN32', 'FCN16', 'FCN8', 'FCN32L2', 'FCN8L2']
         super().__init__(mode, config)
 
         print('>>> Initialize FCN model, mode: ',mode, 'architecture: ', arch)
@@ -102,21 +85,28 @@ class FCN(ModelBase):
 
         
         self.arch = arch
-        if arch == 'FCN32':
-            print('    arch set to FCN32')
-            from   mrcnn.fcn32_layer           import fcn32_graph as fcn_graph
-            
-        elif arch == 'FCN16':
-            print('    arch set to FCN16')
-            from   mrcnn.fcn16_layer       import fcn16_graph as fcn_graph
+        self.mode = mode
+        
+        if arch == 'FCN8':
+            print('    arch set to FCN8 - with No L2 Regularization')
+            from   mrcnn.fcn8_layer        import fcn8_graph as fcn_graph
 
         elif arch == 'FCN8L2':
             print('    arch set to FCN8 - with L2 Regularization')
-            from   mrcnn.fcn8_layer_L2     import fcn8_graph as fcn_graph
+            from   mrcnn.fcn8_layer_L2     import fcn8_l2_graph as fcn_graph
         
-        else:
-            print('    arch set to FCN8 - with No L2 Regularization')
-            from   mrcnn.fcn8_layer        import fcn8_graph as fcn_graph
+        elif arch == 'FCN32':
+            print('    arch set to FCN32')
+            from   mrcnn.fcn32_layer       import fcn32_graph as fcn_graph
+
+        elif arch == 'FCN32L2':
+            print('    arch set to FCN32 - with L2 Regularization')
+            from   mrcnn.fcn32_layer_L2     import fcn32_l2_graph as fcn_graph
+            
+        else :    # arch == 'FCN16':
+            print('    arch set to FCN16')
+            from   mrcnn.fcn16_layer       import fcn16_graph as fcn_graph
+
         
         self.fcn_graph = fcn_graph
         print(self.fcn_graph)
@@ -184,10 +174,16 @@ class FCN(ModelBase):
                          outputs of the model differ accordingly.
         '''
         assert mode in ['training', 'inference']
+        verbose = config.VERBOSE
 
+
+        print('\n')
+        print('---------------------------------------------------')
+        print(' Build FCN Model -  Arch: ',self.arch, ' mode: ', mode)
+        print('---------------------------------------------------')
+        
         # Image size must be dividable by 2 multiple times
         h, w = config.FCN_INPUT_SHAPE[:2]
-        num_scores_columns = 16
         if h / 2**6 != int(h / 2**6) or w / 2**6 != int(w / 2**6):
             raise Exception("Image size must be dividable by 2 at least 6 times "
                             "to avoid fractions when downscaling and upscaling."
@@ -195,8 +191,10 @@ class FCN(ModelBase):
         
         num_classes = config.NUM_CLASSES
         if mode == 'training':
+            num_scores_columns = 23
             num_bboxes  = config.TRAIN_ROIS_PER_IMAGE      # 200
         else:    
+            num_scores_columns = 24
             num_bboxes  = config.DETECTION_MAX_INSTANCES   # 100
 
 
@@ -215,27 +213,21 @@ class FCN(ModelBase):
             gt_hm        = KL.Input(shape=[ h,w, num_classes], name="input_gt_hm_norm"  , dtype=tf.float32)
             gt_hm_scores = KL.Input(shape=[ num_classes, num_bboxes, num_scores_columns], name="input_gt_hm_scores", dtype=tf.float32)
 
-            # _, _, _, active_class_ids = KL.Lambda(lambda x:  parse_image_meta_graph(x), mask=[None, None, None, None],
-                                                  # name = 'active_class_ids')(input_image_meta)
-            active_class_ids = KL.Lambda(lambda x:  parse_active_class_ids_graph(x), name = 'active_class_ids')(input_image_meta)
+            _, _, _, active_class_ids = KL.Lambda(lambda x:  parse_image_meta_graph(x), mask=[None, None, None, None],
+                                                  name = 'active_class_ids')(input_image_meta)
+            # active_class_ids = KL.Lambda(lambda x:  parse_active_class_ids_graph(x), name = 'active_class_ids')(input_image_meta)
              
             print('   active_class_ids  shape is : ', KB.int_shape(active_class_ids), ' Keras tensor ', KB.is_keras_tensor(active_class_ids) )        
-            print('\n')
-            print('---------------------------------------------------')
-            print('   Arch: ',self.arch, ' Adding  FCN layers')
-            print('---------------------------------------------------')
-        
-            fcn_hm, fcn_sm = self.fcn_graph(pr_hm , config)
+
+            fcn_hm, fcn_sm = self.fcn_graph(pr_hm , config, mode = mode)
+            
             print('  * gt_hm_scores shape: ', KB.int_shape(gt_hm_scores), ' Keras tensor ', KB.is_keras_tensor(gt_hm_scores) )        
             print('  * pr_hm_scores shape: ', KB.int_shape(pr_hm_scores), ' Keras tensor ', KB.is_keras_tensor(pr_hm_scores) )        
             print('  * fcn_heatmap shape : ', KB.int_shape(fcn_hm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm) )        
             print('  * fcn_softmax shape : ', KB.int_shape(fcn_sm), ' Keras tensor ', KB.is_keras_tensor(fcn_sm) )        
 
+            fcn_scores   = KL.Lambda(lambda x:  fcn_scoring_graph(x, config, mode), name = 'fcn_scoring')([fcn_hm , pr_hm_scores])
             
-            fcn_scores   = KL.Lambda(lambda x:  fcn_scoring_graph(x, self.config), name = 'fcn_scoring')([fcn_hm , pr_hm_scores])
-            
-            # fcn_scores = FCNScoringLayer(config, name='fcn_scoring') ([fcn_hm , pr_hm_scores])
-
             print('  * fcn_scores shape: ', KB.int_shape(fcn_scores), ' Keras tensor ', KB.is_keras_tensor(fcn_scores) )        
             
             ##------------------------------------------------------------------------
@@ -247,29 +239,29 @@ class FCN(ModelBase):
             print('---------------------------------------------------')
             fcn_MSE_loss = KL.Lambda(lambda x: loss.fcn_heatmap_MSE_loss_graph(*x), name="fcn_MSE_loss") \
                             ([gt_hm, fcn_hm])                                                 
+                            
             fcn_CE_loss  = KL.Lambda(lambda x: loss.fcn_heatmap_CE_loss_graph(*x) , name="fcn_CE_loss") \
                             ([gt_hm, fcn_hm, active_class_ids])
                             
+            fcn_BCE_loss  = KL.Lambda(lambda x: loss.fcn_heatmap_BCE_loss_graph(*x) , name="fcn_BCE_loss") \
+                            ([gt_hm, fcn_hm])
+                            
             # Model Inputs 
             inputs  = [input_image_meta, pr_hm, pr_hm_scores, gt_hm, gt_hm_scores]
-            outputs = [fcn_hm, fcn_sm, fcn_MSE_loss, fcn_CE_loss, fcn_scores]
+            outputs = [fcn_hm, fcn_sm, fcn_MSE_loss, fcn_BCE_loss, fcn_scores]
             
         # end if Training
         ##----------------------------------------------------------------------------                
         ## FCN Inference Mode Layers
         ##----------------------------------------------------------------------------                
         else:
-            print('---------------------------------------------------')
-            print('   Arch: ',self.arch, ' Adding  FCN layers')
-            print('---------------------------------------------------')
                     
-            fcn_hm, fcn_sm = self.fcn_graph(pr_hm , config)
-            print('  * fcn_heatmap shape: ', KB.int_shape(fcn_hm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm) )        
-            print('  * fcn_softmax shape: ', KB.int_shape(fcn_sm), ' Keras tensor ', KB.is_keras_tensor(fcn_sm) )        
+            fcn_hm, fcn_sm = self.fcn_graph(pr_hm , config, mode)
+            logt('* fcn_heatmap shape: ', fcn_hm, verbose = verbose)        
+            logt('* fcn_softmax shape: ', fcn_sm, verbose = verbose)        
 
-            fcn_scores   = KL.Lambda(lambda x:  fcn_scoring_graph(x, self.config), name = 'fcn_scoring')([fcn_hm , pr_hm_scores])
-            # fcn_scores = score_fcn_graph(fcn_hm , pr_hm_scores, self.config)
-            # print('  * fcn_scores shape: ', KB.int_shape(fcn_scores), ' Keras tensor ', KB.is_keras_tensor(fcn_scores) )        
+            fcn_scores   = KL.Lambda(lambda x:  fcn_scoring_graph(x, config, mode), name = 'fcn_scoring')([fcn_hm , pr_hm_scores])
+            logt('* fcn_scores shape : ', fcn_scores, verbose = verbose )        
             
             inputs  = [ pr_hm , pr_hm_scores]                                        
             outputs = [ fcn_hm, fcn_sm, fcn_scores]
@@ -299,9 +291,76 @@ class FCN(ModelBase):
 ##-------------------------------------------------------------------------------------
 ##-------------------------------------------------------------------------------------        
 
-    def detect(self, mrcnn_model, images, verbose=0):
+    def detect(self, input, verbose=0):
         '''
-        Runs the detection pipeline.
+        Runs the FCN detection pipeline on an input batch (heatmaps + scores).
+        Input:
+        --------    
+        pr_hm :         Heatmap [Bsz, hm_w, hm_h, num_classes]  
+        pr_hm_scores:   Heatmap Scores by class [BSz, num_classes, num_detections, columns]
+        image_metas:    Image Meta information required for unmolding bounding box coordinates
+
+        Returns:        a list of dicts, one dict per image. The dict contains:
+        --------
+        rois:           [N, (y1, x1, y2, x2)] detection bounding boxes
+        class_ids:      [N] int class IDs
+        scores:         [N] float probability scores for the class IDs
+        masks:          [H, W, N] instance binary masks
+        '''
+        
+        pr_hm, pr_hm_scores, image_metas = input
+        sequence_column = 7
+        if verbose:
+            print('===> call fcn predict()')
+            print('     pr_hm         ', pr_hm.shape)
+            print('     pr_hm_scores  ', pr_hm_scores.shape)
+            print('     image_metas   ', image_metas.shape)
+        fcn_hm, fcn_sm, fcn_hm_scores = self.keras_model.predict([pr_hm, pr_hm_scores], verbose = 0)
+
+        if verbose:
+            print('    results from fcn.keras_model.predict()')
+            print('    Length of fcn_heatmaps : ', len(fcn_hm), fcn_hm.shape)
+            print('    Length of fcn_softmax  : ', len(fcn_sm), fcn_sm.shape)
+            print('    Length of fcn_hm_scores: ', len(fcn_hm_scores), fcn_hm_scores.shape)
+         
+        ## Process detections                
+        ## build results list. Takes images, mrcnn_detections, pr_hm, pr_hm_scores and fcn outputs
+
+        results = []
+        
+        for i in range(pr_hm.shape[0]):
+            
+            ## reshape fcn_hm_scores from per_class to per_image tensor
+            ## fcn_hm_scores is by class  
+            ## Convert fcn_hm_scores bboxes from NN coordinates to image coordinates
+            fcn_boxes_adj = utils.boxes_to_image_domain(fcn_hm_scores[i,:,:,:4],image_metas[i])
+            fcn_scores_by_class= np.dstack((fcn_boxes_adj, fcn_hm_scores[i,:,:,4:]))
+            fcn_scores_by_image = utils.byclass_to_byimage_np(fcn_scores_by_class, sequence_column)
+            if verbose:
+                print(' Process input/results ', i)
+                print(' pr_hm              :', pr_hm[i].shape)
+                print(' pr_hm_scores       :', pr_hm_scores[i].shape)
+                print(' fcn_hm             :', fcn_hm[i].shape)
+                print(' fcn_hm_scores      :', fcn_hm_scores[i].shape)
+                print(' fcn_scores_by_class:', fcn_scores_by_class.shape)
+            
+            results.append({
+                "fcn_scores_by_class" : fcn_scores_by_class,
+                "fcn_scores"          : fcn_scores_by_image,
+                "fcn_hm_scores"       : fcn_hm_scores[i], 
+                "fcn_hm"              : fcn_hm[i],
+                "fcn_sm"              : fcn_sm[i]
+            })            
+                    
+        return results 
+        
+    ##-------------------------------------------------------------------------------------
+    ##  detect_from_images
+    ##-------------------------------------------------------------------------------------        
+        
+    def detect_from_images(self, mrcnn_model, images, verbose=0):
+        '''
+        Runs the detection pipeline from an input of images.
 
         images:         List of images, potentially of different sizes.
 
@@ -310,114 +369,142 @@ class FCN(ModelBase):
         class_ids:      [N] int class IDs
         scores:         [N] float probability scores for the class IDs
         masks:          [H, W, N] instance binary masks
+        
+        detections           (200, 6)
+        fcn_hm               (256, 256, 81)
+        fcn_scores           (8, 23)
+        fcn_scores_by_class  (81, 200, 23)
+        fcn_sm               (256, 256, 81)
+        image                (640, 480, 3)
+        image_meta           (89,)
+        molded_image         (1024, 1024, 3)
+        molded_rois          (8, 4)
+        
+        pr_hm                (256, 256, 81)
+        pr_hm_scores         (81, 200, 23)
+        pr_scores            (8, 23)
+        pr_scores_by_class   (81, 200, 23)
+        
+        
         '''
-        assert self.mode   == "inference", "Create model in inference mode."
-        assert len(images) == self.config.BATCH_SIZE, "len(images) must be equal to BATCH_SIZE"
-
-        if verbose:
-            log("Processing {} images".format(len(images)))
-            for image in images:
-                log("image", image)
-
-        # Mold inputs to format expected by the neural network
-        molded_images, image_metas, windows = self.mold_inputs(images)
-        if verbose:
-            log("molded_images", molded_images)
-            log("image_metas"  , image_metas)        # print('>>> model detect()')
         
-        ## Run object detection pipeline
+        # print('call fcn.detect_from_images()')
+        results = mrcnn_model.detect(images, verbose = verbose)
 
-        print('call mrcnn predict()')
-        mrcnn_detections, rpn_roi_proposals, mrcnn_class, mrcnn_bbox, pr_hm, pr_hm_scores =  \
-                  mrcnn_model.keras_model.predict([molded_images, image_metas], verbose=0)
+        if verbose:
+            print('===>   fcn.detect_from_images() : return from  mrcnn.detect() : ', len(results))
+            for i, r in enumerate(results):
+                print('\noutputs returned from mrcnn.detect()  ', i, '  ',sorted(r.keys()))
+                for key in sorted(r):
+                    print(key.ljust(20), r[key].shape)        
+        
+        ## prep results from mrcnn detections to pass to fcn detection
+        # for result in results:
+        fcn_input_hm = np.stack([r['pr_hm'] for r in results] )
+        fcn_input_hm_scores = np.stack([r['pr_hm_scores'] for r in results] )
+        fcn_input_image_metas = np.stack([r['image_meta'] for r in results] )
 
-        print('    return from  MRCNN predict()')
-        print('    Length of detections          : ', len(mrcnn_detections), mrcnn_detections.shape)
-        print('    Length of rpn_roi_proposals   : ', len(rpn_roi_proposals), rpn_roi_proposals.shape)
-        print('    Length of mrcnn_class         : ', len(mrcnn_class), mrcnn_class.shape)
-        print('    Length of mrcnn_bbox          : ', len(mrcnn_bbox ), mrcnn_bbox.shape)
-        print('    Length of pr_hm               : ', len(pr_hm), pr_hm.shape)
-        print('    Length of pr_hm_scores        : ', len(pr_hm_scores), pr_hm_scores.shape)
+        # print('===> fcn.detect_from_images() :call fcn.detect()')        
+        # fcn_hm, fcn_sm, fcn_hm_scores = self.keras_model.predict([fcn_input_hm, fnc_input_hm_scores], verbose = 1)
+        fcn_results = self.detect([fcn_input_hm, fcn_input_hm_scores, fcn_input_image_metas], verbose = verbose)
 
-
-        print('call fcn predict()')
-        fcn_hm, fcn_sm, fcn_hm_scores = self.keras_model.predict([pr_hm, pr_hm_scores], verbose = 1)
-
-        print('    return from  FCN predict()')
-        print('    Length of fcn_heatmaps : ', len(fcn_hm), fcn_hm.shape)
-        print('    Length of fcn_softmax  : ', len(fcn_sm), fcn_sm.shape)
-        print('    Length of fcn_hm_scores: ', len(fcn_hm_scores), fcn_hm_scores.shape)
-         
+        if verbose:
+            print('===>  fcn.detect_from_images() : return from  fcn.detect() : ', len(fcn_results))
+            for i, r in enumerate(fcn_results):
+                print('\n outputs returned from fcn.detect() ', i, '  ',sorted(r.keys()))
+                for key in sorted(r):
+                    print(key.ljust(20), r[key].shape)        
+                
         ## Process detections        
-        
-        results = []
+        ## build results list. Takes images, mrcnn_detections, pr_hm, pr_hm_scores and fcn outputs
 
         for i, image in enumerate(images):
-            print(' Unmold image ', i, 'image_shape: ', image.shape,  '  windows[]:', windows[i])
-            mrcnn_rois, mrcnn_class_ids, mrcnn_scores = mrcnn_model.unmold_detections(mrcnn_detections[i], image.shape, windows[i])    
-            print(pr_hm_scores[i].shape)
-            print(fcn_hm_scores[i].shape)
-            print('mrcnn_class_ids: ', mrcnn_class_ids)
-            ## pr_hm_scores is by image/class/bounding box
-            ## fcn_hm_scores is by image/class/bounding box
+            results[i].update(fcn_results[i])
+            if verbose:
+                print('Unmold image ', i, 'image_shape: ', image.shape)
+                print('    pr_hm_scores          : ', results[i]['pr_hm_scores'].shape)
+                print('    mrcnn_class_ids       : ', results[i]['class_ids'])
+                print('    fcn_hm_scores         : ', fcn_results[i]['fcn_scores'].shape)
+                print('    fcn_hm_scores         : ', results[i]['fcn_scores'].shape)
+                print('    fcn_hm_scores_by_class: ', fcn_results[i]['fcn_scores_by_class'].shape)
+                print('    fcn_hm_scores_by_class: ', results[i]['fcn_scores_by_class'].shape)
+                print('--- fcn.detect_from_images() complete')
             
-            ## reshape pr_hm_scores from per_class to per_image tensor
-            ## Convert pr_scores_by_image bboxes from NN coordinates to image coordinates
-            #     pr_scores_by_image = utils.byclass_to_byimage_np(pr_hm_scores[i], 6)
-            #     print(' pr_scores_by_class shape',pr_scores_by_image.shape)
-            #     pr_boxes_adj = utils.boxes_to_image_domain(pr_scores_by_image[:,:4],image_metas[i])
-            #     pr_scores_by_image = np.hstack((pr_boxes_adj, pr_scores_by_image[:,4:]))
-            #     print(' pr_boxes_adj')
-            #     print(pr_boxes_adj)
-            #     print(' pr_scores_by_image')
-            #     print(pr_scores_by_image)
+        return results 
+        
+        
+    ##-------------------------------------------------------------------------------------
+    ##  detect_from_images
+    ##-------------------------------------------------------------------------------------                
+    def evaluate(self, mrcnn_model, evaluate_batch, verbose=0):
+        '''
+        Runs the evaluation pipeline:
+        Pass Input --> MRCNN (evaluation mode) ---> FCN (inference mode) --> Results
+        
+        In evaluation mode, the MRCNN detection process adds False Positive object bounding detections 
+        for all (or a selected ssubset) of ground truth annotations to the set of  "detected ROIs".
+    
+        These modified detections are then passed to FCN for detection. 
+        
 
-            ## pr_hm_scores is by class  
-            ## Convert pr_hm_scores bboxes from NN coordinates to image coordinates
-            pr_boxes_adj = utils.boxes_to_image_domain(pr_hm_scores[i,:,:,:4],image_metas[i])
-            pr_scores_by_class= np.dstack((pr_boxes_adj, pr_hm_scores[i,:,:,4:]))
-            print(' pr_scores_by_class shape', pr_scores_by_class.shape)
-            pr_scores_by_image = utils.byclass_to_byimage_np(pr_scores_by_class, 6)
-
-            #     print(' pr_boxes_adj_2')
-            #     print(pr_boxes_adj_2[mrcnn_class_ids, :10])
-            #     print(' pr_scores_by_class')
-            #     print(pr_scores_by_class[mrcnn_class_ids, :10])
-
-            ## fcn_hm_scores is by class  
-            ## Convert pr_hm_scores bboxes from NN coordinates to image coordinates
-            fcn_boxes_adj = utils.boxes_to_image_domain(fcn_hm_scores[i,:,:,:4],image_metas[i])
-            fcn_scores_by_class= np.dstack((pr_boxes_adj, fcn_hm_scores[i,:,:,4:]))
-            print(' fcn_scores_by_class shape', fcn_scores_by_class.shape)
-            fcn_scores_by_image = utils.byclass_to_byimage_np(fcn_scores_by_class, 6)
-            #     print(' fcn_boxes_adj')
-            #     print(fcn_boxes_adj[mrcnn_class_ids, :10])
-            #     print(' fcn_scores_by_class')
-            #     print(fcn_scores_by_class[mrcnn_class_ids, :10])  
-
-            #     fcn_scores_adj,fcn_rois, fcn_class_ids, mrcnn_scores_norm, fcn_scores =  \
-            #                                    self.unmold_detections(fcn_model, fcn_hm_scores[i], image.shape, windows[i]) 
-            #     print(fcn_scores_adj.shape, fcn_rois.shape, fcn_class_ids.shape, mrcnn_scores_norm.shape, fcn_scores.shape)
+        evaluate_batch:          [input_image, input_image_meta, input_gt_class_ids, input_gt_boxes]
+           input_image:          List of images, potentially of different sizes.        
+        
+        Returns a list of dicts, one dict per image. The dict contains:
+            N : number of detections 
             
-            results.append({
-                "image"        : images[i],
-                "image_meta"   : image_metas[i],
-                "rois"         : mrcnn_rois,
-                "molded_rois"  : mrcnn_detections[i][:4],
-                "class_ids"    : mrcnn_class_ids,
-                "mrcnn_scores" : mrcnn_scores, 
+            rois:                [N, (y1, x1, y2, x2)] detection bounding boxes
+            class_ids:           [N] int class IDs
+            scores:              [N] float probability scores for the class IDs
+            masks:               [H, W, N] instance binary masks
+            
+            detections           (DETECTION_MAX_INSTANCES, 6)
+            image                (image_height, img_width, num_channels)
+            image_meta           (89,)
+            molded_image         (1024, 1024, 3)
+            molded_rois          (N, 4)
+            pr_hm                (1, 256, 256, 81)
+            pr_scores            (N, 23)
+            pr_scores_by_class   (81, 200, 23)
+        '''
 
-                "pr_scores"    : pr_scores_by_image,
-                "pr_scores_by_class"    : pr_scores_by_class,
-                "pr_hm"        : pr_hm[i],
+        assert self.mode   == "inference", "Create model in evaluate mode."
+        assert len(evaluate_batch) == 5, " length of eval batch must be 4"
+        sequence_column = 7
+        
+        results = mrcnn_model.evaluate(evaluate_batch, verbose = verbose)
 
-                "fcn_scores"   : fcn_scores_by_image,
-                "fcn_scores_by_class"   : fcn_scores_by_class,
-                "fcn_hm"       : fcn_hm[i],
-                "fcn_sm"       : fcn_sm[i]
-            })
+        if verbose:
+            print('===>   return from  MRCNN evaluate() : ', len(results))
+            for i, r in enumerate(results):
+                print('\n output ', i, '  ',sorted(r.keys()))
+                for key in sorted(r):
+                    print(key.ljust(20), r[key].shape)        
+        
+        ## prep results from mrcnn detections to pass to fcn detection
+        fcn_input_hm          = np.stack([r['pr_hm'] for r in results] )
+        fcn_input_hm_scores   = np.stack([r['pr_hm_scores'] for r in results] )
+        fcn_input_image_metas = np.stack([r['image_meta'] for r in results] )
+
+        # fcn_hm, fcn_sm, fcn_hm_scores = self.keras_model.predict([fcn_input_hm, fnc_input_hm_scores], verbose = 1)
+        fcn_results = self.detect([fcn_input_hm, fcn_input_hm_scores, fcn_input_image_metas], verbose = verbose)
+
+        if verbose:
+            print('===>  return from  FCN detect() : ', len(fcn_results))
+            for i, r in enumerate(fcn_results):
+                print('\n output ', i, '  ',sorted(r.keys()))
+                for key in sorted(r):
+                    print(' output: ', key.ljust(20), '      ', r[key].shape)        
+                
+        ## Process detections        
+        ## build results list. Takes images, mrcnn_detections, pr_hm, pr_hm_scores and fcn outputs
+
+        for i in range(len(fcn_results)):
+            results[i].update(fcn_results[i])
                     
         return results 
+        
+        
 
     ##-------------------------------------------------------------------------------------
     ## Mold Inputs
@@ -569,92 +656,6 @@ class FCN(ModelBase):
         non_zero_detections = np.hstack((boxes, non_zero_detections))
         
         return [non_zero_detections, boxes, np.expand_dims(class_ids, axis =-1), np.expand_dims(mrcnn_scores, axis =-1), np.expand_dims(fcn_scores, axis =-1) ]
-
-               
-               
-    ##-------------------------------------------------------------------------------------
-    ## Unmold Detections - New 
-    ##-------------------------------------------------------------------------------------        
-    def unmold_detections_new(self, detections, image_shape, window):
-        '''
-        RUNS DETECTIONS ON FCN_SCORE TENSOR
-        
-        Reformats the detections of one image from the format of the neural
-        network output to a format suitable for use in the rest of the application.
-
-        detections  : [N, (y1, x1, y2, x2, class_id, score)]
-        mrcnn_mask  : [N, height, width, num_classes]
-        image_shape : [height, width, depth] Original size of the image before resizing
-        window      : [y1, x1, y2, x2] Box in the image where the real image is
-                       (i.e.,  excluding the padding surrounding the real image)
-
-        Returns:
-        boxes       : [N, (y1, x1, y2, x2)] Bounding boxes in pixels
-        class_ids   : [N] Integer class IDs for each bounding box
-        scores      : [N] Float probability scores of the class_id
-        masks       : [height, width, num_instances] Instance masks
-        '''
-        
-        # print('>>>  unmold_detections ')
-        # print('     detections.shape : ', detections.shape)
-        # print('     mrcnn_mask.shape : ', mrcnn_mask.shape)
-        # print('     image_shape.shape: ', image_shape)
-        # print('     window.shape     : ', window)
-        # print(detections)
-        
-        # How many detections do we have?
-        # Detections array is padded with zeros. detections[:,4] identifies the class 
-        # Find all rows in detection array with class_id == 0 , and place their row indices
-        # into zero_ix. zero_ix[0] will identify the first row with class_id == 0.
-        print()
-        np.set_printoptions(linewidth=100)  
-        p1 = detections 
-        p2 = np.reshape(p1, (-1, p1.shape[-1]))
-        p2 = p2[p2[:,5].argsort()[::-1]]
-        detections = p2
-         
-        zero_ix = np.where(detections[:, 4] == 0)[0]
-    
-        N = zero_ix[0] if zero_ix.shape[0] > 0 else detections.shape[0]
-
-        # print(' np.where() \n', np.where(detections[:, 4] == 0))
-        # print('     zero_ix.shape     : ', zero_ix.shape)
-        # print('     N is :', N)
-        
-        # Extract boxes, class_ids, scores, and class-specific masks
-        boxes        = detections[:N, :4]
-        class_ids    = detections[:N, 4].astype(np.int32)
-        scores       = detections[:N, 5]
-        pre_scores   = detections[:N, 8:11]
-        fcn_scores   = detections[:N, 13:]
-            # masks      = mrcnn_mask[np.arange(N), :, :, class_ids]
-
-        # Compute scale and shift to translate coordinates to image domain.
-        h_scale = image_shape[0] / (window[2] - window[0])
-        w_scale = image_shape[1] / (window[3] - window[1])
-        scale   = min(h_scale, w_scale)
-        shift   = window[:2]  # y, x
-        scales = np.array([scale, scale, scale, scale])
-        shifts = np.array([shift[0], shift[1], shift[0], shift[1]])
-
-        # Translate bounding boxes to image domain
-        boxes = np.multiply(boxes - shifts, scales).astype(np.int32)
-
-        # Filter out detections with zero area. Often only happens in early
-        # stages of training when the network weights are still a bit random.
-        exclude_ix = np.where(
-            (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]) <= 0)[0]
-            
-        if exclude_ix.shape[0] > 0:
-            boxes      = np.delete(boxes, exclude_ix, axis=0)
-            class_ids  = np.delete(class_ids, exclude_ix, axis=0)
-            scores     = np.delete(scores, exclude_ix, axis=0)
-            pre_scores = np.delete(pre_scores, exclude_ix, axis=0)
-            fcn_scores = np.delete(fcn_scores, exclude_ix, axis=0)
-            # masks     = np.delete(masks, exclude_ix, axis=0)
-            N         = class_ids.shape[0]
-
-        return boxes, class_ids, scores, pre_scores, fcn_scores     # , full_masks
 
         
         
@@ -1857,3 +1858,228 @@ class FCN(ModelBase):
 """
 
 
+
+               
+"""               
+    ##-------------------------------------------------------------------------------------
+    ## Unmold Detections - New 
+    ##-------------------------------------------------------------------------------------        
+    def unmold_detections_new(self, detections, image_shape, window):
+        '''
+        RUNS DETECTIONS ON FCN_SCORE TENSOR
+        
+        Reformats the detections of one image from the format of the neural
+        network output to a format suitable for use in the rest of the application.
+
+        detections  : [N, (y1, x1, y2, x2, class_id, score)]
+        mrcnn_mask  : [N, height, width, num_classes]
+        image_shape : [height, width, depth] Original size of the image before resizing
+        window      : [y1, x1, y2, x2] Box in the image where the real image is
+                       (i.e.,  excluding the padding surrounding the real image)
+
+        Returns:
+        boxes       : [N, (y1, x1, y2, x2)] Bounding boxes in pixels
+        class_ids   : [N] Integer class IDs for each bounding box
+        scores      : [N] Float probability scores of the class_id
+        masks       : [height, width, num_instances] Instance masks
+        '''
+        
+        # print('>>>  unmold_detections ')
+        # print('     detections.shape : ', detections.shape)
+        # print('     mrcnn_mask.shape : ', mrcnn_mask.shape)
+        # print('     image_shape.shape: ', image_shape)
+        # print('     window.shape     : ', window)
+        # print(detections)
+        
+        # How many detections do we have?
+        # Detections array is padded with zeros. detections[:,4] identifies the class 
+        # Find all rows in detection array with class_id == 0 , and place their row indices
+        # into zero_ix. zero_ix[0] will identify the first row with class_id == 0.
+        print()
+        np.set_printoptions(linewidth=100)  
+        p1 = detections 
+        p2 = np.reshape(p1, (-1, p1.shape[-1]))
+        p2 = p2[p2[:,5].argsort()[::-1]]
+        detections = p2
+         
+        zero_ix = np.where(detections[:, 4] == 0)[0]
+    
+        N = zero_ix[0] if zero_ix.shape[0] > 0 else detections.shape[0]
+
+        # print(' np.where() \n', np.where(detections[:, 4] == 0))
+        # print('     zero_ix.shape     : ', zero_ix.shape)
+        # print('     N is :', N)
+        
+        # Extract boxes, class_ids, scores, and class-specific masks
+        boxes        = detections[:N, :4]
+        class_ids    = detections[:N, 4].astype(np.int32)
+        scores       = detections[:N, 5]
+        pre_scores   = detections[:N, 8:11]
+        fcn_scores   = detections[:N, 13:]
+            # masks      = mrcnn_mask[np.arange(N), :, :, class_ids]
+
+        # Compute scale and shift to translate coordinates to image domain.
+        h_scale = image_shape[0] / (window[2] - window[0])
+        w_scale = image_shape[1] / (window[3] - window[1])
+        scale   = min(h_scale, w_scale)
+        shift   = window[:2]  # y, x
+        scales = np.array([scale, scale, scale, scale])
+        shifts = np.array([shift[0], shift[1], shift[0], shift[1]])
+
+        # Translate bounding boxes to image domain
+        boxes = np.multiply(boxes - shifts, scales).astype(np.int32)
+
+        # Filter out detections with zero area. Often only happens in early
+        # stages of training when the network weights are still a bit random.
+        exclude_ix = np.where(
+            (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]) <= 0)[0]
+            
+        if exclude_ix.shape[0] > 0:
+            boxes      = np.delete(boxes, exclude_ix, axis=0)
+            class_ids  = np.delete(class_ids, exclude_ix, axis=0)
+            scores     = np.delete(scores, exclude_ix, axis=0)
+            pre_scores = np.delete(pre_scores, exclude_ix, axis=0)
+            fcn_scores = np.delete(fcn_scores, exclude_ix, axis=0)
+            # masks     = np.delete(masks, exclude_ix, axis=0)
+            N         = class_ids.shape[0]
+
+        return boxes, class_ids, scores, pre_scores, fcn_scores     # , full_masks
+"""
+
+"""
+        
+        
+        
+##-------------------------------------------------------------------------------------
+## detect old 
+##-------------------------------------------------------------------------------------        
+        
+    def detect_old(self, mrcnn_model, images, verbose=0):
+        '''
+        Runs the detection pipeline.
+
+        images:         List of images, potentially of different sizes.
+
+        Returns a list of dicts, one dict per image. The dict contains:
+        rois:           [N, (y1, x1, y2, x2)] detection bounding boxes
+        class_ids:      [N] int class IDs
+        scores:         [N] float probability scores for the class IDs
+        masks:          [H, W, N] instance binary masks
+        '''
+        assert self.mode   == "inference", "Create model in inference mode."
+        assert len(images) == self.config.BATCH_SIZE, "len(images) must be equal to BATCH_SIZE"
+    
+        if verbose:
+            log("Processing {} images".format(len(images)))
+            for image in images:
+                log("image", image)
+
+        # Mold inputs to format expected by the neural network
+        molded_images, image_metas, windows = self.mold_inputs(images)
+        if verbose:
+            log("molded_images", molded_images)
+            log("image_metas"  , image_metas)        # print('>>> model detect()')
+        
+        ## Run object detection pipeline
+
+        print('call mrcnn predict()')
+        mrcnn_detections, rpn_roi_proposals, mrcnn_class, mrcnn_bbox, pr_hm, pr_hm_scores =  \
+                  mrcnn_model.keras_model.predict([molded_images, image_metas], verbose=0)
+
+        print('    return from  MRCNN predict()')
+        print('    Length of detections          : ', len(mrcnn_detections), mrcnn_detections.shape)
+        print('    Length of rpn_roi_proposals   : ', len(rpn_roi_proposals), rpn_roi_proposals.shape)
+        print('    Length of mrcnn_class         : ', len(mrcnn_class), mrcnn_class.shape)
+        print('    Length of mrcnn_bbox          : ', len(mrcnn_bbox ), mrcnn_bbox.shape)
+        print('    Length of pr_hm               : ', len(pr_hm), pr_hm.shape)
+        print('    Length of pr_hm_scores        : ', len(pr_hm_scores), pr_hm_scores.shape)
+
+
+        print('call fcn predict()')
+        fcn_hm, fcn_sm, fcn_hm_scores = self.keras_model.predict([pr_hm, pr_hm_scores], verbose = 1)
+
+        print('    return from  FCN predict()')
+        print('    Length of fcn_heatmaps : ', len(fcn_hm), fcn_hm.shape)
+        print('    Length of fcn_softmax  : ', len(fcn_sm), fcn_sm.shape)
+        print('    Length of fcn_hm_scores: ', len(fcn_hm_scores), fcn_hm_scores.shape)
+         
+        ## Process detections        
+        
+        results = []
+
+        
+        ## build results list. Takes images, mrcnn_detections, pr_hm, pr_hm_scores and fcn outputs
+        
+        for i, image in enumerate(images):
+            print(' Unmold image ', i, 'image_shape: ', image.shape,  '  windows[]:', windows[i])
+            mrcnn_rois, mrcnn_class_ids, mrcnn_scores, mrcnn_molded_rois = \
+                        mrcnn_model.unmold_detections(mrcnn_detections[i], image.shape, windows[i])    
+          # final_rois, final_class_ids, final_scores, molded_rois = self.unmold_detections(detections[i], 
+                                                                               # image.shape  ,
+                                                                               # windows[i])    
+            print(pr_hm_scores[i].shape)
+            print(fcn_hm_scores[i].shape)
+            print('mrcnn_class_ids: ', mrcnn_class_ids)
+            ## pr_hm_scores is by image/class/bounding box
+            ## fcn_hm_scores is by image/class/bounding box
+            
+            ## reshape pr_hm_scores from per_class to per_image tensor
+            ## Convert pr_scores_by_image bboxes from NN coordinates to image coordinates
+            #     pr_scores_by_image = utils.byclass_to_byimage_np(pr_hm_scores[i], 6)
+            #     print(' pr_scores_by_class shape',pr_scores_by_image.shape)
+            #     pr_boxes_adj = utils.boxes_to_image_domain(pr_scores_by_image[:,:4],image_metas[i])
+            #     pr_scores_by_image = np.hstack((pr_boxes_adj, pr_scores_by_image[:,4:]))
+            #     print(' pr_boxes_adj')
+            #     print(pr_boxes_adj)
+            #     print(' pr_scores_by_image')
+            #     print(pr_scores_by_image)
+
+            ## pr_hm_scores is by class  
+            ## Convert pr_hm_scores bboxes from NN coordinates to image coordinates
+            pr_boxes_adj = utils.boxes_to_image_domain(pr_hm_scores[i,:,:,:4],image_metas[i])
+            pr_scores_by_class= np.dstack((pr_boxes_adj, pr_hm_scores[i,:,:,4:]))
+            print(' pr_scores_by_class shape', pr_scores_by_class.shape)
+            pr_scores_by_image = utils.byclass_to_byimage_np(pr_scores_by_class, 6)
+
+            #     print(' pr_boxes_adj_2')
+            #     print(pr_boxes_adj_2[mrcnn_class_ids, :10])
+            #     print(' pr_scores_by_class')
+            #     print(pr_scores_by_class[mrcnn_class_ids, :10])
+
+            ## fcn_hm_scores is by class  
+            ## Convert pr_hm_scores bboxes from NN coordinates to image coordinates
+            fcn_boxes_adj = utils.boxes_to_image_domain(fcn_hm_scores[i,:,:,:4],image_metas[i])
+            fcn_scores_by_class= np.dstack((pr_boxes_adj, fcn_hm_scores[i,:,:,4:]))
+            print(' fcn_scores_by_class shape', fcn_scores_by_class.shape)
+            fcn_scores_by_image = utils.byclass_to_byimage_np(fcn_scores_by_class, 6)
+            #     print(' fcn_boxes_adj')
+            #     print(fcn_boxes_adj[mrcnn_class_ids, :10])
+            #     print(' fcn_scores_by_class')
+            #     print(fcn_scores_by_class[mrcnn_class_ids, :10])  
+
+            #     fcn_scores_adj,fcn_rois, fcn_class_ids, mrcnn_scores_norm, fcn_scores =  \
+            #                                    self.unmold_detections(fcn_model, fcn_hm_scores[i], image.shape, windows[i]) 
+            #     print(fcn_scores_adj.shape, fcn_rois.shape, fcn_class_ids.shape, mrcnn_scores_norm.shape, fcn_scores.shape)
+            
+            results.append({
+                "image"        : images[i],
+                "molded_image" : molded_images[i],                 
+                "image_meta"   : image_metas[i],
+                
+                "rois"         : mrcnn_rois,
+                "molded_rois"  : mrcnn_molded_rois,
+                "class_ids"    : mrcnn_class_ids,
+                "mrcnn_scores" : mrcnn_scores, 
+
+                "pr_scores"    : pr_scores_by_image,
+                "pr_scores_by_class"    : pr_scores_by_class,
+                "pr_hm"        : pr_hm[i],
+
+                "fcn_scores"   : fcn_scores_by_image,
+                "fcn_scores_by_class"   : fcn_scores_by_class,
+                "fcn_hm"       : fcn_hm[i],
+                "fcn_sm"       : fcn_sm[i]
+            })
+                    
+        return results 
+"""

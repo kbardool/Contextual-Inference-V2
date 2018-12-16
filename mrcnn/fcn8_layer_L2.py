@@ -48,16 +48,22 @@ def fcn8_graph(feature_map , config):
     num_classes       = config.NUM_CLASSES
     rois_per_class    = config.TRAIN_ROIS_PER_IMAGE
     weight_decay      = config.WEIGHT_DECAY
-    batch_momentum    = config.BATCH_MOMENTUM
+    verbose           = config.VERBOSE
     feature_map_shape = (width, height, num_classes)
+     
+    # In the original implementatoin , batch_momentum was used for batch normalization layers for the ResNet
+    # backbone. We are not using this backbone in FCN, therefore it is unused.
+    # batch_momentum    = config.BATCH_MOMENTUM
+    
     print('     feature map      :', feature_map.shape)
     print('     height :', height, 'width :', width, 'classes :' , num_classes)
     print('     image_data_format: ', KB.image_data_format())
     print('     rois_per_class   : ', KB.image_data_format())
+    print('     FCN L2 weight decay : ', weight_decay)
     
     # feature_map = KL.Input(shape= feature_map_shape, name="input_fcn_feature_map")
-    # TODO: Assert proper shape of input [batch_size, width, height, num_classes]
     
+    # TODO: Assert proper shape of input [batch_size, width, height, num_classes]
     # TODO: check if stride of 2 causes alignment issues if the featuremap is not even.
     
     # if batch_shape:

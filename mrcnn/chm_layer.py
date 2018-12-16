@@ -20,9 +20,29 @@ import tensorflow.contrib.util as tfc
 
 
 
+def normalize_scores(x, low = 0.0, high = 1.0):
+    #--------------------------------------------------------------------------------------------
+    # this normalization moves values to [0, +1] 
+    #--------------------------------------------------------------------------------------------    
+    reduce_max = tf.reduce_max(x, axis = -2, keepdims=True)
+    reduce_min = tf.reduce_min(x, axis = -2, keepdims=True)  ## epsilon    = tf.ones_like(reduce_max) * 1e-7
+    reduce_max = tf.where(reduce_max  < +1.0e-15,  tf.ones_like(reduce_max) * high, reduce_max)
+    reduce_min = tf.where(reduce_min  > -1.0e-15,  tf.ones_like(reduce_min) * low,  reduce_min)
 
+#     y  = tf.divide( (x- reduce_min) , (reduce_max - reduce_min), name='fcn_heatmap_norm')
+    y  = (x- reduce_min) / (reduce_max - reduce_min)
+    y  = y * (high - low) + low 
+    
+    print()
+    print('       Normalize_scores() ------------------------------------------------------') 
+    print('         input shape      : ', KB.int_shape(x))
+    print('         reduce_min shape : ', KB.int_shape(reduce_min))
+    print('         reduce_max shape : ', KB.int_shape(reduce_max))
+    print('             output shape : ', KB.int_shape(y))
+    print()
 
-
+    return y
+    
 ##--------------------------------------------------------------------------------------------------------
 ## Build Mask and Score - version 3 
 ##   Applies a reduced area mask using cx,cy and covar, similar to what is being done for score calc in FCN
@@ -70,7 +90,8 @@ def build_hm_score_v3(input_list):
         mask_area    = tf.to_float((end_y -start_y) * (end_x-  start_x))        
         mask_sum     = tf.reduce_sum(mask)
 
-    return tf.stack([ score, mask_area, mask_sum,  score/mask_area, score/mask_sum], axis = -1)  
+    # return tf.stack([ score, mask_area, mask_sum,  score/mask_area, score/mask_sum], axis = -1)  
+    return tf.stack([ score, mask_sum, score/mask_sum], axis = -1)  
 
 
     
@@ -186,8 +207,21 @@ def clip_heatmap(input_list):
 ##                  - (sum of heatmap in masked area) * (bbox per-class normalized score from in_tensor)
 ##------------------------------------------------------------------------------------------------------------
 def build_pr_heatmap(in_tensor, config, names = None):
-
-    num_detections  = config.DETECTION_MAX_INSTANCES
+    '''
+    input:
+    -------
+    pred_tensor:        [ Bsz, Num_Classes, Num_Rois, 8: 
+                            {y1, x1, y2, x2, class_id, score, sequence_id, score normalized per class}]
+                        
+    output:
+    -------
+        pr_heatmap      (None,  Heatmap-height, Heatmap_width, num_classes)
+        pr_scores       (None, num_classes, 200, 23) 
+                        [batchSz, Detection_Max_instance, (y1,x1,y2,x2, class, score, sequence_id, normalized_score,
+                                                           scores-0: gaussian_sum, bbox_area, weighted_norm_sum 
+                                                           scores-1: score, mask_sum, score/mask_sum, (score, mask_sum, score/mask_sum) normalized by class
+                                                           scores-2: score, mask_sum, score/mask_sum, (score, mask_sum, score/mask_sum) normalized by class ]
+    '''
     img_h, img_w    = config.IMAGE_SHAPE[:2]
     batch_size      = config.BATCH_SIZE
     num_classes     = config.NUM_CLASSES  
@@ -253,11 +287,11 @@ def build_pr_heatmap(in_tensor, config, names = None):
     ##-----------------------------------------------------------------------------
     ##  Build mean and convariance tensors for Multivariate Normal Distribution 
     ##-----------------------------------------------------------------------------
-    pt2_dense_scaled = pt2_dense[:,:4]/heatmap_scale
-    width  = pt2_dense_scaled[:,3] - pt2_dense_scaled[:,1]      # x2 - x1
-    height = pt2_dense_scaled[:,2] - pt2_dense_scaled[:,0]
-    cx     = pt2_dense_scaled[:,1] + ( width  / 2.0)
-    cy     = pt2_dense_scaled[:,0] + ( height / 2.0)
+    bboxes_scaled = pt2_dense[:,:4]/heatmap_scale
+    width  = bboxes_scaled[:,3] - bboxes_scaled[:,1]      # x2 - x1
+    height = bboxes_scaled[:,2] - bboxes_scaled[:,0]
+    cx     = bboxes_scaled[:,1] + ( width  / 2.0)
+    cy     = bboxes_scaled[:,0] + ( height / 2.0)
     means  = tf.stack((cx,cy),axis = -1)
     covar  = tf.stack((width * 0.5 , height * 0.5), axis = -1)
     covar  = tf.sqrt(covar)
@@ -274,16 +308,15 @@ def build_pr_heatmap(in_tensor, config, names = None):
     print('     Prob_grid shape after tanspose: ',prob_grid.shape)    
     print('    << output probabilities shape  : ' , prob_grid.shape)
 
-
     ##--------------------------------------------------------------------------------------------
     ## (0) Generate scores using prob_grid and pt2_dense - (NEW METHOD added 09-21-2018)
     ##--------------------------------------------------------------------------------------------
-    old_style_scores = tf.map_fn(build_hm_score_v2, [prob_grid, pt2_dense_scaled, pt2_dense[:,7]], 
+    old_style_scores = tf.map_fn(build_hm_score_v2, [prob_grid, bboxes_scaled, pt2_dense[:,7]], 
                                  dtype = tf.float32, swap_memory = True)
     old_style_scores = tf.scatter_nd(pt2_ind, old_style_scores, 
                                      [batch_size, num_classes, rois_per_image, KB.int_shape(old_style_scores)[-1]],
                                      name = 'scores_scattered')
-
+    print('    old_style_scores        :',  old_style_scores.get_shape(), KB.int_shape(old_style_scores))  
 
     ##----------------------------------------------------------------------------------------------------
     ## Generate scores using same method as FCN, over the prob_grid
@@ -312,6 +345,7 @@ def build_pr_heatmap(in_tensor, config, names = None):
     print('    normalizer     : ', normalizer.shape) 
     prob_grid_cns = prob_grid_clipped / normalizer
 
+
     ##---------------------------------------------------------------------------------------------
     ## (3) multiply normalized heatmap by normalized score in in_tensor/ (pt2_dense column 7)
     ##     broadcasting : https://stackoverflow.com/questions/49705831/automatic-broadcasting-in-tensorflow
@@ -328,6 +362,12 @@ def build_pr_heatmap(in_tensor, config, names = None):
     alt_scores_1 = tf.scatter_nd(pt2_ind, alt_scores_1, 
                                      [batch_size, num_classes, rois_per_image, KB.int_shape(alt_scores_1)[-1]], name = 'alt_scores_1')  
 
+    print('    alt_scores_1(by class)       : ', alt_scores_1.shape ,' Keras tensor ', KB.is_keras_tensor(alt_scores_1) )  
+    alt_scores_1_norm = normalize_scores(alt_scores_1)
+    print('    alt_scores_1_norm(by_class)  : ', alt_scores_1_norm.shape, KB.int_shape(alt_scores_1_norm))
+    # alt_scores_1_norm = tf.gather_nd(alt_scores_1_norm, pt2_ind)
+    # print('    alt_scores_1_norm(by_image)  : ', alt_scores_1_norm.shape, KB.int_shape(alt_scores_1_norm))
+                                     
     ##-------------------------------------------------------------------------------------
     ## (3) scatter out the probability distributions based on class 
     ##-------------------------------------------------------------------------------------
@@ -340,8 +380,9 @@ def build_pr_heatmap(in_tensor, config, names = None):
 
     ##-------------------------------------------------------------------------------------
     ## Construction of Gaussian Heatmap output using Reduce SUM
+    ##
     ## (4) SUM : Reduce and sum up gauss_heatmaps by class  
-    ## (5) heatmap normalization
+    ## (5) heatmap normalization (per class)
     ## (6) Transpose heatmap to shape required for FCN
     ##-------------------------------------------------------------------------------------
     print('\n    Reduce SUM based on class and normalize within each class -------------------------------------')         
@@ -354,55 +395,51 @@ def build_pr_heatmap(in_tensor, config, names = None):
     # gauss_heatmap_sum_normalized = gauss_heatmap_sum / normalizer
     print('    normalizer shape   : ', normalizer.shape)   
     print('    normalized heatmap : ', gauss_heatmap_sum.shape   ,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_sum) )
-
-    gauss_heatmap_sum            = tf.transpose(gauss_heatmap_sum           ,[0,2,3,1], name = names[0])
-
-    print('    reshaped heatmap               : ', gauss_heatmap_sum.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_sum) )
-    # gauss_heatmap_sum_normalized = tf.transpose(gauss_heatmap_sum_normalized,[0,2,3,1], name = names[0]+'_norm')   
-    # print('    reshaped heatmap normalized    : ', gauss_heatmap_sum_normalized.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_sum_normalized) )
-
     
     ##---------------------------------------------------------------------------------------------
+    ##  Score on reduced sum heatmaps. 
+    ##
     ##  build indices and extract heatmaps corresponding to each bounding boxes' class id
     ##  build alternative scores#  based on normalized/sclaked clipped heatmap
     ##---------------------------------------------------------------------------------------------
-    # hm_indices = tf.cast(pt2_ind[:, :2],dtype=tf.int32)
-    # print('    hm_indices shape         :',  hm_indices.get_shape(), KB.int_shape(hm_indices))
-    # pt2_heatmaps = tf.gather_nd(gauss_heatmap_sum_normalized, hm_indices )
-    # print('    pt2_heatmaps             :',  pt2_heatmaps.get_shape(), KB.int_shape(pt2_heatmaps))
+    hm_indices = tf.cast(pt2_ind[:, :2],dtype=tf.int32)
+    print('    hm_indices shape         :',  hm_indices.get_shape(), KB.int_shape(hm_indices))
+    pt2_heatmaps = tf.gather_nd(gauss_heatmap_sum, hm_indices )
+    print('    pt2_heatmaps             :',  pt2_heatmaps.get_shape(), KB.int_shape(pt2_heatmaps))
 
-    # alt_scores_2 = tf.map_fn(build_hm_score_v3, [pt2_heatmaps, cy, cx,covar], dtype=tf.float32)    
-    # print('    alt_scores_2    : ', KB.int_shape(alt_scores_2), ' Keras tensor ', KB.is_keras_tensor(alt_scores_2) )
-    # alt_scores_2 = tf.scatter_nd(pt2_ind, alt_scores_2, 
-    #                                  [batch_size, num_classes, rois_per_image, KB.int_shape(alt_scores_2)[-1]], name = 'alt_scores_2')  
-
-    ##---------------------------------------------------------------------------------------------
-    ## Construction of Gaussian Heatmap output using Reduce MAX
-    ## (4) MAX : Reduce and sum up gauss_heatmaps by class  
-    ## (5) heatmap normalization
-    ## (6) Transpose heatmap to shape required for FCN
-    ##---------------------------------------------------------------------------------------------
-    print('\n    Reduce MAX based on class and normalize within each class -------------------------------------')         
-    gauss_heatmap_max = tf.reduce_max(gauss_heatmap, axis=2, name='gauss_heatmap_max')
-    print('    gaussian_heatmap : ', gauss_heatmap_max.get_shape(), 'Keras tensor ', KB.is_keras_tensor(gauss_heatmap_max) )      
-    ## normalize in class
-    normalizer = tf.reduce_max(gauss_heatmap_max, axis=[-2,-1], keepdims = True)
-    normalizer = tf.where(normalizer < 1.0e-15,  tf.ones_like(normalizer), normalizer)
-    gauss_heatmap_max            = gauss_heatmap_max / normalizer
-    # gauss_heatmap_max_normalized = gauss_heatmap_max / normalizer
-    print('    normalizer shape   : ', normalizer.shape)   
-    print('    normalized heatmap_max : ', gauss_heatmap_max.shape   ,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_max) )
-
-    gauss_heatmap_max            = tf.transpose(gauss_heatmap_max           ,[0,2,3,1], name = names[0]+'_max')
-    print('    reshaped heatmap_max           : ', gauss_heatmap_max.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_max) )
-
-    # gauss_heatmap_max_normalized = tf.transpose(gauss_heatmap_max_normalized,[0,2,3,1], name = names[0]+'_max_norm') 
-    # print('    reshaped heatmap_max normalized: ', gauss_heatmap_max_normalized.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_max_normalized) )
+    alt_scores_2 = tf.map_fn(build_hm_score_v3, [pt2_heatmaps, cy, cx,covar], dtype=tf.float32)    
+    print('    alt_scores_2    : ', KB.int_shape(alt_scores_2), ' Keras tensor ', KB.is_keras_tensor(alt_scores_2) )
+    alt_scores_2 = tf.scatter_nd(pt2_ind, alt_scores_2, 
+                                     [batch_size, num_classes, rois_per_image, KB.int_shape(alt_scores_2)[-1]], name = 'alt_scores_2')  
     
-    ##---------------------------------------------------------------------------------------------
-    ##  build indices and extract heatmaps corresponding to each bounding boxes' class id
-    ##  build alternative scores based on normalized/sclaked clipped heatmap
-    ##---------------------------------------------------------------------------------------------
+    print('    alt_scores_2(scattered)       : ', alt_scores_2.shape ,' Keras tensor ', KB.is_keras_tensor(alt_scores_2) )  
+    alt_scores_2_norm = normalize_scores(alt_scores_2)
+    print('    alt_scores_2_norm(by_class)  : ', alt_scores_2_norm.shape, KB.int_shape(alt_scores_2_norm))
+ 
+    # ##---------------------------------------------------------------------------------------------
+    # ## Construction of Gaussian Heatmap output using Reduce MAX
+    # ## (4) MAX : Reduce and sum up gauss_heatmaps by class  
+    # ## (5) heatmap normalization
+    # ## (6) Transpose heatmap to shape required for FCN
+    # ##---------------------------------------------------------------------------------------------
+    # print('\n    Reduce MAX based on class and normalize within each class -------------------------------------')         
+    # gauss_heatmap_max = tf.reduce_max(gauss_heatmap, axis=2, name='gauss_heatmap_max')
+    # print('    gaussian_heatmap : ', gauss_heatmap_max.get_shape(), 'Keras tensor ', KB.is_keras_tensor(gauss_heatmap_max) )      
+    # ## normalize in class
+    # normalizer = tf.reduce_max(gauss_heatmap_max, axis=[-2,-1], keepdims = True)
+    # normalizer = tf.where(normalizer < 1.0e-15,  tf.ones_like(normalizer), normalizer)
+    # gauss_heatmap_max            = gauss_heatmap_max / normalizer
+    # # gauss_heatmap_max_normalized = gauss_heatmap_max / normalizer
+    # print('    normalizer shape   : ', normalizer.shape)   
+    # print('    normalized heatmap_max : ', gauss_heatmap_max.shape   ,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_max) )
+
+    
+    # ##---------------------------------------------------------------------------------------------
+    # ##  Score on reduced max heatmaps. 
+    # ##
+    # ##   # ##  build indices and extract heatmaps corresponding to each bounding boxes' class id
+    # ##  build alternative scores based on normalized/sclaked clipped heatmap
+    # ##---------------------------------------------------------------------------------------------
     # hm_indices = tf.cast(pt2_ind[:, :2],dtype=tf.int32)
     # print('    hm_indices shape         :',  hm_indices.get_shape(), KB.int_shape(hm_indices))
     # pt2_heatmaps = tf.gather_nd(gauss_heatmap_max_normalized, hm_indices )
@@ -413,11 +450,24 @@ def build_pr_heatmap(in_tensor, config, names = None):
     # alt_scores_3 = tf.scatter_nd(pt2_ind, alt_scores_3, 
     #                                  [batch_size, num_classes, rois_per_image, KB.int_shape(alt_scores_3)[-1]], name = 'alt_scores_3')  
 
+    ##---------------------------------------------------------------------------------------------
+    ## (6) Transpose heatmaps to shape required for FCN [batchsize , width, height, num_classes]
+    ##---------------------------------------------------------------------------------------------    
+    gauss_heatmap_sum            = tf.transpose(gauss_heatmap_sum           ,[0,2,3,1], name = names[0])
+    print('    reshaped heatmap   : ', gauss_heatmap_sum.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_sum) )
+    # gauss_heatmap_sum_normalized = tf.transpose(gauss_heatmap_sum_normalized,[0,2,3,1], name = names[0]+'_norm')   
+    # print('    reshaped heatmap normalized    : ', gauss_heatmap_sum_normalized.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_sum_normalized) )
+
+    # gauss_heatmap_max            = tf.transpose(gauss_heatmap_max           ,[0,2,3,1], name = names[0]+'_max')
+    # print('    reshaped heatmap_max           : ', gauss_heatmap_max.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_max) )
+    # gauss_heatmap_max_normalized = tf.transpose(gauss_heatmap_max_normalized,[0,2,3,1], name = names[0]+'_max_norm') 
+    # print('    reshaped heatmap_max normalized: ', gauss_heatmap_max_normalized.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_max_normalized) )
+    
     ##--------------------------------------------------------------------------------------------
     ## APPEND ALL SCORES TO input score tensor TO YIELD output scores tensor
     ##--------------------------------------------------------------------------------------------
-    gauss_scores     = tf.concat([in_tensor, old_style_scores, alt_scores_1],axis = -1,name = names[0]+'_scores')
-    #                                 alt_scores_2[...,:3], alt_scores_3],
+    gauss_scores     = tf.concat([in_tensor, old_style_scores, alt_scores_1, alt_scores_1_norm, alt_scores_2, alt_scores_2_norm],
+                                  axis = -1,name = names[0]+'_scores')
     print('    gauss_scores    : ', gauss_scores.shape, ' Keras tensor ', KB.is_keras_tensor(gauss_scores) )      
     print('    complete')
 
@@ -453,18 +503,21 @@ def build_pr_heatmap(in_tensor, config, names = None):
 ##                      3) sum of gaussian within bounding bouding box * normalized score. 
 ##
 ##-----------------------------------------------------------------------------------------------------------   
-##----------------------------------------------------------------------------------------------------------- 
-## build_refined_predictions 
-##-----------------------------------------------------------------------------------------------------------
 def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     '''
     Split output_rois by class id, and add class_id and class_score 
     
+    input
+    ------
+    input_rois          Normalized Proposed ROIs   [Batch Size, NumRois, 4]
+    mrcnn_class
+    mrcnn_bbox 
+    
+    
     output:
     -------
-    
-    pred_tensor:        [ Bsz, Num_Classes, Num_Rois, 7: 
-                            {y1, x1, y2, x2, class_id, class_score, normalized class score}]
+    pred_tensor:        [ Bsz, Num_Classes, Num_Rois, 8: 
+                            {y1, x1, y2, x2, class_id, score, sequence_id, score normalized per class}]
                         
                         y1,x1, y2,x2 are in image dimension format
     '''
@@ -476,7 +529,7 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     scale           = tf.constant([h,w,h,w], dtype = tf.float32)
     # dup_scale       = tf.reshape(tf.tile(scale, [num_rois]),[num_rois,-1])
     dup_scale       = scale * tf.ones([batch_size, num_rois, 1], dtype = 'float32')
-    det_per_class   = config.DETECTION_PER_CLASS
+    det_per_class   = config.TRAIN_ROIS_PER_IMAGE
     
     print()
     print('  > build_pr_tensor()')
@@ -510,7 +563,7 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     pred_deltas  = tf.gather_nd(mrcnn_bbox , gather_ind)
 
     ##------------------------------------------------------------------------------------
-    ## apply delta refinements to the  rois,  based on deltas provided by the mrcnn head 
+    ## apply delta refinements to the rois,  based on deltas provided by the mrcnn head 
     ##------------------------------------------------------------------------------------
     pred_deltas  = tf.multiply(pred_deltas, config.BBOX_STD_DEV, name = 'pred_deltas')
     input_rois   = tf.multiply(norm_input_rois , dup_scale )
@@ -543,18 +596,23 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     sequence = tf.ones_like(pred_classes, dtype = tf.int32) * (bbox_grid[...,::-1] + 1) 
     sequence = tf.to_float(tf.expand_dims(sequence, axis = -1))   
     print('    shape of sequence      : ', sequence.shape)
+    
+    
+    ##--------------------------------------------------------------------------------------------------
+    ##  Build array of bbox coordinates, pred_classes, scores, and sequence ids
+    ##  Scatter by class_id to create pred_scatter (Batch_Sz, Num_classes, Num_detections, num_columns)
+    ##--------------------------------------------------------------------------------------------------
     pred_array  = tf.concat([ refined_rois, pred_classes_exp , tf.expand_dims(pred_scores, axis = -1), sequence],
                             axis=-1, name = 'pred_array')
      
     scatter_ind = tf.stack([batch_grid , pred_classes, bbox_grid],axis = -1)
     pred_scatt  = tf.scatter_nd(scatter_ind, pred_array, [batch_size, num_classes, num_rois, pred_array.shape[-1]])
     print('    pred_array             : ', pred_array.shape)  
-    print('    scatter_ind            : ', type(scatter_ind), 'shape', scatter_ind.shape)
+    print('    scatter_ind            : ', scatter_ind.shape)
     print('    pred_scatter           : ', pred_scatt.get_shape())
     
     ##--------------------------------------------------------------------------------------------
     ##  Apply a per class score normalization using the score column (COLUMN 5)
-    ##  
     ##--------------------------------------------------------------------------------------------
     normalizer   = tf.reduce_max(pred_scatt[...,5], axis = -1, keepdims=True)
     normalizer   = tf.where(normalizer < 1.0e-15,  tf.ones_like(normalizer), normalizer)
@@ -566,7 +624,8 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     print('    pred_scatter           : ', pred_scatt.get_shape())
     
     ##------------------------------------------------------------------------------------
-    ## Sort pred_scatt to push valid bounding boxes to top for each class dimension
+    ## Sort pred_scatt in each class dimension based on sequence number, to push valid  
+    ##      to top for each class dimension
     ##
     ## 22-09-2018: sort is now based on sequence which was added as last column
     ##             (previously sort was on bbox scores)
@@ -575,18 +634,16 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     
     # build indexes to gather rows from pred_scatter based on sort order    
     class_grid, batch_grid, roi_grid = tf.meshgrid(tf.range(num_classes),tf.range(batch_size), tf.range(num_rois))
-    roi_grid_exp = tf.to_float(tf.expand_dims(roi_grid, axis = -1))
     
     gather_inds  = tf.stack([batch_grid , class_grid, sort_inds],axis = -1)
-    pred_tensor  = tf.gather_nd(pred_scatt, gather_inds[...,:det_per_class,:], name = 'pred_tensor')    
+    pred_tensor  = tf.gather_nd(pred_scatt, gather_inds, name = 'pred_tensor')    
 
-    print('    sort_inds              : ', type(sort_inds)   , ' shape ', sort_inds.shape)
-    print('    class_grid             : ', type(class_grid)  , ' shape ', class_grid.get_shape())
-    print('    batch_grid             : ', type(batch_grid)  , ' shape ', batch_grid.get_shape())
-    print('    roi_grid shape         : ', type(roi_grid)    , ' shape ', roi_grid.get_shape()) 
-    print('    roi_grid_exp           : ', type(roi_grid_exp), ' shape ', roi_grid_exp.get_shape())
-    print('    gather_inds            : ', type(gather_inds) , ' shape ', gather_inds.get_shape())
-    print('    pred_tensor            : ', pred_tensor.get_shape())
+    print('    sort_inds              : ', KB.int_shape(sort_inds)   , 'Keras Tensor:', KB.is_keras_tensor(sort_inds))
+    print('    class_grid             : ', KB.int_shape(class_grid)  , 'Keras Tensor:', KB.is_keras_tensor(class_grid))
+    print('    batch_grid             : ', KB.int_shape(batch_grid)  , 'Keras Tensor:', KB.is_keras_tensor(batch_grid))
+    print('    roi_grid shape         : ', KB.int_shape(roi_grid)    , 'Keras Tensor:', KB.is_keras_tensor(roi_grid)) 
+    print('    gather_inds            : ', KB.int_shape(gather_inds) , 'Keras Tensor:', KB.is_keras_tensor(gather_inds))
+    print('    pred_tensor            : ', KB.int_shape(pred_tensor) , 'Keras Tensor:', KB.is_keras_tensor(pred_tensor))
 
     return  pred_tensor
     
@@ -650,29 +707,16 @@ class CHMLayer(KE.Layer):
 
          
     def compute_output_shape(self, input_shape):
+    
+        print('--------------------------------')
+        print('>>>  CHM Layer COMPUTE OUTPUT SHAPE ')
+        print('--------------------------------')    
         # may need to change dimensions of first return from IMAGE_SHAPE to MAX_DIM
+        print(type(input_shape), len(input_shape))
         return [
                  (None, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1], self.config.NUM_CLASSES)  # pred_heatmap_norm
-              ,  (None, self.config.NUM_CLASSES   , self.config.DETECTION_PER_CLASS ,11)                  # pred_heatmap_scores 
-              # ----extra stuff for now ---------------------------------------------------------------------------------------------------
-              # ,  (None, self.config.NUM_CLASSES   , self.config.DETECTION_PER_CLASS ,8)                   # pred_tensor               
+              ,  (None, self.config.NUM_CLASSES   , self.config.TRAIN_ROIS_PER_IMAGE , 23)                  # pred_heatmap_scores 
               ]
-              
-              
-              
-              # ,  (None, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1], self.config.NUM_CLASSES)  # gt_heatmap_norm
-              # ,  (None, self.config.NUM_CLASSES   , self.config.DETECTION_PER_CLASS ,12)                  # gt_heatmap+scores   
-
-              # ,  (None, self.config.NUM_CLASSES   , self.config.DETECTION_PER_CLASS ,8)                  # gt_tensor               
-              
-              
-              # ,  (None, self.config.NUM_CLASSES   , self.config.DETECTION_PER_CLASS ,4)                  # pred_deltas 
-              
-              # ,  (None, self.config.NUM_CLASSES , self.config.TRAIN_ROIS_PER_IMAGE    ,10)            # pred_heatmap_scores (expanded) 
-              # ,  (None, self.config.NUM_CLASSES , self.config.DETECTION_MAX_INSTANCES ,10)            # gt_heatmap+scores   (expanded) 
-              # ,  (None, self.config.NUM_CLASSES , self.config.TRAIN_ROIS_PER_IMAGE    , 7)            # pred_tensor
-              # ,  (None, self.config.NUM_CLASSES , self.config.DETECTION_MAX_INSTANCES , 7)            # gt_tensor   (expanded) 
-
 
 
               
@@ -686,7 +730,6 @@ class CHMLayer(KE.Layer):
 ##------------------------------------------------------------------------------------------------------------
 def build_heatmap_original(in_tensor, config, names = None):
   
-    num_detections  = config.DETECTION_MAX_INSTANCES
     img_h, img_w    = config.IMAGE_SHAPE[:2]
     batch_size      = config.BATCH_SIZE
     num_classes     = config.NUM_CLASSES  
@@ -752,11 +795,11 @@ def build_heatmap_original(in_tensor, config, names = None):
     ##-----------------------------------------------------------------------------
     ##  Build mean and convariance tensors for Multivariate Normal Distribution 
     ##-----------------------------------------------------------------------------
-    pt2_dense_scaled = pt2_dense[:,:4]/heatmap_scale
-    width  = pt2_dense_scaled[:,3] - pt2_dense_scaled[:,1]      # x2 - x1
-    height = pt2_dense_scaled[:,2] - pt2_dense_scaled[:,0]
-    cx     = pt2_dense_scaled[:,1] + ( width  / 2.0)
-    cy     = pt2_dense_scaled[:,0] + ( height / 2.0)
+    bboxes_scaled = pt2_dense[:,:4]/heatmap_scale
+    width  = bboxes_scaled[:,3] - bboxes_scaled[:,1]      # x2 - x1
+    height = bboxes_scaled[:,2] - bboxes_scaled[:,0]
+    cx     = bboxes_scaled[:,1] + ( width  / 2.0)
+    cy     = bboxes_scaled[:,0] + ( height / 2.0)
     means  = tf.stack((cx,cy),axis = -1)
     covar  = tf.stack((width * 0.5 , height * 0.5), axis = -1)
     covar  = tf.sqrt(covar)
@@ -843,7 +886,7 @@ def build_heatmap_original(in_tensor, config, names = None):
     ##     added 09-21-2018
     ##--------------------------------------------------------------------------------------------
     scores_from_sum2 = tf.map_fn(build_hm_score_mrcnn_v1, 
-                                 [prob_grid, pt2_dense_scaled, pt2_dense[:,7]], 
+                                 [prob_grid, bboxes_scaled, pt2_dense[:,7]], 
                                  dtype = tf.float32, swap_memory = True)
     scores_scattered = tf.scatter_nd(pt2_ind, scores_from_sum2, 
                                      [batch_size, num_classes, rois_per_image, 3], name = 'scores_scattered')
@@ -985,7 +1028,6 @@ def build_heatmap_original(in_tensor, config, names = None):
 ##------------------------------------------------------------------------------------------------------------
 def build_pr_heatmap(in_tensor, config, names = None):
   
-    num_detections  = config.DETECTION_MAX_INSTANCES
     img_h, img_w    = config.IMAGE_SHAPE[:2]
     batch_size      = config.BATCH_SIZE
     num_classes     = config.NUM_CLASSES  
@@ -1051,11 +1093,11 @@ def build_pr_heatmap(in_tensor, config, names = None):
     ##-----------------------------------------------------------------------------
     ##  Build mean and convariance tensors for Multivariate Normal Distribution 
     ##-----------------------------------------------------------------------------
-    pt2_dense_scaled = pt2_dense[:,:4]/heatmap_scale
-    width  = pt2_dense_scaled[:,3] - pt2_dense_scaled[:,1]      # x2 - x1
-    height = pt2_dense_scaled[:,2] - pt2_dense_scaled[:,0]
-    cx     = pt2_dense_scaled[:,1] + ( width  / 2.0)
-    cy     = pt2_dense_scaled[:,0] + ( height / 2.0)
+    bboxes_scaled = pt2_dense[:,:4]/heatmap_scale
+    width  = bboxes_scaled[:,3] - bboxes_scaled[:,1]      # x2 - x1
+    height = bboxes_scaled[:,2] - bboxes_scaled[:,0]
+    cx     = bboxes_scaled[:,1] + ( width  / 2.0)
+    cy     = bboxes_scaled[:,0] + ( height / 2.0)
     means  = tf.stack((cx,cy),axis = -1)
     covar  = tf.stack((width * 0.5 , height * 0.5), axis = -1)
     covar  = tf.sqrt(covar)
@@ -1082,7 +1124,7 @@ def build_pr_heatmap(in_tensor, config, names = None):
     ##--------------------------------------------------------------------------------------------
     ## (0) Generate scores using prob_grid and pt2_dense - (NEW METHOD added 09-21-2018)
     ##--------------------------------------------------------------------------------------------
-    scores = tf.map_fn(build_hm_score_v2, [prob_grid, pt2_dense_scaled, pt2_dense[:,7]], 
+    scores = tf.map_fn(build_hm_score_v2, [prob_grid, bboxes_scaled, pt2_dense[:,7]], 
                                  dtype = tf.float32, swap_memory = True)
     scores_scattered = tf.scatter_nd(pt2_ind, scores, 
                                      [batch_size, num_classes, rois_per_image, 3], name = 'scores_scattered')

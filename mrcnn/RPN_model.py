@@ -87,7 +87,7 @@ def rpn_graph(feature_map, anchors_per_location, anchor_stride):
     return [rpn_class_logits, rpn_probs, rpn_bbox]
 
 
-def build_rpn_model(anchor_stride, anchors_per_location, depth):
+def build_rpn_model(anchor_stride, anchors_per_location, depth, verbose = 0):
     """Builds a Keras model of the Region Proposal Network.
     It wraps the RPN graph so it can be used multiple times with shared
     weights.

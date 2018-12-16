@@ -75,7 +75,7 @@ mrcnn_config.RESNET_MODEL_PATH    = paths.RESNET_MODEL_PATH
 mrcnn_config.VGG16_MODEL_PATH     = paths.VGG16_MODEL_PATH  
 mrcnn_config.COCO_CLASSES         = None 
 mrcnn_config.DETECTION_PER_CLASS  = 200
-mrcnn_config.HEATMAP_SCALE_FACTOR = 4
+mrcnn_config.HEATMAP_SCALE_FACTOR = int(args.scale_factor)
 
 mrcnn_config.BATCH_SIZE           = int(args.batch_size)                  # Batch size is 2 (# GPUs * images/GPU).
 mrcnn_config.IMAGES_PER_GPU       = int(args.batch_size)                  # Must match BATCH_SIZE                                  
@@ -84,7 +84,7 @@ mrcnn_config.LEARNING_RATE        = float(args.lr)
 mrcnn_config.EPOCHS_TO_RUN        = int(args.epochs)
 mrcnn_config.FCN_INPUT_SHAPE      = mrcnn_config.IMAGE_SHAPE[0:2]
 mrcnn_config.LAST_EPOCH_RAN       = int(args.last_epoch)
-
+mrcnn_config.VERBOSE              = 1
 mrcnn_config.NEW_LOG_FOLDER       = False
 mrcnn_config.SYSOUT               = args.sysout
 mrcnn_config.display() 
@@ -107,7 +107,7 @@ mrcnn_model = mrcnn_modellib.MaskRCNN(mode='trainfcn', config=mrcnn_config)
 ##------------------------------------------------------------------------------------
 paths.display()
 mrcnn_config.display()  
-mrcnn_model.layer_info()
+mrcnn_model.display_layer_info()
 
 ##------------------------------------------------------------------------------------
 ## Build configuration for FCN model
@@ -140,7 +140,7 @@ fcn_config.EARLY_STOP_MIN_DELTA = 1.0e-7
 
 fcn_config.MIN_LR               = 1.0e-10
 fcn_config.CHECKPOINT_PERIOD    = 1
-
+fcn_config.VERBOSE              = mrcnn_config.VERBOSE            
 fcn_config.NEW_LOG_FOLDER       = args.new_log_folder
 fcn_config.OPTIMIZER            = args.opt.upper()
 fcn_config.SYSOUT               = args.sysout
@@ -161,7 +161,7 @@ fcn_model = fcn_modellib.FCN(mode="training", arch = args.fcn_arch, config=fcn_c
 ##------------------------------------------------------------------------------------
 paths.display()
 fcn_config.display()  
-fcn_model.layer_info()
+fcn_model.display_layer_info()
 
 ##------------------------------------------------------------------------------------
 ## Load MRCNN Model Weight file
@@ -180,11 +180,11 @@ else:
 ##------------------------------------------------------------------------------------
 ## Build & Load Training and Validation datasets
 ##------------------------------------------------------------------------------------
-dataset_train = prep_coco_dataset(["train","val35k"], mrcnn_config, active_class_ids=args.coco_classes)
-dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config, active_class_ids=args.coco_classes)
+dataset_train = prep_coco_dataset(["train","val35k"], mrcnn_config, load_coco_classes =args.coco_classes)
+dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config, load_coco_classes =args.coco_classes)
 
-dataset_train.display_active_classes()
-dataset_val.display_active_classes()
+dataset_train.display_active_class_info()
+dataset_val.display_active_class_info()
   
 ##----------------------------------------------------------------------------------------------
 ## Train the FCN only 
@@ -193,8 +193,9 @@ dataset_val.display_active_classes()
 ## which layers to train by name pattern.
 ##----------------------------------------------------------------------------------------------            
 train_layers = fcn_model.config.TRAINING_LAYERS
+loss_names     = args.fcn_losses   ## ['fcn_BCE_loss']
 # loss_names   = ['fcn_CE_loss']
-loss_names   = ['fcn_MSE_loss']
+# loss_names   = ['fcn_MSE_loss']
 fcn_model.epoch                  = fcn_config.LAST_EPOCH_RAN
 
 fcn_model.train_in_batches(
@@ -215,30 +216,3 @@ fcn_model.train_in_batches(
 
 print(' --> Execution ended at:',datetime.now().strftime("%m-%d-%Y @ %H:%M:%S"))
 exit(' Execution terminated ' ) 
-
-
-
-#------------------------------------------------------------------------------------
-# setup tf session and debugging 
-#------------------------------------------------------------------------------------
-# keras_backend.set_session(tf_debug.LocalCLIDebugWrapperSession(tf.Session()))
-# if 'tensorflow' == KB.backend():
-#     from tensorflow.python import debug as tf_debug
-#
-#    config = tf.ConfigProto(device_count = {'GPU': 0} )
-#    tf_sess = tf.Session(config=config)    
-#    tf_sess = tf_debug.LocalCLIDebugWrapperSession(tf_sess)
-#    KB.set_session(tf_sess)
-#
-#
-#   tfconfig = tf.ConfigProto(
-#               gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5),
-#               device_count = {'GPU': 1}
-#              )    
-#     tfconfig = tf.ConfigProto()
-#     tfconfig.gpu_options.allow_growth=True
-#     tfconfig.gpu_options.visible_device_list = "0"
-#     tfconfig.gpu_options.per_process_gpu_memory_fraction=0.5
-#     tf_sess = tf.Session(config=tfconfig)
-#     set_session(tf_sess)
-#------------------------------------------------------------------------------------

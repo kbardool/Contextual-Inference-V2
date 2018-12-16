@@ -59,9 +59,34 @@ import mrcnn.dataset as dataset
     # IMAGES_PER_GPU = 1
     # DETECTION_MIN_CONFIDENCE = 0
 	
+##------------------------------------------------------------------------------------
+## Build Training and Validation datasets
+##------------------------------------------------------------------------------------
+def prep_heatmap_dataset(type, config, generator = False, shuffle = True, augment = False):
+    # dataset_train, train_generator = coco_dataset(["train",  "val35k"], mrcnn_config)
+
+    # if args.command == "train":
+    # Training dataset. Use the training set and 35K from the validation set, as as in the Mask RCNN paper.
+    dataset = HeatmapDataset()
+    
+    # dataset_test.load_coco(COCO_DATASET_PATH,  "train", class_ids=mrcnn_config.COCO_CLASSES)
+    for i in type:
+        dataset.load_heatmap(config.COCO_DATASET_PATH, config.COCO_HEATMAP_PATH, i )
+    dataset.prepare()
+
+    results =  dataset
+    
+    if generator:
+        generator = fcn_data_generator(dataset, config, 
+                                   batch_size=config.BATCH_SIZE,
+                                   shuffle = shuffle, augment = augment) 
+        results = [dataset, generator]
+    return results
+
+
 
 ############################################################
-#  COCO Dataset Class extension
+##  heatmap Dataset Class extension
 ############################################################
 
 class HeatmapDataset(dataset.Dataset):

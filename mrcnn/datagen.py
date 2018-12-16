@@ -137,8 +137,6 @@ def load_image_gt(dataset, config, image_id, augment=False, use_mini_mask=False)
         # mask = utils.minimize_mask(bbox, mask, config.MINI_MASK_SHAPE)
         # print('after use_mini_mask  shape is :',mask.shape)
     
-    
-    
     # Image meta data
     image_meta = utils.compose_image_meta(image_id, shape, window, active_class_ids)
 
@@ -807,20 +805,17 @@ def data_gen_simulate(dataset, config, image_index):
     '''
 
     random_rois = 0
-    
     detection_targets=False
     augment=False
     # shuffle=True    
-    b = 0  # batch item index
-
     # image_ids   = np.copy(dataset.image_ids)
     error_count = 0
+    
     if not isinstance(image_index, list):
         image_index = [image_index]
-        print(' Converted to image index --> ',image_index)
-    
+    b = 0  # batch item index        
     batch_size  = len(image_index)
-    print(' batch size is :', batch_size)
+    # print(' batch size is :', batch_size)
     # Anchors
     # [anchor_count, (y1, x1, y2, x2)]
     anchors = utils.generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,     #  (8, 16, 32, 64, 128)
@@ -835,7 +830,6 @@ def data_gen_simulate(dataset, config, image_index):
             #-----------------------------------------------------------------------           
             # Get GT bounding boxes and masks for image.
             #-----------------------------------------------------------------------            
-            print(' load image ud: ', img_idx)
             image_id = dataset.image_ids[img_idx]
             # image, image_meta, gt_class_ids, gt_boxes, gt_masks = \
             image, image_meta, gt_class_ids, gt_boxes = \
@@ -896,10 +890,10 @@ def data_gen_simulate(dataset, config, image_index):
             #-----------------------------------------------------------------------    
             # Add to batch
             #-----------------------------------------------------------------------            
+            batch_images[b]                               = utils.mold_image(image.astype(np.float32), config)
             batch_image_meta[b]                           = image_meta
             batch_rpn_match[b]                            = rpn_match[:, np.newaxis]
             batch_rpn_bbox[b]                             = rpn_bbox
-            batch_images[b]                               = utils.mold_image(image.astype(np.float32), config)
             batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
             batch_gt_boxes[b, :gt_boxes.shape[0]]         = gt_boxes
             # batch_gt_masks[b, :, :, :gt_masks.shape[-1]]  = gt_masks
