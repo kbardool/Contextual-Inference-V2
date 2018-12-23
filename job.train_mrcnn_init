@@ -1,0 +1,49 @@
+######################################################
+# HTCondor Submit Description File. COMMON TEMPLATE   
+# Next commands should be added to all your submit files   
+######################################################
+ if !defined FNAME
+   FNAME = r
+ endif
+ #ID      = $(Cluster).$(Process)
+ 
+ ID      = $(Cluster)
+ output  = $(FNAME)$(ID).out
+ error   = $(FNAME)$(ID).err
+ log     = $(FNAME)$(ID).log
+
+#-------------------------------------------------------
+# RUN MRCNN on NEWSHAPES
+#-------------------------------------------------------
+universe        = vanilla 
+
+executable      = /users/students/r0653928/anaconda3/envs/TFG/bin/python
+initialdir      = /users/students/r0653928/projs/mrcnn3/train_coco
+Arguments       = "../mrcnn/train_coco_mrcnn.py   \
+    --epochs              500 \
+    --steps_in_epoch       64 \
+    --val_steps            16 \
+    --last_epoch            0 \
+    --batch_size            2 \
+    --lr               0.0001 \
+    --mrcnn_logs_dir     train_mrcnn_coco_subset  \
+    --mrcnn_model        coco   \
+    --opt                adam   \
+    --coco_classes       78 79 80 81 82 44 46 47 48 49 50 51 34 35 36 37 38 39 40 41 42 43 10 11 13 14 15 \
+    --sysout             file   \
+    --new_log_folder  "
+            
+
+notification     = error
+RequestCpus      = 1
+RequestMemory    = 12G
+Request_GPUs     = 1
++RequestWalltime = 372000 
+         
+Requirements = ( machineowner == "Visics" ) && ( CUDAGlobalMemoryMb > 8192 ) && (CUDACapability >=3.5)
+## NiceUser = true 
+Queue 1
+
+## --input_weight_path  ../frcnn/vgg16_weights_tf_dim_ordering_tf_kernels.h5  \
+### Requirements = machine == "monkey.esat.kuleuven.be"
+### Rank = machine == "monkey.east.kuleuven.be"

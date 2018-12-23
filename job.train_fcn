@@ -4,7 +4,7 @@
 # Next commands should be added to all your submit files   
 ######################################################
  if !defined FNAME
-   FNAME = r
+   FNAME = fcn_
  endif
  #ID      = $(Cluster).$(Process)
  
@@ -18,34 +18,40 @@
 #-------------------------------------------------------
 universe         = vanilla 
 
-executable  = /users/students/r0653928/anaconda3/envs/TF35/bin/python
+executable  = /users/students/r0653928/anaconda3/envs/TFG/bin/python
 initialdir  = /users/students/r0653928/projs/mrcnn3
-Arguments   = "train_fcn.py   \
-  --epochs          500   \
-  --steps_in_epoch   12   \
-  --last_epoch     4524   \
-  --batch_size       16   \
-  --val_steps         4   \
-  --lr           1.0e-8   \
-  --opt          rmsprop  \    
-  --logs_dir     train_fcn_rmsprop  \
-  --model    /esat/tiger/joramas/mscStudentsData/kbardool/models/train_mrcnn/mrcnn20180621T1554/mask_rcnn_shapes_1119.h5 \
-  --fcn_model    last"
+Arguments   = "./mrcnn/train_coco_fcn.py   \
+    --epochs             2000   \
+    --steps_in_epoch       64   \
+    --last_epoch         2298   \
+    --batch_size            2   \
+    --lr               0.0001   \
+    --val_steps            16   \
+    --fcn_arch           FCN8   \
+    --fcn_layers          all   \    
+    --mrcnn_logs_dir     train_mrcnn_coco \
+    --fcn_logs_dir       train_fcn8_coco_adam \
+    --mrcnn_model        last   \
+    --fcn_model          last   \
+    --opt                adam   \
+    --sysout             file   "
+
+##    --new_log_folder "
 
 Notification     = error
 RequestCpus      = 1
-RequestMemory    = 32G
+RequestMemory    = 16G
 Request_GPUs     = 1
-+RequestWalltime = 272000          
-Requirements = ( machineowner == "Visics" ) && ( CUDAGlobalMemoryMb > 12000 ) && (CUDACapability >=3.5)
-NiceUser = true
++RequestWalltime = 372000          
+Requirements     = ( machineowner == "Visics" ) && ( CUDAGlobalMemoryMb > 12000 ) && (CUDACapability >=3.5)
+NiceUser         = true
 Queue 1
 
 
 ## epochs          epochs    steps in epoch   batch sz     val_steps    LR           opt
-#  3358 -- 4024    5000 (f)        12             8            2        1.0e-6 (?)   rmsprop
-#  4024 -- 4524     500 (s)        12             2            1        1.0e-8       ""
-#  4524 --          500            12            16            4        1.0e-8       rmsprop
+# 
+# 
+# 
 #
 #
 #

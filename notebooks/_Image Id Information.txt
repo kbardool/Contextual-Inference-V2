@@ -1,29 +1,34 @@
-## 62642 (persons),   68539 (trucks) 36466 (surfers)  75040 (boat and persons)
-## 36466 surfers. 5498 basketbal players, 27711,30531
-## 5498 lots of motorcylces & persons - 
-## Persons: #26026, #7719, 111864, 58240,  
-## 35347 - laptops, keyboards and cat
-## items = [59199 , 102868]
-## 89243: Person, bicylce and traiffic lights
-## 101623 (cake and forks), 41423 (elephant & people)
-## 33477 Table, bowl, cup, sandwich, knife
-## 26763 Table, chair, cup , bowl, bottle
-## 49316 Table, book, backpack, many bottles
-## 12902 Car , truck and traffic light tree
-## 57327 person and horses
-## 26026 -- mountain, skiers, skiboards 
-##  7719 -- people, bottles, handbags
-## 27711 -- persons and boats
-## 18045 -- person     
-## 36769 -- people in meeting room with a 'giraffe'detection?
-##  8634 -- person
-## 30531 -- tennis players 
-##  8645 -- two people
+# IMAGE_LIST = [62642 (persons),   
+# IMAGE_LIST = [68539 (trucks) 
+# IMAGE_LIST = [36466 (surfers)  
+# IMAGE_LIST = [75040 (boat and persons)
+# IMAGE_LIST = [36466 surfers. 5498 basketbal players, 27711,30531
+# IMAGE_LIST = [5498 lots of motorcylces & persons - 
+# IMAGE_LIST = [26026, #7719, 111864, 58240]  ## persons
+# IMAGE_LIST = [35347 - laptops, keyboards and cat
+# IMAGE_LIST = [59199 , 102868]
+# IMAGE_LIST = [89243: Person, bicylce and traiffic lights
+# IMAGE_LIST = [101623 (cake and forks), 41423 (elephant & people)
+# IMAGE_LIST = [33477 Table, bowl, cup, sandwich, knife
+# IMAGE_LIST = [26763 Table, chair, cup , bowl, bottle
+# IMAGE_LIST = [49316 Table, book, backpack, many bottles
+# IMAGE_LIST = [12902 Car , truck and traffic light tree
+# IMAGE_LIST = [57327 person and horses
+# IMAGE_LIST = [26026 -- mountain, skiers, skiboards 
+# IMAGE_LIST = [7719 -- people, bottles, handbags
+# IMAGE_LIST = [27711 -- persons and boats
+# IMAGE_LIST = [18045 -- person     
+# IMAGE_LIST = [36769 -- people in meeting room with a 'giraffe'detection?
+# IMAGE_LIST = [8634 -- person
+# IMAGE_LIST = [30531 -- tennis players 
+# IMAGE_LIST = [8645 -- two people
 # IMAGE_LIST = [75040] 
 # IMAGE_LIST = [89243]
-# IMAGE_LIST = [33477]
-# IMAGE_LIST = [29731]
+IMAGE_LIST = [33477]
+# IMAGE_LIST = [29731]   ## max overlap 0.65
 # IMAGE_LIST = [26763]
 # IMAGE_LIST = [89243]  ## 89243: Person, bicylce and traiffic lights
-IMAGE_LIST = [43168]   ## 43168 Multiple umbrella, chairs, beds
-
+# IMAGE_LIST = [43168]   ## 43168 Multiple umbrella, chairs, beds
+# IMAGE_LIST= [30531]
+# IMAGE_LIST = [11]
+# IMAGE_LIST = [30533]
