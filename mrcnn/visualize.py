@@ -17,6 +17,7 @@ import IPython.display
 import tensorflow as tf
 import keras.backend as KB
 import matplotlib.pyplot as plt
+from   mpl_toolkits.mplot3d import Axes3D
 import matplotlib.patches as patches
 import matplotlib.lines as lines
 import skimage.util
@@ -24,7 +25,6 @@ from   skimage.measure import find_contours
 from   PIL  import Image
 from   matplotlib.patches import Polygon
 from   matplotlib import cm
-from   mpl_toolkits.mplot3d import Axes3D
 from   matplotlib.ticker import LinearLocator, FormatStrFormatter
 import mrcnn.utils as utils
 from   mrcnn.datagen     import load_image_gt    
@@ -155,48 +155,72 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
 
     
 ##------------------------------------------------------------------------------------    
-## display_training_batch()
+## display_image_gt()
 ##------------------------------------------------------------------------------------    
-def display_image_gt(dataset, config, image_ids, masks= False, only_classes = None):
+def display_image_gt(dataset, config, image_ids, masks= False, only_classes = None, size=12):
     ''' 
     display images in a mrcnn train_batch 
     '''
     from mrcnn.datagen import data_gen_simulate
     if not isinstance(image_ids, list):
         image_ids = [image_ids]
-    # images = [dataset.load_image(image_id) for image_id in image_ids]       
-    # batch_x, _ = data_gen_simulate(dataset, config, image_ids)
-    # molded_images = batch_x[0]
-    # image_metas   = batch_x[1]
-    # img_meta    = batch_x[1]
     
-    # for img_idx in range(img_meta.shape[0]):
     for image_id in image_ids:
-        # image_id = img_meta[img_idx,0]
         image           = dataset.load_image(image_id)
         # molded_image, image_meta, class_ids, bbox = load_image_gt(dataset, config, image_id)
+        _, image_meta, _, _ = load_image_gt(dataset, config, image_id)
         mask, class_ids = dataset.load_mask(image_id)
         bbox            = utils.extract_bboxes(mask)
         class_names     = [str(dataset.class_names[class_id]) for class_id in class_ids]
         print(' Image_id    : ', image_id, ' Reference: ', dataset.image_reference(image_id) , 'Coco Id:', dataset.image_info[image_id]['id'])
-        # print(' Image meta  : ', image_meta[:10])
+        print(' Image meta  : ', image_meta[:10])
         print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
         print(' Class Names : ', class_names)  
         # display_top_masks(image, mask, class_ids, dataset.class_names)
         if masks:
-
-            display_instances_with_mask(image, bbox, mask, class_ids, dataset.class_names) 
+            display_instances_with_mask(image, bbox, mask, class_ids, dataset.class_names, size =size) 
         else:
-            display_instances(image, bbox, class_ids, dataset.class_names, only_classes = only_classes)
+            display_instances(image, bbox, class_ids, dataset.class_names, only_classes = only_classes, size=size)
     return    
     
 
+##------------------------------------------------------------------------------------    
+## display_training_batch()
+##------------------------------------------------------------------------------------    
+def display_training_batch(dataset, batch_x, masks= False, size = 9):
+    ''' 
+    display images in a mrcnn train_batch 
+    '''
+    # replaced following two lines with next line to avoid the need to pass model to this fuction
+    # imgmeta_idx = mrcnn_model.keras_model.input_names.index('input_image_meta')
+    # img_meta    = train_batch_x[imgmeta_idx]
+
+    img_meta    = batch_x[1]
+
+    for img_idx in range(img_meta.shape[0]):
+        image_id = img_meta[img_idx,0]
+        print('image id : ', image_id)
+        image    = dataset.load_image(image_id)
+        mask, class_ids = dataset.load_mask(image_id)
+        bbox     = utils.extract_bboxes(mask)
+        class_names = [str(dataset.class_names[class_id]) for class_id in class_ids]
+        print(' Image_id    : ', image_id, ' Reference: ', dataset.image_reference(image_id) , 'Coco Id:', dataset.image_info[image_id]['id'])
+        print(' Image meta  : ', img_meta[img_idx, :8])
+        print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
+        print(' Class Names : ', class_names)    #     print('Classes (1: circle, 2: square, 3: triangle ): ',class_ids)
+        if masks:
+            display_top_masks(image, mask, class_ids, dataset.class_names)
+            display_instances_with_mask(image, bbox, mask, class_ids, dataset.class_names, size = size) 
+        else:
+            display_instances(image, bbox, class_ids, dataset.class_names)
+    return    
+    
 ##----------------------------------------------------------------------
 ## display_instances
 ##----------------------------------------------------------------------
 def display_instances(image, boxes, class_ids, class_names,
                       scores=None,  title="", only_classes = None, 
-                      figsize=(16, 16), ax=None, score_range = (-1.0, 1.0), size = 16):
+                      figsize=(16, 16), ax=None, score_range = (-1.0, 1.0), size = 8):
     """
     boxes:                  [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
     masks:                  [num_instances, height, width]
@@ -236,6 +260,7 @@ def display_instances(image, boxes, class_ids, class_names,
         if only_classes is not None:
             if class_id not in only_classes:
                 continue
+                
         if scores is not None:
             # print(' boxes ' ,i,'   ' , boxes[i], 'score: ', scores[i], '    ', score_range)
             if scores[i] <= score_range[0] or scores[i] >= score_range[1]:
@@ -270,6 +295,102 @@ def display_instances(image, boxes, class_ids, class_names,
     plt.show()
     return 
 
+    
+##----------------------------------------------------------------------
+## display_instances_with_mask
+##----------------------------------------------------------------------
+def display_instances_with_mask(image, boxes, masks, class_ids, class_names,
+                      scores=None, title="",
+                      figsize=(16, 16), ax=None, size = 8):
+    """
+    boxes:                  [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
+    masks:                  [num_instances, height, width]
+    class_ids:              [num_instances]
+    class_names:            list of class names of the dataset
+    scores:                 (optional) confidence scores for each box
+    figsize:                (optional) the size of the image.
+    max_score:              show instances with score less than this 
+    """
+    # Number of instances
+    # print(' display_instances WITH MASK() : Image shape: ', image.shape)
+    N = boxes.shape[0]
+    if not N:
+        print("\n*** No instances to display *** \n")
+    else:
+        assert boxes.shape[0] == masks.shape[-1] == class_ids.shape[0]
+    
+    if not ax:
+        ax = get_ax(rows =1, cols = 1, size= size)
+        # _, ax = plt.subplots(1, figsize=figsize)
+
+    # Generate random colors 
+    colors = random_colors(N)
+
+    # Show area outside image boundaries.
+    height, width = image.shape[:2]
+    ax.set_ylim(height + 10, -10)
+    ax.set_xlim(-10, width + 10)
+    # ax.axis('off')
+    ax.set_title(title)
+
+    masked_image = image.astype(np.uint32).copy()
+    for i in range(N):
+        color = colors[i]
+
+        # Bounding box
+        if not np.any(boxes[i]):
+            # Skip this instance. Has no bbox. Likely lost in image cropping.
+            continue
+        y1, x1, y2, x2 = boxes[i]
+        p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
+                              alpha=0.7, linestyle="dashed",
+                              edgecolor=color, facecolor='none')
+        ax.add_patch(p)
+
+        # Label
+        
+        score = scores[i] if scores is not None else None
+        
+        class_id = class_ids[i]
+        
+        # label = class_names[class_id]
+        # if class_id >= 0 :
+            # label = class_names[class_id]
+        # else:
+            # label = class_names[-class_id] + ' (CROWD)'
+
+        # x = random.randint(x1, (x1 + x2) // 2)
+        # caption = "{} {:.3f}".format(label, score) if score else label
+        # ax.text(x1, y1 + 8, caption, color='k', size=11, backgroundcolor="w")
+        
+        if class_id >= 0 :
+            label = "{:2d}-{:2d} {}".format(i,class_id, class_names[class_id])
+        else:
+            label = "{:2d}-{:2d} {}".format(i,class_id, class_names[-class_id]) + ' (CROWD)'
+            
+        x = random.randint(x1, (x1 + x2) // 2)
+        caption = "{} {:.3f}".format(label, score) if score else label
+        t = ax.text(x1, y1 + 8, caption, color='k', size=8, backgroundcolor="w")
+        t.set_bbox(dict(facecolor='w', alpha=0.5, edgecolor='w'))        
+        
+        
+        # Mask
+        mask = masks[:, :, i]
+        masked_image = apply_mask(masked_image, mask, color)
+
+        # Mask Polygon
+        # Pad to ensure proper polygons for masks that touch image edges.
+        padded_mask = np.zeros((mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+        padded_mask[1:-1, 1:-1] = mask
+        contours = find_contours(padded_mask, 0.5)
+        for verts in contours:
+            # Subtract the padding and flip (y, x) to (x, y)
+            verts = np.fliplr(verts) - 1
+            p = Polygon(verts, facecolor="none", edgecolor=color)
+            ax.add_patch(p)
+    ax.imshow(masked_image.astype(np.uint8))
+    plt.show()
+    return
     
 ##----------------------------------------------------------------------
 ## display_instances from pr_scores
@@ -444,124 +565,9 @@ def display_instances_two_scores(image, boxes, class_ids, class_names,
     plt.show()
     return 
     
-##----------------------------------------------------------------------
-## display_instances_with_mask
-##----------------------------------------------------------------------
-def display_instances_with_mask(image, boxes, masks, class_ids, class_names,
-                      scores=None, title="",
-                      figsize=(16, 16), ax=None):
-    """
-    boxes:                  [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
-    masks:                  [num_instances, height, width]
-    class_ids:              [num_instances]
-    class_names:            list of class names of the dataset
-    scores:                 (optional) confidence scores for each box
-    figsize:                (optional) the size of the image.
-    max_score:              show instances with score less than this 
-    """
-    # Number of instances
-    N = boxes.shape[0]
-    if not N:
-        print("\n*** No instances to display *** \n")
-    else:
-        assert boxes.shape[0] == masks.shape[-1] == class_ids.shape[0]
-    
-    # print(' display_instances WITH MASK() : Image shape: ', image.shape)
-    
-    if not ax:
-        _, ax = plt.subplots(1, figsize=figsize)
-
-    # Generate random colors
-    colors = random_colors(N)
-
-    # Show area outside image boundaries.
-    height, width = image.shape[:2]
-    ax.set_ylim(height + 10, -10)
-    ax.set_xlim(-10, width + 10)
-    # ax.axis('off')
-    ax.set_title(title)
-
-    masked_image = image.astype(np.uint32).copy()
-    for i in range(N):
-        color = colors[i]
-
-        # Bounding box
-        if not np.any(boxes[i]):
-            # Skip this instance. Has no bbox. Likely lost in image cropping.
-            continue
-        y1, x1, y2, x2 = boxes[i]
-        p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
-                              alpha=0.7, linestyle="dashed",
-                              edgecolor=color, facecolor='none')
-        ax.add_patch(p)
-
-        # Label
-        
-        score = scores[i] if scores is not None else None
-        
-        class_id = class_ids[i]
-        
-        # label = class_names[class_id]
-        if class_id >= 0 :
-            label = class_names[class_id]
-        else:
-            label = class_names[-class_id] + ' (CROWD)'
-
-        x = random.randint(x1, (x1 + x2) // 2)
-        caption = "{} {:.3f}".format(label, score) if score else label
-        ax.text(x1, y1 + 8, caption, color='k', size=11, backgroundcolor="w")
-        
-        
-        # Mask
-        mask = masks[:, :, i]
-        masked_image = apply_mask(masked_image, mask, color)
-
-        # Mask Polygon
-        # Pad to ensure proper polygons for masks that touch image edges.
-        padded_mask = np.zeros((mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
-        padded_mask[1:-1, 1:-1] = mask
-        contours = find_contours(padded_mask, 0.5)
-        for verts in contours:
-            # Subtract the padding and flip (y, x) to (x, y)
-            verts = np.fliplr(verts) - 1
-            p = Polygon(verts, facecolor="none", edgecolor=color)
-            ax.add_patch(p)
-    ax.imshow(masked_image.astype(np.uint8))
-    plt.show()
-    return
 
 
-##------------------------------------------------------------------------------------    
-## display_training_batch()
-##------------------------------------------------------------------------------------    
-def display_training_batch(dataset, batch_x, masks= False):
-    ''' 
-    display images in a mrcnn train_batch 
-    '''
-    # replaced following two lines with next line to avoid the need to pass model to this fuction
-    # imgmeta_idx = mrcnn_model.keras_model.input_names.index('input_image_meta')
-    # img_meta    = train_batch_x[imgmeta_idx]
 
-    img_meta    = batch_x[1]
-
-    for img_idx in range(img_meta.shape[0]):
-        image_id = img_meta[img_idx,0]
-        print('image id : ', image_id)
-        image    = dataset.load_image(image_id)
-        mask, class_ids = dataset.load_mask(image_id)
-        bbox     = utils.extract_bboxes(mask)
-        class_names = [str(dataset.class_names[class_id]) for class_id in class_ids]
-        print(' Image_id    : ', image_id, ' Reference: ', dataset.image_reference(image_id) , 'Coco Id:', dataset.image_info[image_id]['id'])
-        print(' Image meta  : ', img_meta[img_idx, :8])
-        print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
-        print(' Class Names : ', class_names)    #     print('Classes (1: circle, 2: square, 3: triangle ): ',class_ids)
-        if masks:
-            display_top_masks(image, mask, class_ids, dataset.class_names)
-            display_instances_with_mask(image, bbox, mask, class_ids, dataset.class_names) 
-        else:
-            display_instances(image, bbox, class_ids, dataset.class_names)
-    return    
-    
 
 ##----------------------------------------------------------------------
 ## draw_rois (along with the refined_rois)
@@ -1067,6 +1073,8 @@ def draw_boxes(image, boxes=None, refined_boxes=None,
                 ax.add_patch(p)
     ax.imshow(masked_image.astype(np.uint8))
 
+    
+       
 ##----------------------------------------------------------------------
 ## display_table
 ##----------------------------------------------------------------------
@@ -2260,16 +2268,15 @@ def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = 2,
         ax.set_xlabel(' X axis', fontsize=8)
         ax.set_ylabel(' Y axis', fontsize=8)
         ax.invert_yaxis()
-        ax.view_init( azim=-116,elev=40)            
-        # ax.view_init(azim=-37, elev=43)            
-        
-        surf = ax.plot_surface(X, Y, YY[:,:,cls],cmap=cm.coolwarm, linewidth=0, antialiased=False)
+        # ax.view_init( azim=-116,elev=40)            
+        surf = ax.plot_surface(X, Y, YY[:,:,cls],rstride = 1, cstride = 1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
         
         # Add a color bar which maps values to colors.
-        plt.subplots_adjust(top=0.97, bottom=0.02, left=0.02, right=0.98, hspace=0.15, wspace=0.15)                
-        cbar = fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.10)
-        cbar.ax.tick_params(labelsize=9) 
+        # plt.subplots_adjust(top=0.97, bottom=0.02, left=0.02, right=0.98, hspace=0.15, wspace=0.15)                
+        # cbar = fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.10)
+        # cbar.ax.tick_params(labelsize=9) 
 
+    # fig.tight_layout(rect=[0, 0.02, 1, 0.97])
     fig.suptitle(title, fontsize = 14 )
     plt.show()
     return
@@ -2280,7 +2287,7 @@ def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = 2,
 ## comparative 2D plot of two gauss_distributions for one image, for a list of classes
 ##----------------------------------------------------------------------       
 def plot_2d_heatmap_compare( Z1, Z2, boxes, image_idx, class_ids = None,   
-                             size = (8,8), num_bboxes = 0, class_names=None, scale = 1, scaling = 'none', 
+                             size = (9,9), num_bboxes = 0, class_names=None, scale = 1, scaling = 'none', 
                              title = '2D Comparison between 2d heatmaps w/ bboxes'):
     '''    
     Z:             Gaussian heatmap [ BatchSize, height, width, Num_classes]
@@ -2290,6 +2297,8 @@ def plot_2d_heatmap_compare( Z1, Z2, boxes, image_idx, class_ids = None,
     num_boxes :    Number of boxes to display. 0: Display all boxes
     '''
     assert Z1.shape == Z2.shape
+    print(" Scaling options are 'all', 'class', 'each' or 'None' ")
+
     if Z1.ndim == 4:
         Z1 = Z1[image_idx]
         Z2 = Z2[image_idx]
@@ -2333,8 +2342,13 @@ def plot_2d_heatmap_compare( Z1, Z2, boxes, image_idx, class_ids = None,
     
     min_z1_cls = np.amin(Z1, axis = (0,1), keepdims = True)
     max_z1_cls = np.amax(Z1, axis = (0,1), keepdims = True)
+    avg_z1_cls = np.mean(Z1, axis = (0,1), keepdims = True)
+    sum_z1_cls = np.sum(Z1, axis = (0,1), keepdims = True)    
+    
     min_z2_cls = np.amin(Z2, axis = (0,1), keepdims = True)
     max_z2_cls = np.amax(Z2, axis = (0,1), keepdims = True)
+    avg_z2_cls = np.mean(Z2, axis = (0,1), keepdims = True)
+    sum_z2_cls = np.sum(Z2, axis = (0,1), keepdims = True)
     
     min_z_cls  = np.minimum(min_z1_cls, min_z2_cls)
     max_z_cls  = np.maximum(max_z1_cls, max_z2_cls)
@@ -2388,16 +2402,19 @@ def plot_2d_heatmap_compare( Z1, Z2, boxes, image_idx, class_ids = None,
         row = cls // columns
         col = cls  % columns
         # print('Image: ', img, 'class:', cls, 'row:', row,'col:', col)
+
+        ## Plot 1st columm 
+        ##--------------------
         if class_names is None:
             ttl = 'HM1 Img: {:2d} Cls: {:2d} '.format( image_idx,cls)
         else:
             ttl = 'HM1 Img: {:2d} Cls: {:2d}/{:s}'.format(image_idx, cls, class_names[cls])
+        ttl += '- min: {:5.4f}  max: {:5.4f} avg: {:5.4f} sum: {:6.3f}'.format(min_z1_cls[0,0,cls], max_z1_cls[0,0,cls],
+                                                                               avg_z1_cls[0,0,cls], sum_z1_cls[0,0,cls])        
 
-        ## Plot 1st columm 
-        ##--------------------
         subplot = (idx * columns) + 1
         ax = fig.add_subplot(rows, columns, subplot)
-        ax.set_title(ttl, fontsize=9)
+        ax.set_title(ttl, fontsize=13)
         ax.tick_params(axis='both', labelsize = 5)
         ax.set_ylim(0, image_height)
         ax.set_xlim(0, image_width )
@@ -2425,9 +2442,10 @@ def plot_2d_heatmap_compare( Z1, Z2, boxes, image_idx, class_ids = None,
         subplot = (idx * columns) + 2
         ax = fig.add_subplot(rows, columns, subplot)
         
-        ttl += ' - min: {:6.5f}  max: {:6.5f}'.format(min_z2_cls[0,0,cls], max_z2_cls[0,0,cls])
-        
-        ax.set_title(ttl, fontsize=9)
+        # ttl += ' - min: {:6.5f}  max: {:6.5f}'.format(min_z2_cls[0,0,cls], max_z2_cls[0,0,cls])
+        ttl += '- min: {:5.4f}  max: {:5.4f} avg: {:5.4f} sum: {:6.3f}'.format(min_z2_cls[0,0,cls], max_z2_cls[0,0,cls],
+                                                                               avg_z2_cls[0,0,cls], sum_z2_cls[0,0,cls])        
+        ax.set_title(ttl, fontsize=13)
         surf = plt.matshow(Z2[:,:, cls], fignum = 0, cmap = cm.coolwarm)
         for bbox in range(num_bboxes):
             p = patches.Rectangle( (x1[cls,bbox],y1[cls,bbox]), box_w[cls,bbox], box_h[cls,bbox], 
@@ -2627,101 +2645,6 @@ def plot_3d_heatmap_compare( Z1, Z2, image_idx, class_ids = None,
 
 
  
-##----------------------------------------------------------------------
-## plot one gaussian distribution heatmap - 2D
-##----------------------------------------------------------------------       
-def plot_2d_gaussian( heatmap, title = 'My figure', size = (10,10), zlim = 1.05 ):
-    columns     = 1
-    rows        = 1 
-    height      = width 
-    image_height, image_width = heatmap.shape
-    
-    fig = plt.figure(figsize=size)
-    fig.suptitle(title, fontsize = 10 )
-    fig.set_figheight(width-1)
-
-    X = np.arange(0, image_width, 1)
-    Y = np.arange(0, image_height, 1)
-    X, Y = np.meshgrid(X, Y)        
-    pos = np.empty(X.shape+(2,))   # concatinate shape of x to make ( x.rows, x.cols, 2)
-    pos[:,:,0] = X;
-    pos[:,:,1] = Y;
-
-    col = 0    
-    cls = 0
-    # for col  in range(2):
-    subplot = (cls * columns) + col + 1
-    ttl = 'Heatmap {} '.format(col+1)
-    # plt.subplot(rows, columns, col+1)
-    # ax = fig.gca(projection='3d')
-    
-    ax = fig.add_subplot(rows, columns, subplot )
-    ax.set_title(ttl)
-    ax.set_ylim(0,image_height )
-    ax.set_xlim(0,image_width)
-    ax.set_xlabel(' X axis', fontsize = 8)
-    ax.set_ylabel(' Y axis', fontsize = 8)
-    # ax.invert_yaxis()
-    surf = ax.matshow(heatmap,  cmap=cm.coolwarm)
-    # # Customize the z axis.
-    # plt.plot()
-    # ax.zaxis.set_major_locator(LinearLocator(10))
-    # ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
-
-    # Add a color bar which maps values to colors.
-    fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.05)
-    
-    plt.show()
-
- 
-##----------------------------------------------------------------------
-## plot one gaussian distribution heatmap - 3D
-##----------------------------------------------------------------------       
-def plot_3d_gaussian( heatmap, title = 'My figure', width = 10, height = 10, zlim = 1.05 ):
-    columns     = 1
-    rows        = 1 
-    image_height, image_width = heatmap.shape
-    print(' height: {}  width: {} '.format(image_height,image_width))
-    fig = plt.figure(figsize=(width, height))
-    fig.suptitle(title, fontsize = 10 )
-    fig.set_figheight(width-1)
-
-    X = np.arange(0, image_width, 1)
-    Y = np.arange(0, image_height, 1)
-    X, Y = np.meshgrid(X, Y)        
-    pos = np.empty(X.shape+(2,))   # concatinate shape of x to make ( x.rows, x.cols, 2)
-    pos[:,:,0] = X;
-    pos[:,:,1] = Y;
-
-    col = 0    
-    cls = 0
-    # for col  in range(2):
-    subplot = (cls * columns) + col + 1
-    ttl = 'Heatmap {} '.format(col+1)
-    # plt.subplot(rows, columns, col+1)
-    # ax = fig.gca(projection='3d')
-    ax = fig.add_subplot(rows, columns, subplot, projection='3d')
-    ax.set_title(ttl)
-    zlim = np.max(heatmap)
-    print('Zlim is : ', zlim)
-    ax.set_zlim(0.0 , zlim)
-    ax.set_ylim(0,image_height )
-    ax.set_xlim(0,image_width)
-    ax.set_xlabel(' X axis')
-    ax.set_ylabel(' Y axis')
-    ax.invert_yaxis()
-    # ax.view_init( azim=-110,elev=60)            
-    ax.view_init(azim=-37, elev=43)            
-    surf = ax.plot_surface(X, Y, heatmap[X,Y],cmap=cm.coolwarm, linewidth=0, antialiased=False)
-    # # Customize the z axis.
-    # plt.plot()
-    # ax.zaxis.set_major_locator(LinearLocator(10))
-    # ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
-
-    # Add a color bar which maps values to colors.  
-    # fig.colorbar(surf, shrink=0.5, aspect=5)
-    plt.show()
-    
 
 ##----------------------------------------------------------------------
 ## plot gauss_heatmap for one bbox instance
@@ -3137,6 +3060,46 @@ def inference_heatmaps_compare(input, image_id = 0, hm = 'hm' ,
     return
 
     
+def display_mrcnn_scores(r, class_names, only = None):
+    '''
+    r:    results from mrcnn detect
+    cn:   class names
+    
+    '''
+    np_format = {}
+    float_formatter = lambda x: "%10.4f" % x
+    int_formatter   = lambda x: "%10d" % x
+    np_format['float'] = float_formatter
+    np_format['int']   = int_formatter
+    np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
+    
+    if only is None:
+        only = np.unique(r['class_ids'])
+        
+    # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
+    # print('  scores     : ', r['scores'], type(r['scores']))
+    print('--------------------------------------------------------------------------------------------------------------------------------------------------------------')
+    print('                                                           alt score 0                     alt score 1                              alt score 2                ')
+    print('        class                   mrcnn   normlzd    gaussian    bbox   nrm.scr*     ga.sum     mask    score    norm         ga.sum    mask   score   norm     ')
+    print('seq  id     name                score    score       sum       area   gau.sum      in mask    sum             score        in mask    sum            score    ')
+    print('--------------------------------------------------------------------------------------------------------------------------------------------------------------')
+
+    for cls,scr,pre, roi in zip(r['class_ids'], r['scores'], r['pr_scores'],r['rois']):
+    #     print(' {:4d}      {:12s}   {:.4f}   {:.4f}     {:.4f}  {:7.4f}  {:.4f}      {:.4f}   {}'.
+        cx = pre[1] + (pre[3]-pre[1])/2
+        cy = pre[0] + (pre[2]-pre[0])/2
+        if cls in only:
+
+            print('{:3.0f} {:3d} {:20s}   {:.4f}   {:.4f}     {:.4f}  {:9.4f}  {:.4f}      {:7.4f}   {:8.4f}   {:.4f}   {:.4f}     {:7.4f}   {:8.4f}   {:.4f}   {:.4f}'\
+                  '       {:6.2f}   {:6.2f}'.          
+              format(200-pre[7], cls, class_names[cls], scr, pre[8], 
+                     pre[9], pre[10], pre[11], 
+                     pre[12], pre[13], pre[14], pre[17], 
+                     pre[18], pre[19], pre[20], pre[23],
+                     cx, cy ))     #,  pre[4],pre[5],pre[6],roi))
+
+    display_instances(r['image'], r['rois'], r['class_ids'], class_names, r['scores'], only_classes= only, size =12)
+    
 """    
 ##----------------------------------------------------------------------
 ## plot one gauss_scatter for one image and ALL CLASSES
@@ -3493,4 +3456,108 @@ def draw_output_rois(image, rois, class_ids, class_names, limit=10):
     print("Positive Ratio: {:.2f}".format(class_ids[class_ids > 0].shape[0] / class_ids.shape[0]))
 '''
 
+##----------------------------------------------------------------------
+## plot one gaussian distribution heatmap - 2D
+##----------------------------------------------------------------------       
+def plot_2d_gaussian( heatmap, title = 'My figure', size = (10,10), zlim = 1.05 ):
+    columns     = 1
+    rows        = 1 
+    height      = width 
+    image_height, image_width = heatmap.shape
+    
+    fig = plt.figure(figsize=size)
+    fig.suptitle(title, fontsize = 10 )
+    fig.set_figheight(width-1)
+
+    X = np.arange(0, image_width, 1)
+    Y = np.arange(0, image_height, 1)
+    X, Y = np.meshgrid(X, Y)        
+    pos = np.empty(X.shape+(2,))   # concatinate shape of x to make ( x.rows, x.cols, 2)
+    pos[:,:,0] = X;
+    pos[:,:,1] = Y;
+
+    col = 0    
+    cls = 0
+    # for col  in range(2):
+    subplot = (cls * columns) + col + 1
+    ttl = 'Heatmap {} '.format(col+1)
+    # plt.subplot(rows, columns, col+1)
+    # ax = fig.gca(projection='3d')
+    
+    ax = fig.add_subplot(rows, columns, subplot )
+    ax.set_title(ttl)
+    ax.set_ylim(0,image_height )
+    ax.set_xlim(0,image_width)
+    ax.set_xlabel(' X axis', fontsize = 8)
+    ax.set_ylabel(' Y axis', fontsize = 8)
+    # ax.invert_yaxis()
+    surf = ax.matshow(heatmap,  cmap=cm.coolwarm)
+    # # Customize the z axis.
+    # plt.plot()
+    # ax.zaxis.set_major_locator(LinearLocator(10))
+    # ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
+
+    # Add a color bar which maps values to colors.
+    fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.05)
+    
+    plt.show()
+
+ 
+##----------------------------------------------------------------------
+## plot one gaussian distribution heatmap - 3D
+##----------------------------------------------------------------------       
+def plot_3d_gaussian( heatmap, title = 'My figure', width = 20, height = 20, zlim = 1.05 ):
+    columns     = 1
+    rows        = 1 
+    image_height, image_width = heatmap.shape
+    # print(' height: {}  width: {} '.format(image_height,image_width))
+    # w, h = plt.figaspect(1.)
+    # print(' figure height: {}  width: {} '.format(w,h))
+    # fig = plt.Figure(figsize=(w, h))     
+    
+    # fig = plt.figure(figsize=(width, height))
+    # fig = plt.figure(figsize=(5,5))
+    # fig.suptitle(title, fontsize = 10 )
+    # fig.set_figheight(width-1)
+
+    X = np.arange(0, image_width, 1)
+    Y = np.arange(0, image_height, 1)
+    X, Y = np.meshgrid(X, Y)        
+    pos = np.empty(X.shape+(2,))   # concatinate shape of x to make ( x.rows, x.cols, 2)
+    pos[:,:,0] = X;
+    pos[:,:,1] = Y;
+
+    col = 0    
+    cls = 0
+    # for col  in range(2):
+    subplot = (cls * columns) + col + 1
+    ttl = 'Heatmap {} '.format(col+1)
+    # plt.subplot(rows, columns, col+1)
+    # ax = fig.gca(projection='3d')
+    fig=plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    # ax = Axes3D(fig)
+    
+    ax.set_title(ttl)
+    # zlim = np.max(heatmap)
+    # print('Zlim is : ', zlim)
+    # ax.set_zlim(0.0 , zlim)
+    # ax.set_ylim(0,image_height )
+    # ax.set_xlim(0,image_width)
+    ax.set_xlabel(' X axis', fontsize = 8)
+    ax.set_ylabel(' Y axis', fontsize = 8)
+    ax.invert_yaxis()
+    
+    # ax.view_init( azim=-110,elev=60)            
+    # ax.view_init(azim=-37, elev=43)            
+    surf = ax.plot_surface(X, Y, heatmap[X,Y],rstride = 1, cstride = 1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+    # # Customize the z axis.
+    # plt.plot()
+    # ax.zaxis.set_major_locator(LinearLocator(10))
+    # ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
+
+    # Add a color bar which maps values to colors.  
+    # fig.colorbar(surf, shrink=0.5, aspect=5)
+    plt.show()
+    
     

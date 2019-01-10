@@ -17,9 +17,7 @@ import itertools
 import json
 import re
 import logging
-# from collections import OrderedDict
 import numpy as np
-# import scipy.misc
 import tensorflow as tf
 # import keras
 # import keras.backend as K
@@ -29,7 +27,7 @@ import keras.engine  as KE
 import keras.backend as KB
 # import keras.models as KM
 import mrcnn.utils as utils
-sys.path.append('..')
+# sys.path.append('..')
 
 
 ############################################################

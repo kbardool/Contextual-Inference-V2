@@ -16,7 +16,6 @@ import keras.layers as KL
 import keras.models as KM
 from   keras.regularizers     import l2
 from mrcnn.utils import logt
-# sys.path.append('..')
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 
@@ -232,7 +231,7 @@ def fcn32_graph(feature_map  , config, mode = None ):
     # print('    fcn_heatmap_norm  : ', fcn_hm_norm.shape   ,' Keras tensor ', KB.is_keras_tensor(fcn_hm_norm) )
     # print('    fcn_heatmap_L2norm: ', fcn_hm_L2norm.shape ,' Keras tensor ', KB.is_keras_tensor(fcn_hm_L2norm) )
 
-    return fcn_hm, fcn_sm 
+    return fcn_hm, fcn_sm
 
 
     

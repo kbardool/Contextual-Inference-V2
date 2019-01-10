@@ -14,13 +14,13 @@ import tensorflow as tf
 import keras.backend as KB
 import keras.layers as KL
 import keras.engine as KE
-sys.path.append('..')
-import mrcnn.utils as utils
 import tensorflow.contrib.util as tfc
 
+from mrcnn.utils   import logt
+import mrcnn.utils as utils
 
 
-def normalize_scores(x, low = 0.0, high = 1.0):
+def normalize_scores(x, low = 0.0, high = 1.0, verbose = 0):
     #--------------------------------------------------------------------------------------------
     # this normalization moves values to [0, +1] 
     #--------------------------------------------------------------------------------------------    
@@ -29,17 +29,16 @@ def normalize_scores(x, low = 0.0, high = 1.0):
     reduce_max = tf.where(reduce_max  < +1.0e-15,  tf.ones_like(reduce_max) * high, reduce_max)
     reduce_min = tf.where(reduce_min  > -1.0e-15,  tf.ones_like(reduce_min) * low,  reduce_min)
 
-#     y  = tf.divide( (x- reduce_min) , (reduce_max - reduce_min), name='fcn_heatmap_norm')
+    #     y  = tf.divide( (x- reduce_min) , (reduce_max - reduce_min), name='fcn_heatmap_norm')
     y  = (x- reduce_min) / (reduce_max - reduce_min)
     y  = y * (high - low) + low 
     
-    print()
-    print('       Normalize_scores() ------------------------------------------------------') 
-    print('         input shape      : ', KB.int_shape(x))
-    print('         reduce_min shape : ', KB.int_shape(reduce_min))
-    print('         reduce_max shape : ', KB.int_shape(reduce_max))
-    print('             output shape : ', KB.int_shape(y))
-    print()
+    logt(' ', verbose = verbose)
+    logt(' Normalize_scores() ------------------------------------------------------', verbose = verbose)
+    logt('   input shape      ', x, verbose = verbose)
+    logt('   reduce_min shape ', reduce_min, verbose = verbose)
+    logt('   reduce_max shape ', reduce_max, verbose = verbose)
+    logt('       output shape ', y, verbose = verbose)
 
     return y
     
@@ -222,6 +221,7 @@ def build_pr_heatmap(in_tensor, config, names = None):
                                                            scores-1: score, mask_sum, score/mask_sum, (score, mask_sum, score/mask_sum) normalized by class
                                                            scores-2: score, mask_sum, score/mask_sum, (score, mask_sum, score/mask_sum) normalized by class ]
     '''
+    verbose         = config.VERBOSE
     img_h, img_w    = config.IMAGE_SHAPE[:2]
     batch_size      = config.BATCH_SIZE
     num_classes     = config.NUM_CLASSES  
@@ -234,11 +234,12 @@ def build_pr_heatmap(in_tensor, config, names = None):
     # rois_per_image  = config.DETECTION_PER_CLASS
     rois_per_image  = (in_tensor.shape)[2]  
 
-    print('\n ')
-    print('  > build_pr_heatmap() for ', names )
-    print('    in_tensor shape        : ', in_tensor.shape)       
-    print('    num bboxes per class   : ', rois_per_image )
-    print('    heatmap scale        : ', heatmap_scale, 'Dimensions:  w:', grid_w,' h:', grid_h)
+    if verbose:
+        print('\n ')
+        print('  > build_pr_heatmap() for : ', names )
+        print('    in_tensor shape        : ', in_tensor.shape)       
+        print('    num bboxes per class   : ', rois_per_image )
+        print('    heatmap scale          : ', heatmap_scale, 'Dimensions:  w:', grid_w,' h:', grid_h)
 
     ##-----------------------------------------------------------------------------    
     ## Stack non_zero bboxes from in_tensor into pt2_dense 
@@ -258,9 +259,9 @@ def build_pr_heatmap(in_tensor, config, names = None):
     pt2_ind = tf.where(pt2_sum > 0)
     pt2_dense = tf.gather_nd( in_tensor, pt2_ind)
 
-    print('    pt2_sum shape  : ', pt2_sum.shape)
-    print('    pt2_ind shape  : ', pt2_ind.shape)
-    print('    pt2_dense shape: ', pt2_dense.get_shape())
+    logt('pt2_sum   ', pt2_sum, verbose = verbose)
+    logt('pt2_ind   ', pt2_ind, verbose = verbose)
+    logt('pt2_dense ', pt2_dense, verbose = verbose)
 
     ##-----------------------------------------------------------------------------
     ## Build mesh-grid to hold pixel coordinates  
@@ -270,19 +271,21 @@ def build_pr_heatmap(in_tensor, config, names = None):
     X, Y = tf.meshgrid(X, Y)
 
     # duplicate (repeat) X and Y into a  batch_size x rois_per_image tensor
-    print('    X/Y shapes :',  X.get_shape(), Y.get_shape())
     ones = tf.ones([tf.shape(pt2_dense)[0] , 1, 1], dtype = tf.int32)
     rep_X = ones * X
     rep_Y = ones * Y 
-    print('    Ones:    ', ones.shape)                
-    print('    ones_exp * X', ones.shape, '*', X.shape, '= ',rep_X.shape)
-    print('    ones_exp * Y', ones.shape, '*', Y.shape, '= ',rep_Y.shape)
+    
+    if verbose:
+        print('    X/Y shapes :',  X.get_shape(), Y.get_shape())
+        print('    Ones:    ', ones.shape)                
+        print('    ones_exp * X', ones.shape, '*', X.shape, '= ',rep_X.shape)
+        print('    ones_exp * Y', ones.shape, '*', Y.shape, '= ',rep_Y.shape)
 
     # # stack the X and Y grids 
     pos_grid = tf.to_float(tf.stack([rep_X,rep_Y], axis = -1))
-    print('    pos_grid before transpse : ', pos_grid.get_shape())
+    logt('pos_grid before transpse ', pos_grid, verbose = verbose)
     pos_grid = tf.transpose(pos_grid,[1,2,0,3])
-    print('    pos_grid after transpose : ', pos_grid.get_shape())    
+    logt('pos_grid after transpose ', pos_grid, verbose = verbose)  
 
     ##-----------------------------------------------------------------------------
     ##  Build mean and convariance tensors for Multivariate Normal Distribution 
@@ -302,11 +305,11 @@ def build_pr_heatmap(in_tensor, config, names = None):
     tfd = tf.contrib.distributions
     mvn = tfd.MultivariateNormalDiag(loc = means,  scale_diag = covar)
     prob_grid = mvn.prob(pos_grid)
-    print('    >> input to MVN.PROB: pos_grid (meshgrid) shape: ', pos_grid.shape)
-    print('     Prob_grid shape from mvn.probe: ',prob_grid.shape)
+    logt('Input to MVN.PROB: pos_grid (meshgrid) ', pos_grid, verbose = verbose)
+    logt('Prob_grid shape from mvn.probe  ',prob_grid, verbose = verbose)
     prob_grid = tf.transpose(prob_grid,[2,0,1])
-    print('     Prob_grid shape after tanspose: ',prob_grid.shape)    
-    print('    << output probabilities shape  : ' , prob_grid.shape)
+    logt('Prob_grid shape after tanspose ', prob_grid, verbose = verbose)
+    logt('Output probabilities shape   '  , prob_grid, verbose = verbose)
 
     ##--------------------------------------------------------------------------------------------
     ## (0) Generate scores using prob_grid and pt2_dense - (NEW METHOD added 09-21-2018)
@@ -316,7 +319,7 @@ def build_pr_heatmap(in_tensor, config, names = None):
     old_style_scores = tf.scatter_nd(pt2_ind, old_style_scores, 
                                      [batch_size, num_classes, rois_per_image, KB.int_shape(old_style_scores)[-1]],
                                      name = 'scores_scattered')
-    print('    old_style_scores        :',  old_style_scores.get_shape(), KB.int_shape(old_style_scores))  
+    logt('old_style_scores        :',  old_style_scores, verbose = verbose)
 
     ##----------------------------------------------------------------------------------------------------
     ## Generate scores using same method as FCN, over the prob_grid
@@ -333,16 +336,16 @@ def build_pr_heatmap(in_tensor, config, names = None):
     ##      Similar ro what is being done for gt_heatmap in CHMLayerTarget 
     ##---------------------------------------------------------------------------------------------    
     prob_grid_clipped = tf.map_fn(clip_heatmap, [prob_grid, cy,cx, covar], dtype = tf.float32, swap_memory = True)  
-    print('    prob_grid_clipped : ', prob_grid_clipped.shape)
+    logt('    prob_grid_clipped : ', prob_grid_clipped, verbose = verbose)
 
 
     ##---------------------------------------------------------------------------------------------
     ## (2) apply normalization per bbox heatmap instance
     ##---------------------------------------------------------------------------------------------
-    print('\n    normalization ------------------------------------------------------')   
+    logt('\n    normalization ------------------------------------------------------', verbose = verbose)   
     normalizer = tf.reduce_max(prob_grid_clipped, axis=[-2,-1], keepdims = True)
     normalizer = tf.where(normalizer < 1.0e-15,  tf.ones_like(normalizer), normalizer)
-    print('    normalizer     : ', normalizer.shape) 
+    logt('    normalizer     : ', normalizer, verbose = verbose)
     prob_grid_cns = prob_grid_clipped / normalizer
 
 
@@ -351,32 +354,32 @@ def build_pr_heatmap(in_tensor, config, names = None):
     ##     broadcasting : https://stackoverflow.com/questions/49705831/automatic-broadcasting-in-tensorflow
     ##---------------------------------------------------------------------------------------------    
     prob_grid_cns = tf.transpose(tf.transpose(prob_grid_cns) * pt2_dense[:,7])
-    print('    prob_grid_cns: clipped/normed/scaled : ', prob_grid_cns.shape)
+    logt('    prob_grid_cns: clipped/normed/scaled : ', prob_grid_cns, verbose = verbose)
 
 
     ##---------------------------------------------------------------------------------------------
     ## - Build alternative scores based on normalized/scaled/clipped heatmap
     ##---------------------------------------------------------------------------------------------
     alt_scores_1 = tf.map_fn(build_hm_score_v3, [prob_grid_cns, cy, cx,covar], dtype=tf.float32)    
-    print('    alt_scores_1    : ', KB.int_shape(alt_scores_1), ' Keras tensor ', KB.is_keras_tensor(alt_scores_1) )
+    logt('alt_scores_1 ', alt_scores_1, verbose = verbose)
     alt_scores_1 = tf.scatter_nd(pt2_ind, alt_scores_1, 
                                      [batch_size, num_classes, rois_per_image, KB.int_shape(alt_scores_1)[-1]], name = 'alt_scores_1')  
 
-    print('    alt_scores_1(by class)       : ', alt_scores_1.shape ,' Keras tensor ', KB.is_keras_tensor(alt_scores_1) )  
+    logt('alt_scores_1(by class) ', alt_scores_1, verbose = verbose)
     alt_scores_1_norm = normalize_scores(alt_scores_1)
-    print('    alt_scores_1_norm(by_class)  : ', alt_scores_1_norm.shape, KB.int_shape(alt_scores_1_norm))
+    logt('alt_scores_1_norm(by_class) ', alt_scores_1_norm, verbose = verbose)
     # alt_scores_1_norm = tf.gather_nd(alt_scores_1_norm, pt2_ind)
     # print('    alt_scores_1_norm(by_image)  : ', alt_scores_1_norm.shape, KB.int_shape(alt_scores_1_norm))
                                      
     ##-------------------------------------------------------------------------------------
     ## (3) scatter out the probability distributions based on class 
     ##-------------------------------------------------------------------------------------
-    print('\n    Scatter out the probability distributions based on class --------------') 
     gauss_heatmap   = tf.scatter_nd(pt2_ind, prob_grid_cns, 
                                     [batch_size, num_classes, rois_per_image, grid_w, grid_h], name = 'gauss_scatter')
-    print('    pt2_ind shape      : ', pt2_ind.shape)  
-    print('    prob_grid_clippped : ', prob_grid_cns.shape)  
-    print('    gauss_heatmap      : ', gauss_heatmap.shape)   # batch_sz , num_classes, num_rois, image_h, image_w
+    logt('\n    Scatter out the probability distributions based on class --------------', verbose = verbose)
+    logt('pt2_ind shape      ', pt2_ind      , verbose = verbose)
+    logt('prob_grid_clippped ', prob_grid_cns, verbose = verbose)
+    logt('gauss_heatmap      ', gauss_heatmap, verbose = verbose)   # batch_sz , num_classes, num_rois, image_h, image_w
 
     ##-------------------------------------------------------------------------------------
     ## Construction of Gaussian Heatmap output using Reduce SUM
@@ -385,16 +388,17 @@ def build_pr_heatmap(in_tensor, config, names = None):
     ## (5) heatmap normalization (per class)
     ## (6) Transpose heatmap to shape required for FCN
     ##-------------------------------------------------------------------------------------
-    print('\n    Reduce SUM based on class and normalize within each class -------------------------------------')         
     gauss_heatmap_sum = tf.reduce_sum(gauss_heatmap, axis=2, name='gauss_heatmap_sum')
-    print('    gaussian_heatmap_sum : ', gauss_heatmap_sum.get_shape(), 'Keras tensor ', KB.is_keras_tensor(gauss_heatmap_sum) )      
+    logt('\n    Reduce SUM based on class and normalize within each class -----------------------', verbose = verbose)
+    logt('gaussian_heatmap_sum ', gauss_heatmap_sum , verbose = verbose)
+
     ## normalize in class
     normalizer = tf.reduce_max(gauss_heatmap_sum, axis=[-2,-1], keepdims = True)
     normalizer = tf.where(normalizer < 1.0e-15,  tf.ones_like(normalizer), normalizer)
     gauss_heatmap_sum = gauss_heatmap_sum / normalizer
     # gauss_heatmap_sum_normalized = gauss_heatmap_sum / normalizer
-    print('    normalizer shape   : ', normalizer.shape)   
-    print('    normalized heatmap : ', gauss_heatmap_sum.shape   ,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_sum) )
+    logt('normalizer shape   : ', normalizer, verbose = verbose)
+    logt('normalized heatmap : ', gauss_heatmap_sum, verbose = verbose)
     
     ##---------------------------------------------------------------------------------------------
     ##  Score on reduced sum heatmaps. 
@@ -403,18 +407,20 @@ def build_pr_heatmap(in_tensor, config, names = None):
     ##  build alternative scores#  based on normalized/sclaked clipped heatmap
     ##---------------------------------------------------------------------------------------------
     hm_indices = tf.cast(pt2_ind[:, :2],dtype=tf.int32)
-    print('    hm_indices shape         :',  hm_indices.get_shape(), KB.int_shape(hm_indices))
+    logt('hm_indices   ',  hm_indices, verbose = verbose)
+    
     pt2_heatmaps = tf.gather_nd(gauss_heatmap_sum, hm_indices )
-    print('    pt2_heatmaps             :',  pt2_heatmaps.get_shape(), KB.int_shape(pt2_heatmaps))
+    logt('pt2_heatmaps ',  pt2_heatmaps, verbose = verbose)
 
     alt_scores_2 = tf.map_fn(build_hm_score_v3, [pt2_heatmaps, cy, cx,covar], dtype=tf.float32)    
-    print('    alt_scores_2    : ', KB.int_shape(alt_scores_2), ' Keras tensor ', KB.is_keras_tensor(alt_scores_2) )
-    alt_scores_2 = tf.scatter_nd(pt2_ind, alt_scores_2, 
-                                     [batch_size, num_classes, rois_per_image, KB.int_shape(alt_scores_2)[-1]], name = 'alt_scores_2')  
+    logt('    alt_scores_2    : ', alt_scores_2, verbose = verbose)
     
-    print('    alt_scores_2(scattered)       : ', alt_scores_2.shape ,' Keras tensor ', KB.is_keras_tensor(alt_scores_2) )  
+    alt_scores_2 = tf.scatter_nd(pt2_ind, alt_scores_2, 
+                                [batch_size, num_classes, rois_per_image, KB.int_shape(alt_scores_2)[-1]], name = 'alt_scores_2')  
+    
+    logt('alt_scores_2(scattered)     ', alt_scores_2, verbose = verbose)
     alt_scores_2_norm = normalize_scores(alt_scores_2)
-    print('    alt_scores_2_norm(by_class)  : ', alt_scores_2_norm.shape, KB.int_shape(alt_scores_2_norm))
+    logt('alt_scores_2_norm(by_class) ', alt_scores_2_norm, verbose = verbose)
  
     # ##---------------------------------------------------------------------------------------------
     # ## Construction of Gaussian Heatmap output using Reduce MAX
@@ -454,7 +460,7 @@ def build_pr_heatmap(in_tensor, config, names = None):
     ## (6) Transpose heatmaps to shape required for FCN [batchsize , width, height, num_classes]
     ##---------------------------------------------------------------------------------------------    
     gauss_heatmap_sum            = tf.transpose(gauss_heatmap_sum           ,[0,2,3,1], name = names[0])
-    print('    reshaped heatmap   : ', gauss_heatmap_sum.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_sum) )
+    logt('reshaped heatmap ', gauss_heatmap_sum, verbose = verbose)
     # gauss_heatmap_sum_normalized = tf.transpose(gauss_heatmap_sum_normalized,[0,2,3,1], name = names[0]+'_norm')   
     # print('    reshaped heatmap normalized    : ', gauss_heatmap_sum_normalized.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_sum_normalized) )
 
@@ -468,8 +474,8 @@ def build_pr_heatmap(in_tensor, config, names = None):
     ##--------------------------------------------------------------------------------------------
     gauss_scores     = tf.concat([in_tensor, old_style_scores, alt_scores_1, alt_scores_1_norm, alt_scores_2, alt_scores_2_norm],
                                   axis = -1,name = names[0]+'_scores')
-    print('    gauss_scores    : ', gauss_scores.shape, ' Keras tensor ', KB.is_keras_tensor(gauss_scores) )      
-    print('    complete')
+    logt('    gauss_scores    : ', gauss_scores, verbose = verbose)
+    logt('    complete', verbose = verbose)
 
     return   gauss_heatmap_sum, gauss_scores  
     
@@ -521,6 +527,7 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
                         
                         y1,x1, y2,x2 are in image dimension format
     '''
+    verbose         = config.VERBOSE
     batch_size      = config.BATCH_SIZE
     num_classes     = config.NUM_CLASSES
     h, w            = config.IMAGE_SHAPE[:2]
@@ -531,16 +538,17 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     dup_scale       = scale * tf.ones([batch_size, num_rois, 1], dtype = 'float32')
     det_per_class   = config.TRAIN_ROIS_PER_IMAGE
     
-    print()
-    print('  > build_pr_tensor()')
-    print('    num_rois               : ', num_rois )
-    print('    norm_input_rois.shape  : ', type(norm_input_rois), KB.int_shape(norm_input_rois))
-    print('    scale.shape            : ', type(scale), KB.int_shape(scale), scale.get_shape())
-    print('    dup_scale.shape        : ', type(dup_scale), KB.int_shape(dup_scale), dup_scale.get_shape())
-    print()
-    print('    mrcnn_class shape      : ', KB.int_shape(mrcnn_class))
-    print('    mrcnn_bbox.shape       : ', KB.int_shape(mrcnn_bbox), mrcnn_bbox.shape )
-    print('    config image shape     : ', config.IMAGE_SHAPE, 'h:',h,'w:',w)
+    if verbose:
+        print()
+        print('  > build_pr_tensor()')
+        print('    num_rois               : ', num_rois )
+        print('    norm_input_rois.shape  : ', type(norm_input_rois), KB.int_shape(norm_input_rois))
+        print('    scale.shape            : ', type(scale), KB.int_shape(scale), scale.get_shape())
+        print('    dup_scale.shape        : ', type(dup_scale), KB.int_shape(dup_scale), dup_scale.get_shape())
+        print()
+        print('    mrcnn_class shape      : ', KB.int_shape(mrcnn_class))
+        print('    mrcnn_bbox.shape       : ', KB.int_shape(mrcnn_bbox), mrcnn_bbox.shape )
+        print('    config image shape     : ', config.IMAGE_SHAPE, 'h:',h,'w:',w)
 
     #---------------------------------------------------------------------------
     # Build a meshgrid for image id and bbox to use in gathering of bbox delta information 
@@ -575,15 +583,10 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     window = tf.constant([[0,0,h,w]], dtype = tf.float32)
     refined_rois  = utils.clip_to_window_tf( window, refined_rois)
     
-    print('    refined rois clipped   : ', refined_rois.shape)
-    print('    input_rois.shape       : ', KB.int_shape(input_rois), input_rois.get_shape())
-    print('    refined_rois.shape     : ', KB.int_shape(refined_rois), refined_rois.get_shape())
-    # print('    mrcnn_class : ', mrcnn_class.shape, mrcnn_class)
-    # print('    gather_ind  : ', gather_ind.shape, gather_ind)
-    # print('    pred_scores : ', pred_scores.shape )
-    # print('    pred_deltas : ', pred_deltas.shape )   
-    # print('    input_rois : ', input_rois.shape, input_rois)
-    # print('    refined rois: ', refined_rois.shape, refined_rois)
+    logt('refined rois ', refined_rois, verbose = verbose)
+    logt('input_rois   ', input_rois  , verbose = verbose)
+    logt('refined_rois ', refined_rois, verbose = verbose)
+
         
     ##------------------------------------------------------------------------------------
     ##  Build Pred_Scatter: tensor of bounding boxes by Image / Class
@@ -595,7 +598,7 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     ##------------------------------------------------------------------------------------
     sequence = tf.ones_like(pred_classes, dtype = tf.int32) * (bbox_grid[...,::-1] + 1) 
     sequence = tf.to_float(tf.expand_dims(sequence, axis = -1))   
-    print('    shape of sequence      : ', sequence.shape)
+    logt('sequence ', sequence, verbose = verbose)
     
     
     ##--------------------------------------------------------------------------------------------------
@@ -607,9 +610,9 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
      
     scatter_ind = tf.stack([batch_grid , pred_classes, bbox_grid],axis = -1)
     pred_scatt  = tf.scatter_nd(scatter_ind, pred_array, [batch_size, num_classes, num_rois, pred_array.shape[-1]])
-    print('    pred_array             : ', pred_array.shape)  
-    print('    scatter_ind            : ', scatter_ind.shape)
-    print('    pred_scatter           : ', pred_scatt.get_shape())
+    logt('pred_array   ', pred_array, verbose = verbose)
+    logt('scatter_ind  ', scatter_ind, verbose = verbose)
+    logt('pred_scatter ', pred_scatt, verbose = verbose)
     
     ##--------------------------------------------------------------------------------------------
     ##  Apply a per class score normalization using the score column (COLUMN 5)
@@ -618,10 +621,10 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     normalizer   = tf.where(normalizer < 1.0e-15,  tf.ones_like(normalizer), normalizer)
     norm_score   = tf.expand_dims(pred_scatt[...,5]/normalizer, axis = -1)
     pred_scatt   = tf.concat([pred_scatt, norm_score],axis = -1)   
-    print('    - Add normalized score --\n')
-    print('    normalizer             : ', normalizer.shape)  
-    print('    norm_score             : ', norm_score.shape)
-    print('    pred_scatter           : ', pred_scatt.get_shape())
+    logt('- Add normalized score --\n', verbose = verbose)
+    logt('normalizer   ', normalizer, verbose = verbose)
+    logt('norm_score   ', norm_score, verbose = verbose)
+    logt('pred_scatter ', pred_scatt, verbose = verbose)
     
     ##------------------------------------------------------------------------------------
     ## Sort pred_scatt in each class dimension based on sequence number, to push valid  
@@ -638,12 +641,12 @@ def build_pr_tensor(norm_input_rois, mrcnn_class, mrcnn_bbox, config):
     gather_inds  = tf.stack([batch_grid , class_grid, sort_inds],axis = -1)
     pred_tensor  = tf.gather_nd(pred_scatt, gather_inds, name = 'pred_tensor')    
 
-    print('    sort_inds              : ', KB.int_shape(sort_inds)   , 'Keras Tensor:', KB.is_keras_tensor(sort_inds))
-    print('    class_grid             : ', KB.int_shape(class_grid)  , 'Keras Tensor:', KB.is_keras_tensor(class_grid))
-    print('    batch_grid             : ', KB.int_shape(batch_grid)  , 'Keras Tensor:', KB.is_keras_tensor(batch_grid))
-    print('    roi_grid shape         : ', KB.int_shape(roi_grid)    , 'Keras Tensor:', KB.is_keras_tensor(roi_grid)) 
-    print('    gather_inds            : ', KB.int_shape(gather_inds) , 'Keras Tensor:', KB.is_keras_tensor(gather_inds))
-    print('    pred_tensor            : ', KB.int_shape(pred_tensor) , 'Keras Tensor:', KB.is_keras_tensor(pred_tensor))
+    logt('sort_inds      ', sort_inds  , verbose = verbose)
+    logt('class_grid     ', class_grid , verbose = verbose)
+    logt('batch_grid     ', batch_grid , verbose = verbose)
+    logt('roi_grid shape ', roi_grid   , verbose = verbose)
+    logt('gather_inds    ', gather_inds, verbose = verbose)
+    logt('pred_tensor    ', pred_tensor, verbose = verbose)
 
     return  pred_tensor
     
@@ -684,24 +687,22 @@ class CHMLayer(KE.Layer):
 
         
     def call(self, inputs):
-
-        # mrcnn_class , mrcnn_bbox,  output_rois, tgt_class_ids, tgt_bboxes = inputs
+        verbose = self.config.VERBOSE
         mrcnn_class , mrcnn_bbox,  output_rois  = inputs
-        print('  > CHMLayer Call() ', len(inputs))
-        print('    mrcnn_class.shape    :',   mrcnn_class.shape, KB.int_shape(  mrcnn_class ))
-        print('    mrcnn_bbox.shape     :',    mrcnn_bbox.shape, KB.int_shape(   mrcnn_bbox )) 
-        print('    output_rois.shape    :',   output_rois.shape, KB.int_shape(  output_rois )) 
-        # print('    tgt_class_ids.shape  :', tgt_class_ids.shape, KB.int_shape(tgt_class_ids )) 
-        # print('    tgt_bboxes.shape     :',    tgt_bboxes.shape, KB.int_shape(   tgt_bboxes )) 
+
+        logt('> CHMLayer Call() ', inputs)
+        logt('  mrcnn_class',  mrcnn_class, verbose = verbose)
+        logt('  mrcnn_bbox ',  mrcnn_bbox , verbose = verbose) 
+        logt('  output_rois',  output_rois, verbose = verbose) 
          
         pr_tensor   = build_pr_tensor(output_rois, mrcnn_class, mrcnn_bbox, self.config)
         pr_hm, pr_hm_scores  = build_pr_heatmap(pr_tensor, self.config, names = ['pred_heatmap'])
         # pred_cls_cnt = KL.Lambda(lambda x: tf.count_nonzero(x[:,:,:,-1],axis = -1), name = 'pred_cls_count')(pred_tensor)        
 
-        print()
-        print('    pred_refined_heatmap        : ', pr_hm.shape        , 'Keras tensor ', KB.is_keras_tensor(pr_hm))
-        print('    pred_refnined_heatmap_scores: ', pr_hm_scores.shape , 'Keras tensor ', KB.is_keras_tensor(pr_hm_scores))
-        print('    complete')
+        logt(' ', verbose = verbose) 
+        logt('\npred_refined_heatmap      ', pr_hm, verbose = verbose) 
+        logt('pred_refnined_heatmap_scores', pr_hm_scores, verbose = verbose) 
+        logt('complete', verbose = verbose)
         
         return [  pr_hm, pr_hm_scores]
 

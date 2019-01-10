@@ -31,18 +31,22 @@ def fpn_graph(Resnet_Layers, verbose = 0):
     _, C2, C3, C4, C5 = Resnet_Layers
     
     P5 = KL.Conv2D(256, (1, 1), name='fpn_c5p5')(C5)
+    logt('FPN P5 ' , P5, verbose = verbose)    
     
     P4 = KL.Add(name="fpn_p4add")([
          KL.UpSampling2D(size=(2, 2), name="fpn_p5upsampled")(P5),
          KL.Conv2D(256, (1, 1), name='fpn_c4p4')(C4)])
+    logt('FPN P4 ' , P4, verbose = verbose)    
     
     P3 = KL.Add(name="fpn_p3add")([
          KL.UpSampling2D(size=(2, 2), name="fpn_p4upsampled")(P4),
          KL.Conv2D(256, (1, 1), name='fpn_c3p3')(C3)])
+    logt('FPN P3 ' , P3, verbose = verbose)    
     
     P2 = KL.Add(name="fpn_p2add")([
          KL.UpSampling2D(size=(2, 2), name="fpn_p3upsampled")(P3),
          KL.Conv2D(256, (1, 1), name='fpn_c2p2')(C2)])
+    logt('FPN P2 ' , P2, verbose = verbose)    
     
     # Attach 3x3 conv to all P layers to get the final feature maps.
     P2 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p2")(P2)
@@ -131,15 +135,17 @@ def fpn_classifier_graph(rois, feature_maps, image_shape, pool_size, num_classes
     logt('pool_squeeze(Shared)', shared, verbose = verbose)
 
     ## Classifier head
+    # x = KL.TimeDistributed(KL.Dense(num_classes, name = 'mrcnn_class_logits'))(shared)
     mrcnn_class_logits = KL.TimeDistributed(KL.Dense(num_classes), name = 'mrcnn_class_logits')(shared)
     logt('mrcnn_class_logits ' , mrcnn_class_logits, verbose = verbose)    
-    # x = KL.TimeDistributed(KL.Dense(num_classes, name = 'mrcnn_class_logits'))(shared)
+    
     mrcnn_class_logits = KL.Lambda(lambda x: KB.identity(x, name = 'mrcnn_class_logits'), name='mrcnn_logits_lambda')(mrcnn_class_logits)
     logt('mrcnn_class_logits (final)' , mrcnn_class_logits, verbose = verbose)    
     
+    # x = KL.TimeDistributed(KL.Activation("softmax"))(mrcnn_class_logits)
     mrcnn_probs = KL.TimeDistributed(KL.Activation("softmax"), name = 'mrcnn_class_act')(mrcnn_class_logits)
     logt('mrcnn_probs  ' , mrcnn_probs, verbose = verbose)
-    # x = KL.TimeDistributed(KL.Activation("softmax"))(mrcnn_class_logits)
+    
     mrcnn_probs        = KL.Lambda(lambda x: KB.identity(x, name = 'mrcnn_class'), name='mrcnn_class_lambda')(mrcnn_probs)
     logt('mrcnn_probs (final) ' , mrcnn_probs, verbose = verbose)
     

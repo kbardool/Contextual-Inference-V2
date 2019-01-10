@@ -74,18 +74,8 @@ class FCN(ModelBase):
         super().__init__(mode, config)
 
         print('>>> Initialize FCN model, mode: ',mode, 'architecture: ', arch)
-        if mode == 'training':
-            if config.NEW_LOG_FOLDER:
-                self.set_log_dir()
-            else:
-                print('    Use existing folder if possible')
-                last_log_dir = self.find_last()[1]
-                print('    Last log dir is :', last_log_dir)
-                self.set_log_dir(last_log_dir)
-
         
         self.arch = arch
-        self.mode = mode
         
         if arch == 'FCN8':
             print('    arch set to FCN8 - with No L2 Regularization')
@@ -114,48 +104,41 @@ class FCN(ModelBase):
         
         # Pre-defined layer regular expressions
         self.layer_regex = {
-            # "res5+": r"(res5.*)|(bn5.*)",
-            # All layers
-            "all": ".*",
-            # fcn32+ 
-            "fcn32+" : r"(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
+            # fcn8 only 
+            "fcn8" : r"(fcn8\_.*)",
             # fcn16+ 
             "fcn16+" : r"(fcn16\_.*)|(fcn8\_.*)",
+            # fcn32+ 
+            "fcn32+" : r"(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
+            # fcn and fc2
+            "fc2+" : r"(fcn\_.*)|(fc2.*)",
+            # fcn, fc2, fc1
+            "fc1+" : r"(fcn\_.*)|(fc2*)|(fc1*)",
+            # block5+
+            "block5+" : r"(block5\_.*)|(fcn\_.*)|(fc2*)|(fc1*)|(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
+            # block4+
+            "block4+" : r"(block4\_.*)|(block5\_.*)|(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
+            # block3+
+            "block3+" : r"(block3\_.*)|(block4\_.*)|(block5\_.*)|(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
+            # block2+
+            "block2+" : r"(block2\_.*)|(block3\_.*)|(block4\_.*)|(block5\_.*)|(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
+            # block1+
+            "block1+" : r"(block1\_.*)|(block2\_.*)|(block3\_.*)|(block4\_.*)|(block5\_.*)|(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
+
+            # All layers
+            "all": ".*",
 
             # fcn32 only 
             "fcn32" : r"(fcn32\_.*)",
             # fcn16 only 
             "fcn16" : r"(fcn16\_.*)",
-            # fcn8 only 
-            "fcn8" : r"(fcn8\_.*)",
             # fcn only 
             "fcn" : r"(fcn\_.*)",
-            # fcn and fc2
-            "fc2+" : r"(fcn\_.*)|(fc2.*)",
-            # fcn, fc2, fc1
-            "fc1+" : r"(fcn\_.*)|(fc2*)|(fc1*)",
             # block5
             "block5" : r"(block5\_.*)",
-            # block5+
-            "block5+" : r"(block5\_.*)|(fcn\_.*)|(fc2*)|(fc1*)|(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
             # block4
-            "block4" : r"(block4\_.*)",
-            # block4+
-            "block4+" : r"(block4\_.*)|(block5\_.*)|(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)"
-            # -- mrcnn
-            # "mrcnn" : r"(mrcnn\_.*)",
-            # -- all layers but the backbone
-            # "heads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            # -- all layers but the backbone
-            # "allheads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)|(fcn\_.*)",
-            # -- ResNet from a specific stage and up
-            # "res3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
-            # "res4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
-            # -- From a specific Resnet stage and up
-            # "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            # "4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            # "5+": r"(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-        }
+            "block4" : r"(block4\_.*)"
+            }
         
         self.keras_model = self.build(mode=mode, config=config  )
 
@@ -221,22 +204,22 @@ class FCN(ModelBase):
 
             fcn_hm, fcn_sm = self.fcn_graph(pr_hm , config, mode = mode)
             
-            print('  * gt_hm_scores shape: ', KB.int_shape(gt_hm_scores), ' Keras tensor ', KB.is_keras_tensor(gt_hm_scores) )        
-            print('  * pr_hm_scores shape: ', KB.int_shape(pr_hm_scores), ' Keras tensor ', KB.is_keras_tensor(pr_hm_scores) )        
-            print('  * fcn_heatmap shape : ', KB.int_shape(fcn_hm), ' Keras tensor ', KB.is_keras_tensor(fcn_hm) )        
-            print('  * fcn_softmax shape : ', KB.int_shape(fcn_sm), ' Keras tensor ', KB.is_keras_tensor(fcn_sm) )        
 
             fcn_scores   = KL.Lambda(lambda x:  fcn_scoring_graph(x, config, mode), name = 'fcn_scoring')([fcn_hm , pr_hm_scores])
             
-            print('  * fcn_scores shape: ', KB.int_shape(fcn_scores), ' Keras tensor ', KB.is_keras_tensor(fcn_scores) )        
+            logt('* gt_hm_scores shape ', gt_hm_scores,verbose = verbose)
+            logt('* pr_hm_scores shape ', pr_hm_scores,verbose = verbose)
+            logt('* fcn_heatmap shape  ', fcn_hm,verbose = verbose)
+            logt('* fcn_softmax shape  ', fcn_sm,verbose = verbose)
+            logt('* fcn_scores shape   ', fcn_scores,verbose = verbose)    
             
             ##------------------------------------------------------------------------
             ##  Loss layer definitions
             ##------------------------------------------------------------------------
-            print('\n')
-            print('---------------------------------------------------')
-            print('    building Loss Functions ')
-            print('---------------------------------------------------')
+            logt('\n',verbose = verbose)    
+            logt('---------------------------------------------------',verbose = verbose)    
+            logt('    building Loss Functions ',verbose = verbose)    
+            logt('---------------------------------------------------',verbose = verbose)    
             fcn_MSE_loss = KL.Lambda(lambda x: loss.fcn_heatmap_MSE_loss_graph(*x), name="fcn_MSE_loss") \
                             ([gt_hm, fcn_hm])                                                 
                             
@@ -256,11 +239,11 @@ class FCN(ModelBase):
         ##----------------------------------------------------------------------------                
         else:
                     
-            fcn_hm, fcn_sm = self.fcn_graph(pr_hm , config, mode)
-            logt('* fcn_heatmap shape: ', fcn_hm, verbose = verbose)        
-            logt('* fcn_softmax shape: ', fcn_sm, verbose = verbose)        
-
+            fcn_hm, fcn_sm = self.fcn_graph(pr_hm, config, mode)
             fcn_scores   = KL.Lambda(lambda x:  fcn_scoring_graph(x, config, mode), name = 'fcn_scoring')([fcn_hm , pr_hm_scores])
+            
+            logt('* fcn_heatmap shape: ', fcn_hm, verbose = verbose)        
+            # logt('* fcn_softmax shape: ', fcn_sm, verbose = verbose)        
             logt('* fcn_scores shape : ', fcn_scores, verbose = verbose )        
             
             inputs  = [ pr_hm , pr_hm_scores]                                        
@@ -271,11 +254,12 @@ class FCN(ModelBase):
             
         model = KM.Model( inputs, outputs,  name='FCN')
                 
-        print(' ================================================================')
-        print(' self.keras_model.losses : ', len(model.losses))
-        for idx,ls in enumerate(model.losses):
-            print(idx, '    ', ls)
-        print(' ================================================================')
+        if verbose:
+            print(' ================================================================')
+            print(' self.keras_model.losses : ', len(model.losses))
+            for idx,ls in enumerate(model.losses):
+                print(idx, '    ', ls)
+            print(' ================================================================')
             
         # Add multi-GPU support.
         # if config.GPU_COUNT > 1:
@@ -669,7 +653,11 @@ class FCN(ModelBase):
         Gets the model ready for training. Adds losses, regularization, and
         metrics. Then calls the Keras compile() function.
         '''
-        assert isinstance(loss_functions, list) , "A loss function must be defined as the objective"
+        assert loss_functions is not None  , "A loss function must be defined as the objective"
+
+        if not isinstance(loss_functions, list):
+            loss_functions = [loss_functions]
+
         
         # Optimizer object
         print('\n')
@@ -816,7 +804,8 @@ class FCN(ModelBase):
               epochs_to_run     = 0,
               batch_size        = 0, 
               steps_per_epoch   = 0,
-              min_lr            = 0):
+              min_lr            = 0,
+              sysout_name       = None):
               
         '''
         Train the model.
@@ -949,17 +938,24 @@ class FCN(ModelBase):
         ##----------------------------------------------------------------------------------------------            
         optimizer = self.set_optimizer()
 
-        # Train
-
         self.set_trainable(layers)
-        # self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)
         self.compile(losses, optimizer)
 
         ##----------------------------------------------------------------------------------------------
-        ## If in debug mode write stdout intercepted IO to output file  
+        ## If in debug mode write stdout intercepted IO to output file  - moved to train_xxxx
         ##----------------------------------------------------------------------------------------------            
         if self.config.SYSOUT == 'FILE':
-            utils.write_sysout(self.log_dir)
+            sysout_path = self.log_dir
+            f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
+            content = sys.stdout.getvalue()   #.encode('utf_8')
+            f_obj.write(content)
+            sys.stdout = f_obj
+            sys.stdout.flush()
+            f_obj.close()    
+            sys.stdout = sys.__stdout__
+            print(' Run information written to ', sysout_name)    
+        # if self.config.SYSOUT == 'FILE':
+            # utils.write_sysout(self.log_dir)
         
         
         log("Starting at epoch   {} of {} epochs. LR={}\n".format(self.epoch, epochs, learning_rate))
@@ -1005,13 +1001,14 @@ class FCN(ModelBase):
               layers            = None,
               losses            = None,
               learning_rate     = 0,              
-              epochs            = 0,
+              # epochs            = 0,
               epochs_to_run     = 0, 
               batch_size        = 0, 
               steps_per_epoch   = 0,
               min_LR            = 0,
               shuffle           = True,
-              augment           = False):
+              augment           = False,
+              sysout_name       = None):
               
         '''
         Train the model.
@@ -1020,10 +1017,10 @@ class FCN(ModelBase):
         
         learning_rate:  The learning rate to train with
         
-        epochs:         Number of training epochs. Note that previous training epochs
-                        are considered to be done already, so this actually determines
-                        the epochs to train in total rather than in this particaular
-                        call.
+        epochs_to_run:  Number of training epochs to run. Note that previous training epochs
+                        are considered to be specified in self.epoch (config.LAST_EPOCH_RAN), 
+                        so this actually determines the epochs to train in this particaular
+                        call. (different form original code)
                         
         layers:         Allows selecting wich layers to train. It can be:
                         - A regular expression to match layer names to train
@@ -1051,7 +1048,7 @@ class FCN(ModelBase):
         if learning_rate == 0:
             learning_rate = self.config.LEARNING_RATE
             
-        epochs = self.epoch + epochs_to_run
+        final_epoch = self.epoch + epochs_to_run
             
         # use Pre-defined layer regular expressions
         # if layers in self.layer_regex.keys():
@@ -1090,7 +1087,6 @@ class FCN(ModelBase):
         ##----------------------------------------------------------------------------------------------            
         optimizer = self.set_optimizer()
 
-        # self.compile(learning_rate, self.config.LEARNING_MOMENTUM, losses)        
         self.compile(losses, optimizer)
 
         ##--------------------------------------------------------------------------------
@@ -1192,7 +1188,7 @@ class FCN(ModelBase):
         callbacks.set_model(self.keras_model)
         callbacks.set_params({
             'batch_size': batch_size,
-            'epochs': epochs,
+            'epochs': final_epoch,
             'steps': steps_per_epoch,
             'verbose': 1 ,
             'do_validation': True,
@@ -1207,7 +1203,7 @@ class FCN(ModelBase):
         log(" ")
         log("Training Start Parameters:")
         log("--------------------------")
-        log("Starting at epoch     {} of {} epochs.".format(self.epoch, epochs))
+        log("Starting at epoch     {} of {} epochs.".format(self.epoch, final_epoch))
         log("Steps per epochs      {} ".format(steps_per_epoch))
         log("Last epoch completed  {} ".format(self.epoch))
         log("Batch size            {} ".format(batch_size))
@@ -1224,10 +1220,20 @@ class FCN(ModelBase):
 
 
         ##----------------------------------------------------------------------------------------------
-        ## If in debug mode write stdout intercepted IO to output file  
+        ## If in debug mode write stdout intercepted IO to output file  - moved to train_xxxx
         ##----------------------------------------------------------------------------------------------            
         if self.config.SYSOUT == 'FILE':
-            utils.write_sysout(self.log_dir)
+            sysout_path = self.log_dir
+            f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
+            content = sys.stdout.getvalue()   #.encode('utf_8')
+            f_obj.write(content)
+            sys.stdout = f_obj
+            sys.stdout.flush()
+            f_obj.close()    
+            sys.stdout = sys.__stdout__
+            print(' Run information written to ', sysout_name)    
+        # if self.config.SYSOUT == 'FILE':
+            # utils.write_sysout(self.log_dir)
 
         ##--------------------------------------------------------------------------------
         ## Start main training loop
@@ -1237,11 +1243,11 @@ class FCN(ModelBase):
         epoch_idx = self.epoch
         callbacks.on_train_begin()
 
-        if epoch_idx >= epochs:
-            print('Final epoch {} has already completed - Training will not proceed'.format(epochs))
+        if epoch_idx >= final_epoch:
+            print('Final epoch {} has already completed - Training will not proceed'.format(final_epoch))
         else:
         
-            while epoch_idx < epochs :
+            while epoch_idx < final_epoch :
                 callbacks.on_epoch_begin(epoch_idx)
                 epoch_logs = {}
                 
@@ -1250,47 +1256,67 @@ class FCN(ModelBase):
                 ##------------------------------------------------------------------------
                 for steps_index in range(steps_per_epoch):
                     
-                    # print(' self.epoch {}   epochs {}  step {} '.format(self.epoch, epochs, steps_index))
+                    # print(' self.epoch {}   final epoch:{}  step {} '.format(self.epoch, final_epoch, steps_index))
                     batch_logs = {}
                     batch_logs['batch'] = steps_index
                     batch_logs['size']  = batch_size    
 
                     callbacks.on_batch_begin(steps_index, batch_logs)
 
-                    train_batch_x, train_batch_y = next(train_generator)
-
-                    
-                    # print('len of train batch x' ,len(train_batch_x))
-                    # for idx, i in  enumerate(train_batch_x):
-                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
-                    # print('len of train batch y' ,len(train_batch_y))
-                    # for idx, i in  enumerate(train_batch_y):
-                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
-                    # print(type(output_rois))
-                    # for i in model_output:
-                        # print( i.shape)       
-                        
-                    ## Run prediction on MRCNN  
-                    try:
-                        results = mrcnn_model.keras_model.predict(train_batch_x)
+                    ## Run prediction on MRCNN training sample  
+                    good_sample = False
+                    while not good_sample:
+                        try:
+                            train_batch_x, train_batch_y = next(train_generator)
+                            # print('len of train batch x' ,len(train_batch_x))
+                            # for idx, i in  enumerate(train_batch_x):
+                                # print(idx, 'type: ', type(i), 'shape: ', i.shape)
+                            results = mrcnn_model.keras_model.predict(train_batch_x)
+                            # for i in results:
+                                # print(i.shape, type(i), np.any(np.isnan(i)))    
+                            if np.any(np.isnan(results[1])):
+                                print('\n Bad train_batch_x encountered (training phase) - epoch {} , image ids: {} -- Retry with next sample'.
+                                        format(epoch_idx, train_batch_x[1][:,0]))
+                            else :
+                                good_sample = True
+                        except Exception as e :
+                            img_id =  train_batch_x[1][0,0]
+                            print('\n failure on mrcnn predict - epoch {} , image ids: {} {}'.format(epoch_idx, img_id, img_id.shape))
+                            print('\n dataset image info: ' , train_dataset.image_info[img_id])
+                            print('\n Exception information:')
+                            print(str(e))
+                    else:        
                         fcn_x = [train_batch_x[1]]
                         fcn_x.extend(results[:4])
+                        
+                    # Run prediction on MRCNN  
+                    # try:
+                        # train_batch_x, train_batch_y = next(train_generator)
+                        # results = mrcnn_model.keras_model.predict(train_batch_x)
+                        # fcn_x = [train_batch_x[1]]
+                        # fcn_x.extend(results[:4])
                     
-                    except Exception as e :
-                        print('failure on mrcnn predict - epoch {} , image ids: {} '.format(epoch_idx, train_batch_x[1][:,0]))
-                        print('Exception information:')
-                        print(str(e))
+                    # except Exception as e :
+                        # img_id =  train_batch_x[1][0,0]
+                        # print('\nfailure on mrcnn predict - epoch {} , image ids: {} {}'.format(epoch_idx, img_id, img_id.shape))
+                        # print()
+                        # print('dataset image info: ' , train_dataset.image_info[img_id])
+                        # print()
+                        # print('Exception information:')
+                        # print(str(e))
                     
                     # print('size of results : ', len(results))
                     # for idx, i in  enumerate(x):
                         # print(idx, 'type: ', type(i), 'shape: ', i.shape)
                     
-                    ## Train on FCN
+                    ## Train on FCN training sample
                     try:
                         outs = self.keras_model.train_on_batch(fcn_x , train_batch_y)                                            
                     except Exception as e :
-                        print('failure on fcn train - epoch {} , image ids: {} '.format(epoch_idx, train_batch_x[1][:,0]))
-                        print('Exception information:')
+                        img_id =  train_batch_x[1][0,0]
+                        print('\n failure on fcn train - epoch {} , image ids: {} {}'.format(epoch_idx, img_id, img_id.shape))
+                        print('\n dataset image info: ' , train_dataset.image_info[img_id])
+                        print('\n Exception information:')
                         print(str(e))                
                         
                     # print('size of outputs from train_on_batch : ', len(outs), outs)
@@ -1323,36 +1349,61 @@ class FCN(ModelBase):
                 # progbar = Progbar(target=val_steps)
 
                 while val_steps_done < val_steps:
-                    # print(' ** Validation step: ', val_steps_done)
-                    
-                    mrcnn_val_x, mrcnn_val_y = next(val_generator)
-                    
-                    # print('len of train batch x' ,len(val_x))
-                    # for idx, i in  enumerate(val_x):
-                        # print(idx, 'type: ', type(i), 'shape: ', i.shape)
                         
-                    ## Run prediction on MRCNN  
-                    try:
-                        val_results = mrcnn_model.keras_model.predict(mrcnn_val_x)
-                        fcn_val_x = [mrcnn_val_x[1]]
-                        fcn_val_x.extend(val_results[:4])   ## image_meta, pr_hm, pr_hm_scores, gt_hm, gt_hm_scores
-                    except Exception as e :
-                        print('failure on mrcnn predict (validation)- epoch {} , image ids: {} '.format(epoch_idx, mrcnn_val_x[1][:,0]))
-                        print('Exception information:')
-                        print(str(e))                
+                    ## Run prediction on MRCNN validation sample
+                    good_sample = False
+                    while not good_sample:
+                        try:
+                            val_batch_x, val_batch_y = next(val_generator)
+                            val_results = mrcnn_model.keras_model.predict(val_batch_x)
+                            # for i in val_results:
+                                # print(i.shape, type(i), np.any(np.isnan(i)))    
+                            if np.any(np.isnan(val_results[1])):
+                                print('\n Bad val_batch_x encountered (validation phase) - epoch {} , image ids: {} -- Retry with next sample'.
+                                        format(epoch_idx, val_batch_x[1][:,0]))
+                            else :
+                                good_sample = True
+                        except Exception as e :
+                            img_id =  val_batch_x[1][0,0]
+                            print('\n failure on mrcnn predict (validation stage) - epoch {} , image ids: {} {}'.format(epoch_idx, img_id, img_id.shape))
+                            print('\n dataset image info: ' , val_dataset.image_info[img_id])
+                            print('\n Exception information:')
+                            print(str(e))
+                    else:        
+                        fcn_val_x = [val_batch_x[1]]
+                        fcn_val_x.extend(val_results[:4])
+                        
+                        
+                    # ## Run prediction on MRCNN  
+                    # try:
+                        # mrcnn_val_x, mrcnn_val_y = next(val_generator)
+                        # # print('len of train batch x' ,len(val_x))
+                        # # for idx, i in  enumerate(val_x):
+                        # # print(idx, 'type: ', type(i), 'shape: ', i.shape)
+                        # val_results = mrcnn_model.keras_model.predict(mrcnn_val_x)
+                        # fcn_val_x = [mrcnn_val_x[1]]
+                        # fcn_val_x.extend(val_results[:4])   ## image_meta, pr_hm, pr_hm_scores, gt_hm, gt_hm_scores
+                    # except Exception as e :
+                        # img_id = mrcnn_val_x[1][0,0]
+                        # print('\n failure on mrcnn predict (validation stage)- epoch {} , image ids: {} {}'.format(epoch_idx, img_id, img_id.shape))
+                        # print()
+                        # print('dataset image info: ' , val_dataset.image_info[img_id])
+                        # print()
+                        # print(str(e))                
 
                     # print('    mrcnn_model.predict() size of results : ', len(val_results))
                     # for idx, i in  enumerate(xval_results):
                         # print('    ',idx, 'type: ', type(i), 'shape: ', i.shape)
                                        
-                    ## Train on FCN
+                    ## Train on FCN validation sample
                     try:
-                        outs2 = self.keras_model.test_on_batch( fcn_val_x , mrcnn_val_y)
-                        # print('\n valstep {} outs2 len:{} '.format(val_steps_done, len(outs2)))
+                        outs2 = self.keras_model.test_on_batch( fcn_val_x , val_batch_y)
                         val_outs_per_batch.append(outs2)
                     except Exception as e :
-                        print('failure on fcn train (validation)- epoch {} , image ids: {} '.format(epoch_idx, mrcnn_val_x[1][:,0]))                    
-                        print('Exception information:')
+                        img_id = val_batch_x[1][0,0]
+                        print('\n failure on fcn test (validation stage)- epoch {} , image ids: {} {}'.format(epoch_idx, img_id, img_id.shape))                    
+                        print('\n dataset image info: ' , val_dataset.image_info[img_id])
+                        print('\n Exception information:')
                         print(str(e))                
 
                     # print('fcn_model.test_on_batch() size of results : ', len(outs2))
@@ -1369,17 +1420,16 @@ class FCN(ModelBase):
                     if batch_size == 0:
                         raise ValueError('Received an empty batch. '
                                          'Batches should at least contain one item.')
-                    # else:
-                        # print('batch size:', batch_size)
                         
                     val_steps_done += 1
                     val_batch_sizes.append(batch_size)
                     # print validation progress bar if we wish
                     # progbar.update(val_steps_done)
 
-                ## calculate val_averages after all validations steps complete, which is passed 
-                ## back to fit_generator() as val_outs 
-                
+                ##------------------------------------------------------------------------
+                ## POST VALIDATION Phase - calculate val_averages after all validations  
+                ## steps complete, which is passed back to fit_generator() as val_outs 
+                ##------------------------------------------------------------------------
                 # print('    val_batch_sizes            :', type(val_batch_sizes),' len :', len(val_batch_sizes), val_batch_sizes)
                 # print('    val_batch_sizes-shape      :', np.asarray(val_batch_sizes).shape)                
                 # print('    val_outs_per_batch:        :', type(val_batch_sizes),' len :', len(val_outs_per_batch))
@@ -1400,10 +1450,12 @@ class FCN(ModelBase):
                         val_averages.append(float(val_outs_per_batch[-1][i]))
                 if len(val_averages) == 1:
                     val_averages = val_averages[0]
-                print()
-                print('val_averages :', val_averages)
-                print()
+                    
+                # print()
+                # print('val_averages :', val_averages)
+                # print()
                 
+                #--------------------------------------------------------------------
                 #-- (unsuccessful) attempt to add histogram info to tensoflow summary 
                 #--------------------------------------------------------------------
                 # print(' Tensordlow histogram attempt')
@@ -1455,8 +1507,7 @@ class FCN(ModelBase):
                 # for l, o in zip(out_labels, val_outs):
                     # # print(' Validations : out label: val_', l, ' out value: ', o)
                     # epoch_logs['val_' + l] = o
-                #-------------------------------------------------------------------------------------
-                
+                #-------------------------------------------------------------------------------------                
                 # write_log(callback, val_names, logs, batch_no//10)
                 # print('\n    validation logs output: ', val_outs)
                 
@@ -1475,17 +1526,15 @@ class FCN(ModelBase):
                         early_stopping = True
                         
                 if early_stopping:
-                    print('{}  Early Stopping triggered on epoch {} of {} epochs'.format(callback, epoch_idx, epochs))
+                    print('{}  Early Stopping triggered on epoch {} of {} epoch'.format(callback, epoch_idx, final_epoch))
                     break    
                 
             ##-------------------------------
             ## end of training operations
             ##--------------------------------
-            # if epoch_idx != self.epoch:
-            # chkpoint.on_epoch_end(epoch_idx -1, batch_logs)
             callbacks.on_train_end()
-            self.epoch = max(epoch_idx - 1, epochs)
-            print('Final : self.epoch {}   epochs {}'.format(self.epoch, epochs))
+            self.epoch = max(epoch_idx - 1, final_epoch)
+            print('Final : self.epoch {}   epochs {}'.format(self.epoch, final_epoch))
             
         ##--------------------------------------------------------------------------------
         ## End main training loop
@@ -1493,7 +1542,7 @@ class FCN(ModelBase):
             
             
             
-            
+"""         
     ##---------------------------------------------------------------------------------------------
     ## write_log
     ## copied from github but not used
@@ -1506,7 +1555,7 @@ class FCN(ModelBase):
             # summary_value.tag = name
             # callback.writer.add_summary(summary, batch_no)
             # callback.writer.flush()        
-
+"""
             
                        
 """
@@ -1855,231 +1904,4 @@ class FCN(ModelBase):
         print()
         
         return
-"""
-
-
-
-               
-"""               
-    ##-------------------------------------------------------------------------------------
-    ## Unmold Detections - New 
-    ##-------------------------------------------------------------------------------------        
-    def unmold_detections_new(self, detections, image_shape, window):
-        '''
-        RUNS DETECTIONS ON FCN_SCORE TENSOR
-        
-        Reformats the detections of one image from the format of the neural
-        network output to a format suitable for use in the rest of the application.
-
-        detections  : [N, (y1, x1, y2, x2, class_id, score)]
-        mrcnn_mask  : [N, height, width, num_classes]
-        image_shape : [height, width, depth] Original size of the image before resizing
-        window      : [y1, x1, y2, x2] Box in the image where the real image is
-                       (i.e.,  excluding the padding surrounding the real image)
-
-        Returns:
-        boxes       : [N, (y1, x1, y2, x2)] Bounding boxes in pixels
-        class_ids   : [N] Integer class IDs for each bounding box
-        scores      : [N] Float probability scores of the class_id
-        masks       : [height, width, num_instances] Instance masks
-        '''
-        
-        # print('>>>  unmold_detections ')
-        # print('     detections.shape : ', detections.shape)
-        # print('     mrcnn_mask.shape : ', mrcnn_mask.shape)
-        # print('     image_shape.shape: ', image_shape)
-        # print('     window.shape     : ', window)
-        # print(detections)
-        
-        # How many detections do we have?
-        # Detections array is padded with zeros. detections[:,4] identifies the class 
-        # Find all rows in detection array with class_id == 0 , and place their row indices
-        # into zero_ix. zero_ix[0] will identify the first row with class_id == 0.
-        print()
-        np.set_printoptions(linewidth=100)  
-        p1 = detections 
-        p2 = np.reshape(p1, (-1, p1.shape[-1]))
-        p2 = p2[p2[:,5].argsort()[::-1]]
-        detections = p2
-         
-        zero_ix = np.where(detections[:, 4] == 0)[0]
-    
-        N = zero_ix[0] if zero_ix.shape[0] > 0 else detections.shape[0]
-
-        # print(' np.where() \n', np.where(detections[:, 4] == 0))
-        # print('     zero_ix.shape     : ', zero_ix.shape)
-        # print('     N is :', N)
-        
-        # Extract boxes, class_ids, scores, and class-specific masks
-        boxes        = detections[:N, :4]
-        class_ids    = detections[:N, 4].astype(np.int32)
-        scores       = detections[:N, 5]
-        pre_scores   = detections[:N, 8:11]
-        fcn_scores   = detections[:N, 13:]
-            # masks      = mrcnn_mask[np.arange(N), :, :, class_ids]
-
-        # Compute scale and shift to translate coordinates to image domain.
-        h_scale = image_shape[0] / (window[2] - window[0])
-        w_scale = image_shape[1] / (window[3] - window[1])
-        scale   = min(h_scale, w_scale)
-        shift   = window[:2]  # y, x
-        scales = np.array([scale, scale, scale, scale])
-        shifts = np.array([shift[0], shift[1], shift[0], shift[1]])
-
-        # Translate bounding boxes to image domain
-        boxes = np.multiply(boxes - shifts, scales).astype(np.int32)
-
-        # Filter out detections with zero area. Often only happens in early
-        # stages of training when the network weights are still a bit random.
-        exclude_ix = np.where(
-            (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]) <= 0)[0]
-            
-        if exclude_ix.shape[0] > 0:
-            boxes      = np.delete(boxes, exclude_ix, axis=0)
-            class_ids  = np.delete(class_ids, exclude_ix, axis=0)
-            scores     = np.delete(scores, exclude_ix, axis=0)
-            pre_scores = np.delete(pre_scores, exclude_ix, axis=0)
-            fcn_scores = np.delete(fcn_scores, exclude_ix, axis=0)
-            # masks     = np.delete(masks, exclude_ix, axis=0)
-            N         = class_ids.shape[0]
-
-        return boxes, class_ids, scores, pre_scores, fcn_scores     # , full_masks
-"""
-
-"""
-        
-        
-        
-##-------------------------------------------------------------------------------------
-## detect old 
-##-------------------------------------------------------------------------------------        
-        
-    def detect_old(self, mrcnn_model, images, verbose=0):
-        '''
-        Runs the detection pipeline.
-
-        images:         List of images, potentially of different sizes.
-
-        Returns a list of dicts, one dict per image. The dict contains:
-        rois:           [N, (y1, x1, y2, x2)] detection bounding boxes
-        class_ids:      [N] int class IDs
-        scores:         [N] float probability scores for the class IDs
-        masks:          [H, W, N] instance binary masks
-        '''
-        assert self.mode   == "inference", "Create model in inference mode."
-        assert len(images) == self.config.BATCH_SIZE, "len(images) must be equal to BATCH_SIZE"
-    
-        if verbose:
-            log("Processing {} images".format(len(images)))
-            for image in images:
-                log("image", image)
-
-        # Mold inputs to format expected by the neural network
-        molded_images, image_metas, windows = self.mold_inputs(images)
-        if verbose:
-            log("molded_images", molded_images)
-            log("image_metas"  , image_metas)        # print('>>> model detect()')
-        
-        ## Run object detection pipeline
-
-        print('call mrcnn predict()')
-        mrcnn_detections, rpn_roi_proposals, mrcnn_class, mrcnn_bbox, pr_hm, pr_hm_scores =  \
-                  mrcnn_model.keras_model.predict([molded_images, image_metas], verbose=0)
-
-        print('    return from  MRCNN predict()')
-        print('    Length of detections          : ', len(mrcnn_detections), mrcnn_detections.shape)
-        print('    Length of rpn_roi_proposals   : ', len(rpn_roi_proposals), rpn_roi_proposals.shape)
-        print('    Length of mrcnn_class         : ', len(mrcnn_class), mrcnn_class.shape)
-        print('    Length of mrcnn_bbox          : ', len(mrcnn_bbox ), mrcnn_bbox.shape)
-        print('    Length of pr_hm               : ', len(pr_hm), pr_hm.shape)
-        print('    Length of pr_hm_scores        : ', len(pr_hm_scores), pr_hm_scores.shape)
-
-
-        print('call fcn predict()')
-        fcn_hm, fcn_sm, fcn_hm_scores = self.keras_model.predict([pr_hm, pr_hm_scores], verbose = 1)
-
-        print('    return from  FCN predict()')
-        print('    Length of fcn_heatmaps : ', len(fcn_hm), fcn_hm.shape)
-        print('    Length of fcn_softmax  : ', len(fcn_sm), fcn_sm.shape)
-        print('    Length of fcn_hm_scores: ', len(fcn_hm_scores), fcn_hm_scores.shape)
-         
-        ## Process detections        
-        
-        results = []
-
-        
-        ## build results list. Takes images, mrcnn_detections, pr_hm, pr_hm_scores and fcn outputs
-        
-        for i, image in enumerate(images):
-            print(' Unmold image ', i, 'image_shape: ', image.shape,  '  windows[]:', windows[i])
-            mrcnn_rois, mrcnn_class_ids, mrcnn_scores, mrcnn_molded_rois = \
-                        mrcnn_model.unmold_detections(mrcnn_detections[i], image.shape, windows[i])    
-          # final_rois, final_class_ids, final_scores, molded_rois = self.unmold_detections(detections[i], 
-                                                                               # image.shape  ,
-                                                                               # windows[i])    
-            print(pr_hm_scores[i].shape)
-            print(fcn_hm_scores[i].shape)
-            print('mrcnn_class_ids: ', mrcnn_class_ids)
-            ## pr_hm_scores is by image/class/bounding box
-            ## fcn_hm_scores is by image/class/bounding box
-            
-            ## reshape pr_hm_scores from per_class to per_image tensor
-            ## Convert pr_scores_by_image bboxes from NN coordinates to image coordinates
-            #     pr_scores_by_image = utils.byclass_to_byimage_np(pr_hm_scores[i], 6)
-            #     print(' pr_scores_by_class shape',pr_scores_by_image.shape)
-            #     pr_boxes_adj = utils.boxes_to_image_domain(pr_scores_by_image[:,:4],image_metas[i])
-            #     pr_scores_by_image = np.hstack((pr_boxes_adj, pr_scores_by_image[:,4:]))
-            #     print(' pr_boxes_adj')
-            #     print(pr_boxes_adj)
-            #     print(' pr_scores_by_image')
-            #     print(pr_scores_by_image)
-
-            ## pr_hm_scores is by class  
-            ## Convert pr_hm_scores bboxes from NN coordinates to image coordinates
-            pr_boxes_adj = utils.boxes_to_image_domain(pr_hm_scores[i,:,:,:4],image_metas[i])
-            pr_scores_by_class= np.dstack((pr_boxes_adj, pr_hm_scores[i,:,:,4:]))
-            print(' pr_scores_by_class shape', pr_scores_by_class.shape)
-            pr_scores_by_image = utils.byclass_to_byimage_np(pr_scores_by_class, 6)
-
-            #     print(' pr_boxes_adj_2')
-            #     print(pr_boxes_adj_2[mrcnn_class_ids, :10])
-            #     print(' pr_scores_by_class')
-            #     print(pr_scores_by_class[mrcnn_class_ids, :10])
-
-            ## fcn_hm_scores is by class  
-            ## Convert pr_hm_scores bboxes from NN coordinates to image coordinates
-            fcn_boxes_adj = utils.boxes_to_image_domain(fcn_hm_scores[i,:,:,:4],image_metas[i])
-            fcn_scores_by_class= np.dstack((pr_boxes_adj, fcn_hm_scores[i,:,:,4:]))
-            print(' fcn_scores_by_class shape', fcn_scores_by_class.shape)
-            fcn_scores_by_image = utils.byclass_to_byimage_np(fcn_scores_by_class, 6)
-            #     print(' fcn_boxes_adj')
-            #     print(fcn_boxes_adj[mrcnn_class_ids, :10])
-            #     print(' fcn_scores_by_class')
-            #     print(fcn_scores_by_class[mrcnn_class_ids, :10])  
-
-            #     fcn_scores_adj,fcn_rois, fcn_class_ids, mrcnn_scores_norm, fcn_scores =  \
-            #                                    self.unmold_detections(fcn_model, fcn_hm_scores[i], image.shape, windows[i]) 
-            #     print(fcn_scores_adj.shape, fcn_rois.shape, fcn_class_ids.shape, mrcnn_scores_norm.shape, fcn_scores.shape)
-            
-            results.append({
-                "image"        : images[i],
-                "molded_image" : molded_images[i],                 
-                "image_meta"   : image_metas[i],
-                
-                "rois"         : mrcnn_rois,
-                "molded_rois"  : mrcnn_molded_rois,
-                "class_ids"    : mrcnn_class_ids,
-                "mrcnn_scores" : mrcnn_scores, 
-
-                "pr_scores"    : pr_scores_by_image,
-                "pr_scores_by_class"    : pr_scores_by_class,
-                "pr_hm"        : pr_hm[i],
-
-                "fcn_scores"   : fcn_scores_by_image,
-                "fcn_scores_by_class"   : fcn_scores_by_class,
-                "fcn_hm"       : fcn_hm[i],
-                "fcn_sm"       : fcn_sm[i]
-            })
-                    
-        return results 
 """

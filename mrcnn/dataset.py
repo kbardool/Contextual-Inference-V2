@@ -103,7 +103,8 @@ class Dataset(object):
         self.class_names = [clean_name(c["name"]) for c in self.class_info]
         self.num_images  = len(self.image_info)
         self._image_ids  = np.arange(self.num_images)
-
+        
+        
         self.class_from_source_map = {"{}.{}".format(info['source'], info['id']): id
                                       for info, id in zip(self.class_info, self.class_ids)}
 
@@ -135,11 +136,13 @@ class Dataset(object):
 
          
         self.active_class_info = {}    
-        for cls in  self.active_class_ids:
+        
+        for cls in  self.active_ext_class_ids:
             int_id = self.ext_to_int_id[cls]
             self.active_class_info.setdefault(int_id, {'name':self.class_names[int_id], 'ext_id':cls})
         
         self.active_class_ids  = [i for i in sorted(self.active_class_info)]
+        
         self.build_category_to_class_map()
         self.build_category_to_external_class_map()
         
@@ -173,9 +176,10 @@ class Dataset(object):
     def display_active_class_info(self):
 
         print(self.active_class_ids)
-        for ext_cls in self.active_class_ids:
-            class_id = self.map_source_class_id( "coco.{}".format(ext_cls))
-            print('ext_cls:',ext_cls, 'internal_class: ', class_id, 'name:', self.class_info[class_id]['category'],'-',self.class_info[class_id]['name'])        
+        for cls in self.active_class_ids:
+            # class_id = self.map_source_class_id( "coco.{}".format(ext_cls))
+            ext_cls = self.int_to_ext_id[cls]
+            print( 'internal_class: ', cls,'ext_cls:',ext_cls, 'name:', self.class_info[cls]['category'],'-',self.class_info[cls]['name'])        
         return
 
     def display_class_info(self):

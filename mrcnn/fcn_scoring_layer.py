@@ -5,7 +5,7 @@ import tensorflow as tf
 import keras.backend as KB
 import keras.layers as KL
 import keras.engine as KE
-sys.path.append('..')
+# sys.path.append('..')
 import mrcnn.utils as utils
 from mrcnn.utils   import  logt
 # import tensorflow.contrib.util as tfc

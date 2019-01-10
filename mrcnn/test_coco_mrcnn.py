@@ -22,7 +22,7 @@ from mrcnn.config       import Config
 from mrcnn.dataset      import Dataset 
 from mrcnn.utils        import log, stack_tensors, stack_tensors_3d, write_stdout
 from mrcnn.datagen      import data_generator, load_image_gt
-from mrcnn.coco         import prep_coco_dataset, CocoDataset, CocoConfig, CocoInferenceConfig, evaluate_coco, build_coco_results
+from mrcnn.coco         import prep_coco_dataset
 from mrcnn.utils        import command_line_parser, display_input_parms, Paths
 
 pp = pprint.PrettyPrinter(indent=2, width=100)
@@ -40,10 +40,10 @@ print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,k
 ##------------------------------------------------------------------------------------
 parser = command_line_parser()
 input_parms  =" --batch_size     1  "
-# input_parms +=" --lr 0.00001     --val_steps 8 " 
 input_parms +=" --mrcnn_logs_dir train_mrcnn_coco "
-input_parms +=" --fcn_logs_dir   train_fcn8_subset " 
+# input_parms +=" --fcn_logs_dir   train_fcn8_subset " 
 input_parms +=" --mrcnn_model    last "
+# input_parms +=" --lr 0.00001     --val_steps 8 " 
 # input_parms +=" --fcn_model      init "
 # input_parms +=" --opt            adam "
 # input_parms +=" --fcn_arch       fcn8 " 
@@ -94,11 +94,12 @@ mrcnn_config.HEATMAP_SCALE_FACTOR = 4
 mrcnn_config.BATCH_SIZE           = int(args.batch_size)                  # Batch size is 2 (# GPUs * images/GPU).
 mrcnn_config.IMAGES_PER_GPU       = int(args.batch_size)                  # Must match BATCH_SIZE
 mrcnn_config.STEPS_PER_EPOCH      = int(args.steps_in_epoch)
-# mrcnn_config.LEARNING_RATE        = float(args.lr)
+
 mrcnn_config.EPOCHS_TO_RUN        = int(args.epochs)
 mrcnn_config.FCN_INPUT_SHAPE      = mrcnn_config.IMAGE_SHAPE[0:2]
 mrcnn_config.LAST_EPOCH_RAN       = int(args.last_epoch)
 
+# mrcnn_config.LEARNING_RATE        = float(args.lr)
 # mrcnn_config.WEIGHT_DECAY         = 2.0e-4
 # mrcnn_config.VALIDATION_STEPS     = int(args.val_steps)
 # mrcnn_config.REDUCE_LR_FACTOR     = 0.5
@@ -117,7 +118,7 @@ mrcnn_config.DETECTION_MIN_CONFIDENCE = 0.1
 mrcnn_config.DETECTION_PER_CLASS      = mrcnn_config.DETECTION_MAX_INSTANCES 
 
 ##------------------------------------------------------------------------------------
-## Build Mask RCNN Model in TRAINFCN mode
+## Build Mask RCNN Model in INFERENCE mode
 ##------------------------------------------------------------------------------------
 try :
     del mrcnn_model
@@ -165,7 +166,6 @@ for a,b in zip(dataset_test.class_ids, dataset_test.class_names):
 ##----------------------------------------------------------------------------------------------
 ## Run detection process over all images 
 ##----------------------------------------------------------------------------------------------
-
 num_images = min(len(dataset_test.image_ids), int(sys.argv[1]))
 
 print('Processing {:d} images ......'.format(num_images))
@@ -188,6 +188,7 @@ for image_id in range(num_images):
     predicted_bboxes[keyname] =  {"boxes" : r['molded_rois'].tolist(),
                                     "scores" : r['scores'].tolist(),
                                     "class_ids" : r['class_ids'].tolist()}
+                                    
     for cls, score, bbox in zip(r['class_ids'], r['scores'], r['molded_rois'].tolist()):
         predicted_classes[cls]['scores'].append(float(score))
         predicted_classes[cls]['bboxes'].append(bbox)
@@ -195,10 +196,16 @@ for image_id in range(num_images):
     # for cls, bbox in zip(gt_class_ids,gt_bboxes.tolist()):
         # print(cls, bbox)
 
-
-# add score average to scores for each class         
-for inf in predicted_classes:
-    inf['avg'] = 0  if (len(inf['scores']) == 0 ) else np.mean(inf['scores'])
+##----------------------------------------------------------------------------------------------
+## add score average and quantiles to scores for each class         
+##----------------------------------------------------------------------------------------------
+for cls in predicted_classes:
+    if (len(cls['scores']) == 0 ):
+        cls['avg'] = 0.0000
+        cls['percentiles'] = [0.0000, 0.0000, 0.0000] 
+    else:
+        cls['avg'] = np.round(np.mean(cls['scores']),4)
+        cls['percentiles'] = np.round(np.percentile(cls['scores'],(25,50,75)),4).tolist()
         
 ##----------------------------------------------------------------------------------------------
 ## Write gt and prediction info to json files

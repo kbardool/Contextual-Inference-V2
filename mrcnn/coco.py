@@ -51,7 +51,7 @@ from   mrcnn.datagen  import data_generator
 ##------------------------------------------------------------------------------------
 ## Build Training and Validation datasets
 ##------------------------------------------------------------------------------------
-def prep_coco_dataset(type, config, load_coco_classes = None, class_ids = None, 
+def prep_coco_dataset(type, config, load_coco_classes = None, class_ids = None, loadAnns = 'all_classes',
                       generator = False, shuffle = True, augment = False, return_coco = False):
     # dataset_train, train_generator = coco_dataset(["train",  "val35k"], mrcnn_config)
 
@@ -61,7 +61,7 @@ def prep_coco_dataset(type, config, load_coco_classes = None, class_ids = None,
     
     # dataset_test.load_coco(COCO_DATASET_PATH,  "train", class_ids=mrcnn_config.COCO_CLASSES)
     for i in type:
-        dataset.load_coco(config.COCO_DATASET_PATH, i , class_ids = class_ids, 
+        dataset.load_coco(config.COCO_DATASET_PATH, i , class_ids = class_ids, loadAnns= loadAnns, 
                             load_coco_classes = load_coco_classes, return_coco = return_coco)
     
     # all datasets loaded, now prep the final dataset
@@ -115,7 +115,7 @@ class CocoInferenceConfig(CocoConfig):
 class CocoDataset(dataset.Dataset):
     
     def load_coco(self, dataset_dir, subset, load_coco_classes=None,
-                  class_ids=None, class_map=None, return_coco=False):
+                  class_ids=None, class_map=None, return_coco=False, loadAnns = 'all_classes'):
         """Load a subset of the COCO dataset.
         dataset_dir:    The root directory of the COCO dataset.
         subset:         What to load (train, val, minival, val35k)
@@ -124,6 +124,16 @@ class CocoDataset(dataset.Dataset):
                               different datasets to the same class ID.
         return_coco: If True, returns the COCO object.
         """
+        assert loadAnns in ['all_classes', 'active_only'], "loadAnns must be 'all_classes' or 'active_only' "
+        if loadAnns == 'active_only':
+            print('===================================================')
+            print('!!! Loading annotations for ACTIVE CLASSES ONLY !!!')
+            print('===================================================')
+        else:
+            print('===================================================')
+            print('   Loading annotations for all Coco classes ...    ')
+            print('===================================================')
+
         # Path
         image_dir = os.path.join(dataset_dir, "train2014" if subset == "train" else "val2014")
         # image_dir = os.path.join(dataset_dir, "train2017" if subset == "train" lse "val2017")
@@ -177,9 +187,8 @@ class CocoDataset(dataset.Dataset):
             load_coco_classes = class_ids
             image_ids = list(coco.imgs.keys())
 
-        self.active_class_ids = sorted(load_coco_classes)
+        self.active_ext_class_ids = sorted(load_coco_classes)
             
-        # self.active_class_info    
         print(' image dir            : ', image_dir) 
         print(' json_path_dir        : ', os.path.join(dataset_dir, json_path_dict[subset]))
         print(' number of images     : ', len(image_ids))
@@ -187,6 +196,9 @@ class CocoDataset(dataset.Dataset):
         print(' image_ids[1000:1010] : ', image_ids[1000:1010])
         # print(' ClassIds     :', class_ids)
 
+        ## determine which annotations to load based on the loadAnns parameter
+        annotation_classes = class_ids if loadAnns == 'all_classes' else self.active_ext_class_ids 
+        
         ## Add images to the image_info dictionary
         for i in image_ids:
             self.add_image(
@@ -194,12 +206,8 @@ class CocoDataset(dataset.Dataset):
                 image_id    = i,
                 path        = os.path.join(image_dir, coco.imgs[i]['file_name']),
                 width       = coco.imgs[i]["width"],
-                height      = coco.imgs[i]["height"],
-                # This line loads annotations for the active classes only. 
-                # annotations = coco.loadAnns(coco.getAnnIds(imgIds=[i], catIds=load_coco_classes, iscrowd=None)))
-                
-                # The following line loads annotations for ALL coco classes.
-                annotations = coco.loadAnns(coco.getAnnIds(imgIds=[i], catIds=class_ids, iscrowd=None)))
+                height      = coco.imgs[i]["height"],               
+                annotations = coco.loadAnns(coco.getAnnIds(imgIds=[i], catIds=annotation_classes, iscrowd=None))) 
         
         if return_coco:
             self.source_objs[subset] = coco
@@ -220,7 +228,7 @@ class CocoDataset(dataset.Dataset):
         # If not a COCO image, delegate to parent class.
         image_info = self.image_info[image_id]
         if image_info["source"] != "coco":
-            return super(self.__class__).load_mask(image_id)
+            return super().load_mask(image_id)
 
         instance_masks = []
         class_ids = []
@@ -259,7 +267,8 @@ class CocoDataset(dataset.Dataset):
             return mask, class_ids
         else:
             # Call super class to return an empty mask
-            return super(self.__class__).load_mask(image_id)
+            # super(self.__class__, self) is equivalent to super() 
+            return super().load_mask(image_id)
 
     def display_annotation_info(self, image_ids):
         if not isinstance(image_ids, list):
@@ -280,7 +289,7 @@ class CocoDataset(dataset.Dataset):
         if info["source"] == "coco":
             return "http://cocodataset.org/#explore?id={}".format(info["id"])
         else:
-            super(self.__class__).image_reference(self, image_id)
+            super().image_reference(self, image_id)
 
     # The following two functions are from pycocotools with a few changes.
 

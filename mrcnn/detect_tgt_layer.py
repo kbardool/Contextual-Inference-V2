@@ -15,7 +15,6 @@ import tensorflow as tf
 # import keras.initializers as KI
 import keras.engine as KE
 import keras.backend as KB
-sys.path.append('..')
 import mrcnn.utils as utils
 
 
@@ -209,7 +208,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes,  config):
     # crowd_masks     = tf.gather(gt_masks, crowd_ix, axis=2)
     
     gt_class_ids    = tf.gather(gt_class_ids, non_crowd_ix)
-    gt_boxes        = tf.gather(gt_boxes, non_crowd_ix)
+    gt_boxes        = tf.gather(gt_boxes    , non_crowd_ix)
     # gt_masks        = tf.gather(gt_masks, non_crowd_ix, axis=2)
 
 
@@ -238,8 +237,11 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes,  config):
     ## 1. Determine indices of positive ROI propsal boxes
     ##    Identify ROI proposal boxes that have an IoU >= 0.5 overlap with some gt_box, and store 
     ##    indices into positive_indices
+    ##
+    ## 12-22-2018 changed the threshold from hardcoded value of 0.5 to configurable value 
+    ##            set by config.ROI_GT_IOU_THRESHOLD
     ##------------------------------------------------------------------------------------------
-    positive_roi_bool     = (roi_iou_max >= 0.5)
+    positive_roi_bool     = (roi_iou_max >= config.ROI_GT_IOU_THRESHOLD)
     positive_indices      = tf.where(positive_roi_bool)[:, 0]
 
     ##------------------------------------------------------------------------------------------
@@ -248,7 +250,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes,  config):
     ##    the where creates a array with shape [# of answers, 1] so we use [:, 0] after
     ##------------------------------------------------------------------------------------------
     ## current method
-    negative_indices      = tf.where(tf.logical_and(roi_iou_max < 0.5, no_crowd_bool))[:, 0]
+    negative_indices      = tf.where(tf.logical_and(roi_iou_max < config.ROI_GT_IOU_THRESHOLD, no_crowd_bool))[:, 0]
 
     ## new method
     # this modification will determine negative ROI proposal boxes but in addition, 

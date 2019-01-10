@@ -111,7 +111,9 @@ class NewShapesDataset(Dataset):
         self.add_class("shapes", 4, "building")
         self.add_class("shapes", 5, "tree")
         self.add_class("shapes", 6, "cloud")
-        self.active_class_ids=[1,2,3,4,5,6]
+        self.active_ext_class_ids=[1,2,3,4,5,6]
+        
+        
         buffer = self.buffer
         height = self.height
         width  = self.width

@@ -15,12 +15,6 @@ import keras.backend as KB
 import keras.layers as KL
 import keras.models as KM
 from   keras.regularizers     import l2
-# from   keras.activations as KA
-# import keras.initializers as KI
-# import keras.engine as KE
-
-sys.path.append('..')
-
 from  mrcnn.utils           import logt
 
 # from  mrcnn.helper_layers   import BilinearUpSampling2D

@@ -1,1 +1,0 @@
-This folder contains code to train the combined MRCNN-FCN model (all layers defined in one model)

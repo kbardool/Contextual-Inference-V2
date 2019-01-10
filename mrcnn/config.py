@@ -107,7 +107,13 @@ class Config(object):
 
     # Percent of positive ROIs used to train classifier/mask heads
     ROI_POSITIVE_RATIO = 0.33
-
+    # Minimum IoU threshold required between Proposal and GT for selection as a 
+    # postiive candidate (Positive ROI) - Default value was 0.5
+    ## 12-22-2018 changed this to 0.3 to avoid images with no RoIs. 
+    ## 12-22-2018 further lowered this to 0.2
+    ROI_GT_IOU_THRESHOLD = 0.2
+    
+    
     # Pooled ROIs
     POOL_SIZE = 7
     MASK_POOL_SIZE = 14
@@ -167,7 +173,7 @@ class Config(object):
         # Input image size
         # currently max is 1024 x 1024
         self.IMAGE_SHAPE = np.array([self.IMAGE_MAX_DIM, self.IMAGE_MAX_DIM, 3])
-        self.FCN_INPUT_SHAPE = self.IMAGE_SHAPE[0:2]
+        self.FCN_INPUT_SHAPE = self.IMAGE_SHAPE[0:2] // self.HEATMAP_SCALE_FACTOR
 
         # Compute backbone size from input image size
         self.BACKBONE_SHAPES = np.array(

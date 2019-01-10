@@ -21,7 +21,7 @@ import json
 import glob
 import os
 import time
-
+import pprint 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -29,7 +29,7 @@ import seaborn as sns
 
 sns.set_style('white')
 sns.set_context('poster')
-
+pp = pprint.PrettyPrinter(indent=2, width=100)
 COLORS = [
     '#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78', '#2ca02c',
     '#98df8a', '#d62728', '#ff9896', '#9467bd', '#c5b0d5',
@@ -176,7 +176,7 @@ def calc_precision_recall(img_results):
 
     return (precision, recall)
 
-def get_model_scores_map(pred_boxes):
+def get_model_scores_map(pred_boxes, score_key):
     """Creates a dictionary of from model_scores to image ids.
 
     Args:
@@ -190,8 +190,9 @@ def get_model_scores_map(pred_boxes):
     """
     model_scores_map = {}
     for img_id, val in pred_boxes.items():
-        for raw_score in val['scores']:
-            score = round(raw_score, 4)
+        # for raw_score in val['scores']:
+        for score in val[score_key]:
+            # score = round(raw_score, 4)  <-- we are now writing all scores in rounded format
             if score not in model_scores_map.keys():
                 model_scores_map[score] = [img_id]
             else:
@@ -199,7 +200,7 @@ def get_model_scores_map(pred_boxes):
     return model_scores_map
 
     
-def get_avg_precision_at_iou(gt_boxes, pred_boxes, iou_thr=0.5):
+def get_avg_precision_at_iou(gt_boxes, pr_boxes, iou_thr=0.5, score_key = 'scores'):
     """Calculates average precision at given IoU threshold.
 
     Args:
@@ -222,14 +223,31 @@ def get_avg_precision_at_iou(gt_boxes, pred_boxes, iou_thr=0.5):
             'models_thrs' (list of floats): model threshold value that
                 precision and recall were computed for.
     """
-    model_scores_map    = get_model_scores_map(pred_boxes)
+    ## 01-05-19: added to prevent corruption of original data passed to function
+    ## TODO: merge pred_boxes and pred_boxes_pruned to conserve memory
+    pred_boxes = deepcopy(pr_boxes)
+    
+    model_scores_map    = get_model_scores_map(pred_boxes, score_key = score_key)
     sorted_model_scores = sorted(model_scores_map.keys())
 
     ## Sort the predicted boxes in ascending score order (lowest scoring boxes first):
     for img_id in pred_boxes.keys():
-        arg_sort = np.argsort(pred_boxes[img_id]['scores'])
-        pred_boxes[img_id]['scores'] = np.array(pred_boxes[img_id]['scores'])[arg_sort].tolist()
+        # print()
+        # print('image_id : ', img_id)
+        # print('--------------------------')
+        # print('scores:', pred_boxes[img_id]['scores'] )
+        # print(score_key, ':' ,pred_boxes[img_id][score_key] )
+        # print(pred_boxes[img_id]['boxes'] )
+        
+        arg_sort = np.argsort(pred_boxes[img_id][score_key])        
+        pred_boxes[img_id]['scores'] = np.array(pred_boxes[img_id][score_key])[arg_sort].tolist()
         pred_boxes[img_id]['boxes']  = np.array(pred_boxes[img_id]['boxes'])[arg_sort].tolist()
+        
+        # print('after argsort:' , arg_sort)
+        # print('--------------------------')
+        # print('scores:', pred_boxes[img_id]['scores'] )
+        # print(score_key, ':' ,pred_boxes[img_id][score_key] )
+        # print(pred_boxes[img_id]['boxes'] )
 
     pred_boxes_pruned = deepcopy(pred_boxes)
 
@@ -241,6 +259,9 @@ def get_avg_precision_at_iou(gt_boxes, pred_boxes, iou_thr=0.5):
     # Loop over model score thresholds and calculate precision, recall
     for ithr, model_score_thr in enumerate(sorted_model_scores[:-1]):
         # On first iteration, define img_results for the first time:
+        # print('------------------------------------------------')
+        # print('ithr ', ithr, 'model_scr_thr', model_score_thr)
+        # print('------------------------------------------------')
         img_ids = gt_boxes.keys() if ithr == 0 else model_scores_map[model_score_thr]
         for img_id in img_ids:
             gt_boxes_img = gt_boxes[img_id]['boxes']
@@ -248,7 +269,7 @@ def get_avg_precision_at_iou(gt_boxes, pred_boxes, iou_thr=0.5):
             start_idx = 0
             for score in box_scores:
                 if score <= model_score_thr:
-                    pred_boxes_pruned[img_id]
+                    # pred_boxes_pruned[img_id]
                     start_idx += 1
                 else:
                     break
@@ -261,13 +282,25 @@ def get_avg_precision_at_iou(gt_boxes, pred_boxes, iou_thr=0.5):
             img_results[img_id] = get_single_image_results(
                 gt_boxes_img, pred_boxes_pruned[img_id]['boxes'], iou_thr)
 
+            # print('Start Idx is ', start_idx)
+            # print('image_id : ', img_id)
+            # print('--------------------------')            
+            # pp.pprint(gt_boxes_img)
+            # pp.pprint(pred_boxes_pruned[img_id]['boxes'])
+            # pp.pprint(img_results[img_id])
+            # print()
+
         prec, rec = calc_precision_recall(img_results)
+        # print('precision:', prec, 'Recall:', rec)
+        
         precisions.append(prec)
         recalls.append(rec)
         model_thrs.append(model_score_thr)
 
     precisions = np.array(precisions)
     recalls = np.array(recalls)
+    # print('final precsions:', precisions)
+    # print('final recall   :', recalls)
     prec_at_rec = []
     for recall_level in np.linspace(0.0, 1.0, 11):
         try:
@@ -286,7 +319,7 @@ def get_avg_precision_at_iou(gt_boxes, pred_boxes, iou_thr=0.5):
 
 
 def plot_pr_curve(
-    precisions, recalls, category='Person', label=None, color=None, ax=None):
+    precisions, recalls, category='Not Supplied', label=None, color=None, ax=None):
     """Simple plotting helper function"""
 
     if ax is None:
@@ -297,10 +330,10 @@ def plot_pr_curve(
         color = COLORS[0]
     ax.plot(recalls, precisions, label=label,  color=color)
     # ax.scatter(recalls, precisions, label=label, s=4, color=color)
-    ax.set_xlabel('recall')
-    ax.set_ylabel('precision')
+    ax.set_xlabel(' recall ')
+    ax.set_ylabel(' precision ')
     # ax.set_title('Precision-Recall curve for {}'.format(category))
-    ax.set_xlim([0.0,1.3])
+    ax.set_xlim([0.0,1.2])
     ax.set_ylim([0.0,1.2])
     return ax
 

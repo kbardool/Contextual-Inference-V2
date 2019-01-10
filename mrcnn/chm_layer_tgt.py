@@ -15,17 +15,17 @@ import tensorflow as tf
 import keras.backend as KB
 import keras.layers as KL
 import keras.engine as KE
-sys.path.append('..')
 import mrcnn.utils as utils
 import tensorflow.contrib.util as tfc
 import pprint
+from   mrcnn.utils       import logt
 from   mrcnn.chm_layer   import build_hm_score_v2, build_hm_score_v3, clip_heatmap, normalize_scores
 
 ##-----------------------------------------------------------------------------------------------------------
 ## 
 ##-----------------------------------------------------------------------------------------------------------
 def build_gt_tensor(gt_class_ids, norm_gt_bboxes, config):
-
+    verbose         = config.VERBOSE
     batch_size      = config.BATCH_SIZE
     num_classes     = config.NUM_CLASSES
     h, w            = config.IMAGE_SHAPE[:2]
@@ -44,28 +44,28 @@ def build_gt_tensor(gt_class_ids, norm_gt_bboxes, config):
     else:
         tensor_name = "gt_tensor"
         
-    print('\n')
-    print('  > BUILD_GROUND TRUTH_TF()' )        
-    print('    num_bboxes             : ', num_bboxes, '(building ', tensor_name , ')' )    
-    print('    gt_class_ids shape     : ', gt_class_ids.get_shape(), '  ', KB.int_shape(gt_class_ids))
-    print('    norm_gt_bboxes.shape   : ', norm_gt_bboxes.get_shape()   , '  ', KB.int_shape(norm_gt_bboxes))
-    print('    gt_bboxes.shape        : ', gt_bboxes.get_shape()   , '  ', KB.int_shape(gt_bboxes))
+    if verbose:
+        print('\n')
+        print('  > BUILD_GROUND TRUTH_TF()' )        
+        print('    num_bboxes             : ', num_bboxes, '(building ', tensor_name , ')' )    
+        print('    gt_class_ids shape     : ', gt_class_ids.get_shape(), '  ', KB.int_shape(gt_class_ids))
+        print('    norm_gt_bboxes.shape   : ', norm_gt_bboxes.get_shape()   , '  ', KB.int_shape(norm_gt_bboxes))
+        print('    gt_bboxes.shape        : ', gt_bboxes.get_shape()   , '  ', KB.int_shape(gt_bboxes))
         
     #---------------------------------------------------------------------------
     # use the argmaxof each row to determine the dominating (predicted) class
     # mask identifies class_ids > 0 
     #---------------------------------------------------------------------------
     gt_classes_exp = tf.to_float(tf.expand_dims(gt_class_ids ,axis=-1))
-    print('    gt_classes_exp         : ', gt_classes_exp.get_shape() )
+    logt('gt_classes_exp ', gt_classes_exp, verbose = verbose)
 
     ones = tf.ones_like(gt_class_ids)
     zeros= tf.zeros_like(gt_class_ids)
     mask = tf.greater(gt_class_ids , 0)
 
     gt_scores     = tf.where(mask, ones, zeros)
-    # pred_scores      = tf.reduce_max(mrcnn_class ,axis=-1, keep_dims=True)   # (32,)
     gt_scores_exp = tf.to_float(KB.expand_dims(gt_scores, axis=-1))
-    print('    gt_scores_exp          : ', gt_scores_exp.get_shape())
+    logt('gt_scores_exp  ', gt_scores_exp, verbose = verbose)
 
     ##------------------------------------------------------------------------------------
     ## Generate GT_ARRAY
@@ -93,10 +93,10 @@ def build_gt_tensor(gt_class_ids, norm_gt_bboxes, config):
     scatter_ind = tf.stack([batch_grid , gt_class_ids, bbox_grid],axis = -1)
     gt_scatter = tf.scatter_nd(scatter_ind, gt_array, [batch_size, num_classes, num_bboxes, gt_array.shape[-1] ])
     
-    print('    gt_array shape         : ', gt_array.shape   , gt_array.get_shape())
-    print('    scatter_ind shape      : ', scatter_ind.shape, scatter_ind.get_shape())
-    print('    tf.shape(gt_array)[-1] : ', gt_array.shape[-1], KB.int_shape(gt_array))
-    print('    gt_scatter shape       : ', gt_scatter.shape , gt_scatter.get_shape())
+    logt('gt_array    ', gt_array   , verbose = verbose)
+    logt('scatter_ind ', scatter_ind, verbose = verbose)
+    logt('gt_array    ', gt_array   , verbose = verbose)
+    logt('gt_scatter  ', gt_scatter , verbose = verbose)
     
     ##-------------------------------------------------------------------------------
     ## sort in each class dimension based on on sequence number (column 6)
@@ -113,11 +113,11 @@ def build_gt_tensor(gt_class_ids, norm_gt_bboxes, config):
     gt_tensor   = tf.gather_nd(gt_scatter, gather_inds , name = tensor_name)
     # append an index to the end of each row --- commented out 30-04-2018
     # gt_tensor = tf.concat([gt_tensor, bbox_grid_exp], axis = -1)
-    print('    sort_inds              : ', type(sort_inds)   , ' shape ', sort_inds.shape)
-    print('    class_grid             : ', type(class_grid)  , ' shape ', class_grid.get_shape())
-    print('    batch_grid             : ', type(batch_grid)  , ' shape ', batch_grid.get_shape())
-    print('    gather_inds            : ', gather_inds.get_shape())
-    print('    gt_tensor.shape        : ', KB.int_shape(gt_tensor), gt_tensor.get_shape())
+    logt('sort_inds   ', sort_inds   , verbose = verbose)
+    logt('class_grid  ', class_grid  , verbose = verbose)
+    logt('batch_grid  ', batch_grid  , verbose = verbose)
+    logt('gather_inds ', gather_inds , verbose = verbose)
+    logt('gt_tensor   ', gt_tensor   , verbose = verbose)
 
     return  gt_tensor 
 
@@ -147,7 +147,7 @@ def build_gt_tensor(gt_class_ids, norm_gt_bboxes, config):
 ##                  - (sum of heatmap in masked area) * (bbox per-class normalized score from in_tensor)
 ##------------------------------------------------------------------------------------------------------------
 def build_gt_heatmap(in_tensor, config, names = None):
-  
+    verbose         = config.VERBOSE
     num_detections  = config.DETECTION_MAX_INSTANCES
     img_h, img_w    = config.IMAGE_SHAPE[:2]
     batch_size      = config.BATCH_SIZE
@@ -161,11 +161,12 @@ def build_gt_heatmap(in_tensor, config, names = None):
     # rois_per_image  = config.DETECTION_PER_CLASS
     rois_per_image  = (in_tensor.shape)[2]  
 
-    print('\n ')
-    print('  > build_heatmap() for ', names )
-    print('    in_tensor shape        : ', in_tensor.shape)       
-    print('    num bboxes per class   : ', rois_per_image )
-    print('    heatmap scale        : ', heatmap_scale, 'Dimensions:  w:', grid_w,' h:', grid_h)
+    if verbose:
+        print('\n ')
+        print('  > build_heatmap() for ', names )
+        print('    in_tensor shape        : ', in_tensor.shape)       
+        print('    num bboxes per class   : ', rois_per_image )
+        print('    heatmap scale        : ', heatmap_scale, 'Dimensions:  w:', grid_w,' h:', grid_h)
     
     ##-----------------------------------------------------------------------------    
     ## Stack non_zero bboxes from in_tensor into pt2_dense 
@@ -185,9 +186,9 @@ def build_gt_heatmap(in_tensor, config, names = None):
     pt2_ind = tf.where(pt2_sum > 0)
     pt2_dense = tf.gather_nd( in_tensor, pt2_ind)
 
-    print('    pt2_sum shape  : ', pt2_sum.shape)
-    print('    pt2_ind shape  : ', pt2_ind.shape)
-    print('    pt2_dense shape: ', pt2_dense.get_shape())
+    logt('pt2_sum   ', pt2_sum, verbose = verbose)
+    logt('pt2_ind   ', pt2_ind, verbose = verbose)
+    logt('pt2_dense ', pt2_dense, verbose = verbose)
 
     ##-----------------------------------------------------------------------------
     ## Build mesh-grid to hold pixel coordinates  
@@ -227,7 +228,7 @@ def build_gt_heatmap(in_tensor, config, names = None):
     ##  Compute Normal Distribution for bounding boxes
     ##-----------------------------------------------------------------------------    
     prob_grid = tf.ones([tf.shape(pt2_dense)[0] , grid_h, grid_w], dtype = tf.float32)
-    print('     Prob_grid shape : ', prob_grid.shape)    
+    logt('Prob_grid  ', prob_grid, verbose = verbose)    
     
     # tfd = tf.contrib.distributions
     # mvn = tfd.MultivariateNormalDiag(loc = means,  scale_diag = covar)
@@ -266,8 +267,8 @@ def build_gt_heatmap(in_tensor, config, names = None):
     ##---------------------------------------------------------------------------------------------        
     prob_grid_clipped = tf.map_fn(clip_heatmap, [prob_grid, cy,cx, covar], 
                                  dtype = tf.float32, swap_memory = True)
-    print('    prob_grid_clipped      : ', prob_grid_clipped.shape) 
-                                 
+    logt('prob_grid_clipped ', prob_grid_clipped, verbose = verbose) 
+    
     ##--------------------------------------------------------------------------------------------
     ## (0) Generate scores using prob_grid and pt2_dense - (NEW METHOD added 09-21-2018)
     ##  pt2_dense[:,7] is the per-class-normalized score from in_tensor
@@ -287,32 +288,32 @@ def build_gt_heatmap(in_tensor, config, names = None):
                                  dtype = tf.float32, swap_memory = True)
     old_style_scores = tf.scatter_nd(pt2_ind, old_style_scores, 
                                      [batch_size, num_classes, rois_per_image, 3], name = 'scores_scattered')
-    print('    old_style_scores       : ', old_style_scores.shape, ' Keras tensor ', KB.is_keras_tensor(old_style_scores) )
+    logt('old_style_scores ', old_style_scores, verbose = verbose)
     
      
     ##---------------------------------------------------------------------------------------------
     ## - Build alternative scores based on normalized/scaled/clipped heatmap
     ##---------------------------------------------------------------------------------------------
     alt_scores_1 = tf.map_fn(build_hm_score_v3, [prob_grid_clipped, cy, cx,covar], dtype=tf.float32)    
-    print('    alt_scores_1    : ', KB.int_shape(alt_scores_1), ' Keras tensor ', KB.is_keras_tensor(alt_scores_1) )
+    logt('alt_scores_1    ', alt_scores_1, verbose = verbose)
     alt_scores_1 = tf.scatter_nd(pt2_ind, alt_scores_1, 
                                  [batch_size, num_classes, rois_per_image, KB.int_shape(alt_scores_1)[-1]],
                                  name = 'alt_scores_1')  
 
-    print('    alt_scores_1(by class)       : ', alt_scores_1.shape ,' Keras tensor ', KB.is_keras_tensor(alt_scores_1) )  
     alt_scores_1_norm = normalize_scores(alt_scores_1)
-    print('    alt_scores_1_norm(by_class)  : ', alt_scores_1_norm.shape, KB.int_shape(alt_scores_1_norm))
+    logt('alt_scores_1(by class)      ', alt_scores_1, verbose = verbose)
+    logt('alt_scores_1_norm(by_class) ', alt_scores_1_norm, verbose = verbose)
                                      
     ##-------------------------------------------------------------------------------------
     ## (3) scatter out the probability distribution heatmaps based on class 
     ##-------------------------------------------------------------------------------------
-    print('\n    Scatter out the probability distributions based on class --------------') 
     gauss_heatmap   = tf.scatter_nd(pt2_ind, prob_grid_clipped, 
                                   [batch_size, num_classes, rois_per_image, grid_w, grid_h], 
                                   name = 'gauss_heatmap')
-    print('    pt2_ind shape   : ', pt2_ind.shape)  
-    print('    prob_grid shape : ', prob_grid.shape)  
-    print('    gauss_heatmap   : ', gauss_heatmap.shape)   # batch_sz , num_classes, num_rois, image_h, image_w
+    logt('\n    Scatter out the probability distributions based on class --------------') 
+    logt('pt2_ind       ', pt2_ind, verbose = verbose)
+    logt('prob_grid     ', prob_grid, verbose = verbose)
+    logt('gauss_heatmap ', gauss_heatmap, verbose = verbose)   # batch_sz , num_classes, num_rois, image_h, image_w
 
     ##-------------------------------------------------------------------------------------
     ## (4) MAX : Reduce_MAX up gauss_heatmaps by class 
@@ -320,9 +321,9 @@ def build_gt_heatmap(in_tensor, config, names = None):
     ##           sum or normalize. We Reduce_max on the class axis, and as a result the 
     ##           correspoding areas in the heatmap are set to '1'
     ##-------------------------------------------------------------------------------------
-    print('\n    Reduce MAX based on class ---------------------------------------------')         
     gauss_heatmap = tf.reduce_max(gauss_heatmap, axis=2, name='gauss_heatmap')
-    print('    gaussian_heatmap : ', gauss_heatmap.get_shape(), 'Keras tensor ', KB.is_keras_tensor(gauss_heatmap) )
+    logt('\n    Reduce MAX based on class -------------------------------------', verbose = verbose)
+    logt(' gaussian_heatmap : ', gauss_heatmap, verbose = verbose)
     
     #---------------------------------------------------------------------------------------------
     # (5) heatmap normalization
@@ -341,25 +342,25 @@ def build_gt_heatmap(in_tensor, config, names = None):
     ##  build alternative scores#  based on normalized/sclaked clipped heatmap
     ##---------------------------------------------------------------------------------------------
     hm_indices = tf.cast(pt2_ind[:, :2],dtype=tf.int32)
-    print('    hm_indices shape         :',  hm_indices.get_shape(), KB.int_shape(hm_indices))
     pt2_heatmaps = tf.gather_nd(gauss_heatmap, hm_indices )
-    print('    pt2_heatmaps             :',  pt2_heatmaps.get_shape(), KB.int_shape(pt2_heatmaps))
+    logt('hm_indices   ',  hm_indices, verbose = verbose)
+    logt('pt2_heatmaps ',  pt2_heatmaps, verbose = verbose)
 
     alt_scores_2 = tf.map_fn(build_hm_score_v3, [pt2_heatmaps, cy, cx,covar], dtype=tf.float32)    
-    print('    alt_scores_2    : ', KB.int_shape(alt_scores_2), ' Keras tensor ', KB.is_keras_tensor(alt_scores_2) )
+    logt('alt_scores_2  ', alt_scores_2, verbose = verbose)
+
     alt_scores_2 = tf.scatter_nd(pt2_ind, alt_scores_2, 
                                      [batch_size, num_classes, rois_per_image, KB.int_shape(alt_scores_2)[-1]], name = 'alt_scores_2')  
     
-    print('    alt_scores_2(by class)       : ', alt_scores_2.shape ,' Keras tensor ', KB.is_keras_tensor(alt_scores_2) )  
     alt_scores_2_norm = normalize_scores(alt_scores_2)
-    print('    alt_scores_2_norm(by_class)  : ', alt_scores_2_norm.shape, KB.int_shape(alt_scores_2_norm))
+    logt('alt_scores_2(by class)       : ', alt_scores_2, verbose = verbose)
+    logt('alt_scores_2_norm(by_class)  : ', alt_scores_2_norm, verbose = verbose)
     
         
     ##--------------------------------------------------------------------------------------------
     ##  Transpose tensor to [BatchSz, Height, Width, Num_Classes]
     ##--------------------------------------------------------------------------------------------
     gauss_heatmap  = tf.transpose(gauss_heatmap,[0,2,3,1], name = names[0])
-    print('    gauss_heatmap : ', gauss_heatmap.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap))
     
     # gauss_heatmap_norm = tf.transpose(gauss_heatmap_norm,[0,2,3,1], name = names[0]+'_norm')
     # print('    gauss_heatmap_norm : ', gauss_heatmap_norm.shape,' Keras tensor ', KB.is_keras_tensor(gauss_heatmap_norm) )
@@ -371,8 +372,9 @@ def build_gt_heatmap(in_tensor, config, names = None):
     gauss_scores     = tf.concat([in_tensor, old_style_scores, alt_scores_1, alt_scores_1_norm, alt_scores_2, alt_scores_2_norm],
                                     axis = -1,name = names[0]+'_scores')
     #                                 alt_scores_2[...,:3], alt_scores_3],
-    print('    gauss_scores    : ', gauss_scores.shape, ' Keras tensor ', KB.is_keras_tensor(gauss_scores) )      
-    print('    complete')
+    logt('gauss_heatmap  ', gauss_heatmap, verbose = verbose)
+    logt('gauss_scores', gauss_scores, verbose = verbose)
+    logt('complete    ', verbose = verbose)
         
 
     return   gauss_heatmap, gauss_scores  
@@ -409,20 +411,21 @@ class CHMLayerTarget(KE.Layer):
 
         
     def call(self, inputs):
+        verbose         = self.config.VERBOSE
 
         tgt_class_ids, tgt_bboxes = inputs
-        print('  > CHMLayerTgt Call() ', len(inputs))
-        print('    tgt_class_ids.shape  :', tgt_class_ids.shape, KB.int_shape(tgt_class_ids )) 
-        print('    tgt_bboxes.shape     :',    tgt_bboxes.shape, KB.int_shape(   tgt_bboxes )) 
+        logt('  > CHMLayerTgt Call()   :', inputs, verbose = verbose)
+        logt('    tgt_class_ids.shape  :', tgt_class_ids, verbose = verbose)
+        logt('    tgt_bboxes.shape     :',    tgt_bboxes, verbose = verbose)
          
         gt_tensor     = build_gt_tensor (tgt_class_ids,  tgt_bboxes, self.config)  
         gt_hm, gt_hm_scores  = build_gt_heatmap(gt_tensor, self.config, names = ['gt_heatmap'])
         # gt_cls_cnt   = KL.Lambda(lambda x: tf.count_nonzero(x[:,:,:,-1],axis = -1), name = 'gt_cls_count')(gt_tensor)
 
-        print()
-        print('    gt_heatmap                  : ', gt_hm.shape   , 'Keras tensor ', KB.is_keras_tensor(gt_hm))
-        print('    gt_heatmap_scores           : ', gt_hm_scores.shape , 'Keras tensor ', KB.is_keras_tensor(gt_hm_scores))
-        print('    complete')
+        logt(' ', verbose = verbose)
+        logt('gt_heatmap        ', gt_hm, verbose = verbose)
+        logt('gt_heatmap_scores ', gt_hm_scores, verbose = verbose)
+        logt('complete', verbose = verbose)
         
         return [ gt_hm, gt_hm_scores]
 

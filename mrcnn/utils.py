@@ -8,6 +8,7 @@ Written by Waleed Abdulla
 """
 
 import os, sys, math, zlib, argparse, random, platform, pprint, datetime
+from   sys      import stdout    
 import numpy as np
 import tensorflow as tf
 import scipy.misc
@@ -655,7 +656,49 @@ def overlaps_graph_np(proposals, gt_boxes):
 
     overlaps = np.reshape(iou, (proposals.shape[0], gt_boxes.shape[0]))
     return  overlaps,np.expand_dims(intersection, axis =1), np.expand_dims(union,axis = 1), np.expand_dims(iou, axis = 1)
-   
+
+##------------------------------------------------------------------------------------------
+##  Compute IoU between a box and an array of boxes  
+##------------------------------------------------------------------------------------------
+def compute_one_iou(box1, box2):
+    """
+    Calculates IoU between two indiviual bounding boxes 
+    box1:                1D vector [y1, x1, y2, x2]
+    box2:                          [y1, x1, y2, x2]
+    """
+    # Calculate intersection areas
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    y1 = np.maximum(box1[0], box2[0])
+    y2 = np.minimum(box1[2], box2[2])
+    x1 = np.maximum(box1[1], box2[1])
+    x2 = np.minimum(box1[3], box2[3])
+    intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
+    union = area1 + area2 - intersection
+    
+    return intersection / union  
+
+##------------------------------------------------------------------------------------------
+##  Compute IoU between a box and an array of boxes  
+##------------------------------------------------------------------------------------------
+def compute_1D_iou(box1, box2):
+    """
+    Calculates IoU between two 1D arrays indiviual bounding boxes 
+    box1:                1D vector [boxes_count (y1, x1, y2, x2)]
+    box2:                          [boxes_count (y1, x1, y2, x2)]
+    """
+    # Calculate intersection areas
+    area1 = (box1[:,2] - box1[:,0]) * (box1[:,3] - box1[:,1])
+    area2 = (box2[:,2] - box2[:,0]) * (box2[:,3] - box2[:,1])
+    y1 = np.maximum(box1[:,0], box2[:,0])
+    y2 = np.minimum(box1[:,2], box2[:,2])
+    x1 = np.maximum(box1[:,1], box2[:,1])
+    x2 = np.minimum(box1[:,3], box2[:,3])
+    intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
+    union = area1 + area2 - intersection
+    
+    return intersection / union  
+    
 ##------------------------------------------------------------------------------------------
 ##  Compute IoU between a box and an array of boxes  
 ##------------------------------------------------------------------------------------------
@@ -1315,6 +1358,8 @@ def logt(text, tensor=None, indent=1, verbose = 1):
     
     if tensor is None : 
         pass
+    elif isinstance(tensor, list):
+        text += (":  list length: {}".format(len(tensor)))
     elif isinstance(tensor, np.ndarray):
         text += (":  shape: {}".format(tensor.shape))
     else:
@@ -1327,9 +1372,9 @@ def logt(text, tensor=None, indent=1, verbose = 1):
     print(text)
 
 def mask_string(mask):
-    return np.array2string(np.where(mask,1,0),max_line_width=134, separator = '')    
+    return np.array2string(np.where(mask,mask,0),max_line_width=134, separator = '')    
 
-from   sys      import stdout    
+
     
 def write_stdout(filepath=None,filenm=None,stdout=stdout):
     
@@ -1366,6 +1411,29 @@ def convertHtmlToPdf(sourceHtml, outputFilename):
     outputFile.close()
     return pisaStatus.err
     
+def load_class_prediction_avg(filename, verbose = 0):
+    '''
+    Load class predictions avergaes for evaluation mode
+    '''
+    import pickle
+    print(' load class+predcition_info from :', filename)
+    
+    with open(filename, 'rb') as infile:
+        class_prediction_info = pickle.load(infile)
+     
+    class_pred_stats  = {}
+    class_pred_stats.setdefault('avg', [cls['avg'] for cls in class_prediction_info])
+    class_pred_stats.setdefault('pct', [cls['percentiles'] for cls in class_prediction_info])    
+    
+    for stat, pct, cls in zip(class_pred_stats['avg'], class_pred_stats['pct'], class_prediction_info):
+        if verbose:
+            print('  ', cls['id'], cls['name'], ' bboxes:', len(cls['bboxes']) , 'avg: ' , cls['avg'], ' -  ', stat, ' pctile:', pct)
+            
+        assert stat == cls['avg'], 'mismtach between class_prediction_avg and class_prediction_info.'
+        assert pct  == cls['percentiles'], 'mismtach between class_prediction_avg and class_prediction_info.'
+        
+    return class_pred_stats
+
     
 ##----------------------------------------------------------------------------------------------
 ## get_predicted_mrcnn_deltas
@@ -1648,28 +1716,6 @@ def load_weights_from_hdf5_group_by_name(f, layers, skip_mismatch=False, reshape
     KB.batch_set_value(weight_value_tuples)
 
     
-##----------------------------------------------------------------------------------------------
-## Load class predictions avergaes for evaluatin mode
-##----------------------------------------------------------------------------------------------                    
-def load_class_prediction_avg(filename, verbose = 0):
-    import pickle
-    print(' load class+predcition_info from :', filename)
-    
-    with open(filename, 'rb') as infile:
-        class_prediction_info = pickle.load(infile)
-     
-    # print(type(class_prediction_info))    
-    # pp.pprint(load_gt_info)
-    class_prediction_avg = [cls['avg'] for cls in class_prediction_info]
-    # pp.pprint(class_prediction_avg)    
-    
-    for avg, cls in zip(class_prediction_avg, class_prediction_info):
-        if verbose:
-            print('  ', cls['id'], cls['name'], ' bboxes:', len(cls['bboxes']) , 'avg: ' , cls['avg'], '  ', avg)
-            
-        assert avg == cls['avg'], 'mismtach between class_prediction_avg and class_prediction_info.'
-    return class_prediction_avg
-
     
     
 ##------------------------------------------------------------------------------------
@@ -1682,7 +1728,8 @@ class Paths(object):
     that need to be changed.
     """
     
-    def __init__(self, fcn_training_folder   = "train_fcn_coco", 
+    def __init__(self, training_folder       = "models",
+                       fcn_training_folder   = "train_fcn_coco", 
                        mrcnn_training_folder = "train_mrcnn_coco"):
         print(">>> Initialize Paths")
         syst = platform.system()
@@ -1691,39 +1738,40 @@ class Paths(object):
             print(' windows ' , syst)
             # WINDOWS MACHINE ------------------------------------------------------------------
             self.DIR_ROOT          = "F:\\"
-            self.DIR_TRAINING   = os.path.join(self.DIR_ROOT, 'models')
+            self.DIR_TRAINING   = os.path.join(self.DIR_ROOT, training_folder)
             self.DIR_DATASET    = os.path.join(self.DIR_ROOT, 'MLDatasets')
             self.DIR_PRETRAINED = os.path.join(self.DIR_ROOT, 'PretrainedModels')
         elif syst == 'Linux':
             print(' Linx ' , syst)
             # LINUX MACHINE ------------------------------------------------------------------
             self.DIR_ROOT       = os.getcwd()
-            self.DIR_TRAINING   = os.path.expanduser('~/models')
+            self.DIR_TRAINING   = os.path.expanduser('~/'+training_folder)
             self.DIR_DATASET    = os.path.expanduser('~/MLDatasets')
             self.DIR_PRETRAINED = os.path.expanduser('~/PretrainedModels')
         else :
-            raise Error('unreconized system ')
+            raise Error('unrecognized system ')
 
-        self.MRCNN_TRAINING_PATH   = os.path.join(self.DIR_TRAINING  , mrcnn_training_folder)
-        self.FCN_TRAINING_PATH     = os.path.join(self.DIR_TRAINING  , fcn_training_folder)
-        self.COCO_DATASET_PATH     = os.path.join(self.DIR_DATASET   , "coco2014")
-        self.COCO_HEATMAP_PATH     = os.path.join(self.DIR_DATASET   , "coco2014_heatmaps")
-        self.COCO_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED, "mask_rcnn_coco.h5")
-        self.SHAPES_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED, "mask_rcnn_shapes.h5")
-        self.RESNET_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED, "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
-        self.VGG16_MODEL_PATH      = os.path.join(self.DIR_PRETRAINED, "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5")
-        self.FCN_VGG16_MODEL_PATH  = os.path.join(self.DIR_PRETRAINED, "fcn_vgg16_weights_tf_dim_ordering_tf_kernels.h5")
-        self.PRED_CLASS_INFO_PATH  = os.path.join(self.DIR_PRETRAINED, "predicted_classes_info.pkl")
+        self.MRCNN_TRAINING_PATH   = os.path.join(self.DIR_TRAINING    , mrcnn_training_folder)
+        self.FCN_TRAINING_PATH     = os.path.join(self.DIR_TRAINING    , fcn_training_folder)
+        self.COCO_DATASET_PATH     = os.path.join(self.DIR_DATASET     , "coco2014")
+        self.COCO_HEATMAP_PATH     = os.path.join(self.DIR_DATASET     , "coco2014_heatmaps")
+        self.COCO_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED  , "mask_rcnn_coco.h5")
+        self.SHAPES_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED  , "mask_rcnn_shapes.h5")
+        self.RESNET_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED  , "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
+        self.VGG16_MODEL_PATH      = os.path.join(self.DIR_PRETRAINED  , "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5")
+        self.FCN_VGG16_MODEL_PATH  = os.path.join(self.DIR_PRETRAINED  , "fcn_vgg16_weights_tf_dim_ordering_tf_kernels.h5")
+        # self.PRED_CLASS_INFO_PATH  = os.path.join(self.DIR_PRETRAINED  , "predicted_classes_info.pkl")
         return 
         
     def display(self):
         """Display Paths values."""
-        print("\nPaths:")
-        print("-------------------------")
+        print()
+        print("   Paths:")
+        print("   -------------------------")
         for a in dir(self):
             if not a.startswith("__") and not callable(getattr(self, a)):
                 print("{:30} {}".format(a, getattr(self, a)))
-        print("\n")
+        print()
     
 ##------------------------------------------------------------------------------------
 ## Parse command line arguments
@@ -1753,20 +1801,38 @@ def command_line_parser():
                         metavar="/path/to/weights.h5",
                         help="MRCNN model weights file: 'coco' , 'init' , or Path to weights .h5 file ")
 
+    parser.add_argument('--mrcnn_exclude_layers', required=False,
+                        nargs = '+',
+                        type=str.lower, 
+                        metavar="/path/to/weights.h5",
+                        help="layers to exclude from loading from weight file" )
+                        
     parser.add_argument('--mrcnn_logs_dir', required=True,
                         default='train_mrcnn',
                         metavar="/path/to/logs/",
-                        help='MRCNN Logs and checkpoints directory (default=logs/)')
+                        help="MRCNN Logs and checkpoints directory (default=logs/)")
 
+    parser.add_argument('--mrcnn_layers', required=False,
+                        nargs = '+',
+                        default=['mrcnn', 'fpn', 'rpn'], type=str.lower, 
+                        metavar="/path/to/weights.h5",
+                        help="MRCNN layers to train" )
+                        
+    parser.add_argument('--evaluate_method', required=False,
+                        choices = [1,2],
+                        default=1, type = int, 
+                        metavar="<evaluation method>",
+                        help="Evaluation method : 1 or 2")
+                        
     parser.add_argument('--fcn_model', required=False,
                         default='last',
                         metavar="/path/to/weights.h5",
                         help="FCN model weights file: 'init' , or Path to weights .h5 file ")
 
-    parser.add_argument('--fcn_logs_dir', required=True,
+    parser.add_argument('--fcn_logs_dir', required=False,
                         default='train_fcn',
                         metavar="/path/to/logs/",
-                        help='FCN Logs and checkpoints directory (default=logs/)')
+                        help="FCN Logs and checkpoints directory (default=logs/)")
 
     parser.add_argument('--fcn_arch', required=False,
                         choices=['FCN32', 'FCN16', 'FCN8', 'FCN8L2', 'FCN32L2'],
@@ -1774,17 +1840,11 @@ def command_line_parser():
                         metavar="/path/to/weights.h5",
                         help="FCN Architecture : fcn32, fcn16, or fcn8")
 
-    parser.add_argument('--mrcnn_exclude_layers', required=False,
-                        nargs = '+',
-                        type=str.lower, 
-                        metavar="/path/to/weights.h5",
-                        help="layers to exclude from loading " )
-
     parser.add_argument('--fcn_layers', required=False,
                         nargs = '+',
-                        default='fcn32+', type=str.lower, 
+                        default=['fcn32+'], type=str.lower, 
                         metavar="/path/to/weights.h5",
-                        help="layers to train" )
+                        help="FCN layers to train" )
 
     parser.add_argument('--fcn_losses', required=False,
                         nargs = '+',
@@ -1795,42 +1855,42 @@ def command_line_parser():
     parser.add_argument('--last_epoch', required=False,
                         default=0,
                         metavar="<last epoch ran>",
-                        help='Identify last completed epcoh for tensorboard continuation')
+                        help="Identify last completed epcoh for tensorboard continuation")
                         
     parser.add_argument('--epochs', required=False,
                         default=1,
                         metavar="<epochs to run>",
-                        help='Number of epochs to run (default=3)')
+                        help="Number of epochs to run (default=3)")
                         
     parser.add_argument('--steps_in_epoch', required=False,
                         default=1,
                         metavar="<steps in each epoch>",
-                        help='Number of batches to run in each epochs (default=5)')
+                        help="Number of batches to run in each epochs (default=5)")
 
     parser.add_argument('--val_steps', required=False,
                         default=1,
                         metavar="<val steps in each epoch>",
-                        help='Number of validation batches to run at end of each epoch (default=1)')
+                        help="Number of validation batches to run at end of each epoch (default=1)")
                         
     parser.add_argument('--batch_size', required=False,
                         default=5,
                         metavar="<batch size>",
-                        help='Number of data samples in each batch (default=5)')                    
+                        help="Number of data samples in each batch (default=5)")                    
 
     parser.add_argument('--scale_factor', required=False,
                         default=4,
                         metavar="<heatmap scale>",
-                        help='Heatmap scale factor')                    
+                        help="Heatmap scale factor")                    
 
     parser.add_argument('--lr', required=False,
                         default=0.001,
                         metavar="<learning rate>",
-                        help='Learning Rate (default=0.001)')
+                        help="Learning Rate (default=0.001)")
 
     parser.add_argument('--opt', required=False,
                         default='adagrad', type = str.upper,
                         metavar="<optimizer>",
-                        help='Optimizatoin Method: SGD, RMSPROP, ADAGRAD, ...')
+                        help="Optimization Method: SGD, RMSPROP, ADAGRAD, ...")
                         
     parser.add_argument('--sysout', required=False,
                         choices=['SCREEN', 'FILE'],
@@ -1853,11 +1913,11 @@ def command_line_parser():
     
 def display_input_parms(args):
     """Display Configuration values."""
-    print("\nArguments passed :")
-    print("--------------------")
+    print("\n   Arguments passed :")
+    print("   --------------------")
     for a in dir(args):
         if not a.startswith("__") and not callable(getattr(args, a)):
-            print("{:30} {}".format(a, getattr(args, a)))
+            print("   {:30} {}".format(a, getattr(args, a)))
     print("\n")
  
     

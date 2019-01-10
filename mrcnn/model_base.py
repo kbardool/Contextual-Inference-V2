@@ -61,6 +61,14 @@ class ModelBase():
         self.verbose   = config.VERBOSE
         print('   Mode      : ', self.mode)
         print('   Model dir : ', self.model_dir)
+        if mode == 'training':
+            if config.NEW_LOG_FOLDER:
+                self.set_log_dir()
+            else:
+                print('    Use existing folder if possible')
+                last_log_dir = self.find_last()[1]
+                print('    Last log dir is :', last_log_dir)
+                self.set_log_dir(last_log_dir)
 
         print('>>> ModelBase initialiation complete')
 
@@ -92,9 +100,9 @@ class ModelBase():
         if init_with == "last":
             print(' ---> last')
             # Load the last model you trained and continue training, placing checkpouints in same folder
-            # last_file = self.find_last()[1]
-            # print('   Last file is :', last_file)
-            loc= self.load_weights(self.find_last()[1], by_name=True, verbose = verbose)
+            last_file = self.find_last()
+            print('   Last file is :', last_file)
+            loc= self.load_weights(last_file[1], by_name=True, verbose = verbose)
             
         elif init_with == "init":
             print(' ---> init :', self.config.VGG16_MODEL_PATH)
@@ -202,7 +210,6 @@ class ModelBase():
         if hasattr(f, 'close'):
             f.close()
             
-        # Update the log directory
         print('    Weights file loaded: {} '.format(filepath))        
         print('    Weights file loaded: {} '.format(filepath), file = sys.__stdout__)
 
@@ -239,7 +246,6 @@ class ModelBase():
         
         # If we have a model path with date and epochs use them
         
-        
         if model_path:
             # Continue from we left off. Get epoch and date from the file name
             # A sample model path might look like:
@@ -267,7 +273,7 @@ class ModelBase():
                 print('    set_log_dir(): tensorboard path: {}'.format(self.tb_dir))
         else:
             print('    set_log_dir(): model_path has NOT been provided : {} '.format(model_path))
-            print('                  NewFolder: {}  config.NEW_LOG_FOLDER: {} '.format(new_folder, self.config.NEW_LOG_FOLDER))
+            print('                   NewFolder: {}  config.NEW_LOG_FOLDER: {} '.format(new_folder, self.config.NEW_LOG_FOLDER))
             now = datetime.datetime.now()
         
         # Set directory for training logs
@@ -358,8 +364,8 @@ class ModelBase():
             # return dir_name, None
         # checkpoint = os.path.join(dir_name, checkpoints[-1])
         if verbose:
-            log("    find_last():   dir_name: {}".format(dir_name))
-            log("    find_last(): checkpoint: {}".format(checkpoint))
+            log("    find_last():   dir_name: {}".format('NotFound' if dir_name is None else dir_name))
+            log("    find_last(): checkpoint: {}".format('NotFound' if checkpoint is None else checkpoint))
 
         return dir_name, checkpoint
 
@@ -609,18 +615,26 @@ class ModelBase():
 
         opt = self.config.OPTIMIZER
         if   opt == 'ADAGRAD':
-            optimizer = keras.optimizers.Adagrad(lr=self.config.LEARNING_RATE, epsilon=None, decay=0.01)                                 
+            optimizer = keras.optimizers.Adagrad(lr=self.config.LEARNING_RATE, epsilon=None, decay=0.01, clipnorm = 1.0)                                 
+            
+        elif opt == 'ADADELTA':
+            optimizer = keras.optimizers.Adadelta(lr=self.config.LEARNING_RATE, rho=0.95, epsilon=None, decay=0.0)            
+            
         elif opt == 'SGD':
             optimizer = keras.optimizers.SGD(lr=self.config.LEARNING_RATE, 
                                              momentum=self.config.LEARNING_MOMENTUM, clipnorm=5.0)
         elif opt == 'RMSPROP':                                 
             optimizer = keras.optimizers.RMSprop(lr=self.config.LEARNING_RATE, rho=0.9, epsilon=None, decay=0.0)
+            
         elif opt == 'ADAM':
-            optimizer = keras.optimizers.Adam(lr=self.config.LEARNING_RATE, 
+            optimizer = keras.optimizers.Adam(lr=self.config.LEARNING_RATE, clipnorm = 1.0, 
                                               beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
         elif opt == 'NADAM':
             optimizer = keras.optimizers.Nadam(lr=self.config.LEARNING_RATE,
                                               beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
+        elif opt == 'ADAMAX':
+            optimizer = keras.optimizers.Adamax(lr=self.config.LEARNING_RATE,
+                                              beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0)                                              
         else:
             print('ERROR: Invalid optimizer specified:',opt)
             if debug:
@@ -717,6 +731,7 @@ class ModelBase():
     def get_layer_outputs(self, model_input, requested_layers = None , verbose = True, training_flag = True):
         ''' 
             get model layer outputs using a list of layer indices 
+            requested_layers:  index to lyers we want to retrieve
         '''
         # _my_input = model_input + [training_flag]
         if verbose: 

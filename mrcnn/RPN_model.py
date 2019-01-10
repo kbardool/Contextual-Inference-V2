@@ -17,23 +17,13 @@ import itertools
 import json
 import re
 import logging
-from collections import OrderedDict
+# from   collections import OrderedDict
 import numpy as np
-# import scipy.misc
 import tensorflow as tf
 import keras
 import keras.backend as K
 import keras.layers as KL
-# import keras.initializers as KI
-# import keras.engine as KE
 import keras.models as KM
-sys.path.append('..')
-
-# import mrcnn.utils as utils
-# from   mrcnn.datagen import data_generator
-# import mrcnn.loss  as loss
-
-# Requires TensorFlow 1.3+ and Keras 2.0.8+.
 
 
 ###############################################################
@@ -107,15 +97,17 @@ def build_rpn_model(anchor_stride, anchors_per_location, depth, verbose = 0):
     
     input_feature_map = KL.Input(shape=[None, None, depth], name="input_rpn_feature_map")
     
-    print('     Input_feature_map shape :', input_feature_map.shape)
-    print('     anchors_per_location    :', anchors_per_location)
-    print('     depth                   :', depth)
+    if verbose:
+        print('     Input_feature_map shape :', input_feature_map.shape)
+        print('     anchors_per_location    :', anchors_per_location)
+        print('     depth                   :', depth)
  
     outputs = rpn_graph(input_feature_map, anchors_per_location, anchor_stride)
 
-    print('     Input_feature_map shape :', input_feature_map.shape)
-    print('     anchors_per_location    :', anchors_per_location)
-    print('     anchor_stride           :', anchor_stride)
+    if verbose:
+        print('     Input_feature_map shape :', input_feature_map.shape)
+        print('     anchors_per_location    :', anchors_per_location)
+        print('     anchor_stride           :', anchor_stride)
     
     return KM.Model([input_feature_map], outputs, name="rpn_model")
 

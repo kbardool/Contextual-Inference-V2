@@ -1,11 +1,11 @@
 source activate TFG
 python ./mrcnn/build_heatmap_npz.py    \
-    --model              last   \
-    --output_dir       coco2014_heatmaps/train_heatmaps \
-    --iterations          125   \
-    --batch_size            2   \
-    --start_from          150   \
-    --sysout             screen
+    --output_dir       coco2014_heatmaps/train2014 \
+    --dataset          train val35k \
+    --iterations            3  \
+    --batch_size            2  \
+    --start_from            0  \
+    --sysout           screen
 
 #    --epochs               1  \
 #    --steps_in_epoch       12   \
