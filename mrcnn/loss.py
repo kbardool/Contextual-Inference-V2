@@ -541,7 +541,7 @@ def fcn_heatmap_BCE_loss_graph(target_heatmap, pred_heatmap):
 
     active_tgt_heatmaps  = tf.gather_nd(target_heatmap, class_idxs)
     active_pred_heatmaps = tf.gather_nd(pred_heatmap, class_idxs)
-    logt('active_tgt_heatmaps ',active_tgt_heatmaps)
+    logt('active_tgt_heatmaps  ',active_tgt_heatmaps)
     logt('active_pred_heatmaps ',active_pred_heatmaps)
     y_true = tf.reshape(active_tgt_heatmaps, (-1,))
     y_pred = tf.reshape(active_pred_heatmaps, (-1,))
@@ -563,6 +563,69 @@ def fcn_heatmap_BCE_loss_graph(target_heatmap, pred_heatmap):
     
     return loss_final
 
+    
+    
+##-----------------------------------------------------------------------
+##  FCN Categorical Cross Entropy loss  
+##-----------------------------------------------------------------------    
+def fcn_heatmap_CE_loss_graph_2(target_heatmap, pred_heatmap, active_class_ids):
+    '''
+    Categorical Cross Entropy Loss for the FCN heatmaps.
+
+    target_class_ids:       [batch, num_rois]. Integer class IDs. Uses zero
+                            padding to fill in the array.
+    
+    pred_class_logits:      [batch, num_rois, num_classes]
+    
+    active_class_ids:       [batch, num_classes]. Has a value of 1 for
+                            classes that are in the dataset of the image, and 0
+                            for classes that are not in the dataset. 
+    '''
+    print()
+    print('--------------------------------' )
+    print('>>> fcn_heatmap_CE_loss_graph_2 ' )
+    print('--------------------------------' )
+    logt('target_class_ids  ', target_heatmap)
+    logt('pred_class_logits ', pred_heatmap  )
+    logt('active_class_ids  ', active_class_ids)
+    # target_class_ids = tf.cast(target_class_ids, 'int64')
+    
+    # Find predictions of classes that are not in the dataset.
+    pred_class_ids = KB.argmax(pred_heatmap  , axis=-1)
+    gt_class_ids   = KB.argmax(target_heatmap, axis=-1)
+    logt('pred_class_ids    ', pred_class_ids) 
+    logt('gt_class_ids      ', gt_class_ids  ) 
+
+    # TODO: Update this line to work with batch > 1. Right now it assumes all
+    #       images in a batch have the same active_class_ids
+    pred_active = tf.gather(active_class_ids[0], pred_class_ids)
+    
+    # Loss
+    loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=target_heatmap, logits=pred_heatmap)
+    logt('pred_active       ', pred_active)
+    logt('loss              ', loss)    
+
+    # Erase losses of predictions of classes that are not in the active
+    # classes of the image.
+    # loss = loss * pred_active
+    # print('loss*pred_active ', loss)
+
+    # Compute  loss mean. Use only predictions that contribute to the loss to get a correct mean.
+    loss = tf.reduce_sum(loss)   ##/ tf.reduce_sum(pred_active)
+    loss_mean  = KB.mean(loss)
+    loss_final = tf.reshape(loss_mean, [1, 1], name = "fcn_CE_loss")
+    
+    logt('loss      ', loss)
+    logt('loss mean ', loss_mean)
+    logt('loss final', loss_final)
+    
+    return loss_final
+    
+    
+    
+    
+    
+    
 """    
 #-----------------------------------------------------------------------
 #  RPN bbox loss - obsolete -- use rpn_bbox_loss_graph()

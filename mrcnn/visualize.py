@@ -220,7 +220,7 @@ def display_training_batch(dataset, batch_x, masks= False, size = 9):
 ##----------------------------------------------------------------------
 def display_instances(image, boxes, class_ids, class_names,
                       scores=None,  title="", only_classes = None, 
-                      figsize=(16, 16), ax=None, score_range = (-1.0, 1.0), size = 8):
+                      figsize=(16, 16), size = 8, ax=None, score_range = (-1.0, 1.0)):
     """
     boxes:                  [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
     masks:                  [num_instances, height, width]
@@ -301,7 +301,9 @@ def display_instances(image, boxes, class_ids, class_names,
 ##----------------------------------------------------------------------
 def display_instances_with_mask(image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
-                      figsize=(16, 16), ax=None, size = 8):
+                      figsize=(16, 16), 
+                      size = 8, 
+                      ax=None):
     """
     boxes:                  [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
     masks:                  [num_instances, height, width]
@@ -397,13 +399,12 @@ def display_instances_with_mask(image, boxes, masks, class_ids, class_names,
 ##----------------------------------------------------------------------
 def display_instances_from_prscores(image, pr_scores, class_names,
                       title="", only_classes = None, 
-                      figsize=(16, 16), ax=None, score_range = (0.0, 1.0)):
+                      size = 12, 
+                      ax=None, score_range = (0.0, 1.0)):
     """
     boxes:                  [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
-    masks:                  [num_instances, height, width]
-    class_ids:              [num_instances]
+    pr_scores :             Condensed score array (scores_by_image)
     class_names:            list of class names of the dataset
-    scores:                 (optional) confidence scores for each box
     figsize:                (optional) the size of the image.
     max_score:              show instances with score less than this 
     """
@@ -423,7 +424,8 @@ def display_instances_from_prscores(image, pr_scores, class_names,
     print(' display_instances() : Image shape: ', image.shape)
 
     if not ax:
-        _, ax = plt.subplots(1, figsize=figsize)
+        ax = get_ax(rows =1, cols = 1, size= size)
+        # _, ax = plt.subplots(1, figsize=figsize)
 
     # Generate random colors
     colors = random_colors(N)
@@ -474,7 +476,7 @@ def display_instances_from_prscores(image, pr_scores, class_names,
             
         x = random.randint(x1, (x1 + x2) // 2)
         caption = "{:2d}-{} {:.4f}".format(class_id, label, score) if score else label
-        ax.text(x1, y1 - 8, caption, color='k', size=9, backgroundcolor="w")
+        ax.text(x1, y1 - 2, caption, color='k', size=9, backgroundcolor="w")
 
     ax.imshow(masked_image.astype(np.uint8))
     plt.show()
@@ -3075,7 +3077,7 @@ def display_mrcnn_scores(r, class_names, only = None):
     
     if only is None:
         only = np.unique(r['class_ids'])
-        
+    seq_start = r['pr_hm_scores'].shape[1]
     # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
     # print('  scores     : ', r['scores'], type(r['scores']))
     print('--------------------------------------------------------------------------------------------------------------------------------------------------------------')
@@ -3092,7 +3094,7 @@ def display_mrcnn_scores(r, class_names, only = None):
 
             print('{:3.0f} {:3d} {:20s}   {:.4f}   {:.4f}     {:.4f}  {:9.4f}  {:.4f}      {:7.4f}   {:8.4f}   {:.4f}   {:.4f}     {:7.4f}   {:8.4f}   {:.4f}   {:.4f}'\
                   '       {:6.2f}   {:6.2f}'.          
-              format(200-pre[7], cls, class_names[cls], scr, pre[8], 
+              format(seq_start-pre[7], cls, class_names[cls], scr, pre[8], 
                      pre[9], pre[10], pre[11], 
                      pre[12], pre[13], pre[14], pre[17], 
                      pre[18], pre[19], pre[20], pre[23],

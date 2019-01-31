@@ -27,7 +27,605 @@ def add_evaluation_detections_2(gt_class_ids, gt_bboxes, config, class_pred_stat
     '''
     Use GT bboxes and a series of False Postivies as detections to pass on to FCN
     Genertes list of detections using GT and adds FP bboxes for all GT bboxes 
-     
+
+    Scores are assigned using the 1st/3rd CLASS SCORE QUANTILES + uniform random noise    
+    GT and FP boxes are evenly split between 1st/3rd quantiles, with the 3rd Q getting
+    majority when there an odd number of GT boxes:
+    
+    In ODD number of bounding boxes, Q3 receives the lesser half of boxes
+    ---------------------------------------------------------------------
+    q3_count = gt_bbox_count // 2 
+    q1_count = gt_bbox_count - q3_count    
+    
+    Inputs:
+    ------
+        gt_class_ids: 
+        gt_bboxes:  
+        config
+                
+    Returns:
+    --------
+        detections      [M, (y1, x1, y2, x2, class_id, score)]  After inserting false positives 
+                        M = N * 2 (N: number of GT annotations)
+                        Number of FP insertions is equal to number of GT annotations
+    '''
+    # print('\n Add Evaluation Detections Method 2 (Evaluation Mode :{})'.format(config.EVALUATE_METHOD))    
+    verbose = config.VERBOSE
+    height, width   = config.IMAGE_SHAPE[:2]
+
+    ##----------------------------------------------------------------------------
+    ##  1.  Filter out boxes with class < 0 : background (0) and Crowds (neg classes)
+    ##----------------------------------------------------------------------------
+    gt_nz_idxs      = np.where(gt_class_ids > 0)[0]
+    gt_nz_class_ids = gt_class_ids[gt_nz_idxs]
+    gt_nz_bboxes    = gt_bboxes[gt_nz_idxs]
+
+    # print(' gt_nz_idxs     : ', gt_nz_idxs.shape, '\n', gt_nz_idxs)
+    # print(' gt_nz_class_ids: ', gt_nz_class_ids.shape, '\n',  gt_nz_class_ids)
+    # print(' gt_nz_bboxes   : ', gt_nz_bboxes.shape   , '\n', gt_nz_bboxes)
+
+    ##----------------------------------------------------------------------------
+    ##  2.  Generate False positives using ground truth info 
+    ##----------------------------------------------------------------------------
+    mod_detections = np.empty((0, 7))
+    max_overlap = 0
+
+    ## go through each class, gather the GTs for that class, and create their corrsponding FPs.
+
+    for class_id in np.unique(gt_nz_class_ids) :
+        # Pick detections of this class
+        gt_class_ixs = np.where(gt_nz_class_ids == class_id)[0]
+        tp_bboxes   =  gt_nz_bboxes[gt_class_ixs]
+
+        ## Generate Flip gt_bboxes for this class 
+        fp_bboxes   = flip_bbox(tp_bboxes, (height,width),   flip_x = True, flip_y = True)
+        
+ 
+        ## Get average score for the current class from predicted_classes information 
+        ## Apply Average score for each class from "predictions_info"
+        gt_bbox_count = gt_class_ixs.shape[0]
+        score_sz = (gt_bbox_count,1)
+        scale = 0.001
+        
+        q3_count = gt_bbox_count // 2 
+        q1_count = gt_bbox_count - q3_count
+        q1_score = class_pred_stats['pct'][class_id][0]   # 1st quantile 
+        q3_score = class_pred_stats['pct'][class_id][2]   # 3rd quantile
+        orig_tp_scores = np.zeros(score_sz)
+        orig_fp_scores = np.zeros(score_sz)
+        orig_tp_scores[:q3_count] = q3_score    
+        orig_tp_scores[q3_count:] = q1_score
+        orig_fp_scores[:q3_count] = q3_score    
+        orig_fp_scores[q3_count:] = q1_score                        
+            
+        fp_noise = np.round(np.random.uniform(low = -scale, high= scale, size = score_sz) ,4)
+        tp_noise = np.round(np.random.uniform(low = -scale, high= scale, size = score_sz) ,4)
+        
+        tp_scores  = orig_tp_scores + tp_noise
+        fp_scores  = orig_fp_scores + fp_noise
+
+        tp_scores  = np.clip(tp_scores, 0.0, 1.0)
+        fp_scores  = np.clip(fp_scores, 0.0, 1.0)            
+        
+#         print('Score size :', score_sz)
+#         print('orginal tp_scores: \n', orig_tp_scores)
+#         print('oringal fp_scores: \n', orig_fp_scores)
+#         print('tp noise     : \n', tp_noise)
+#         print('fp noise     : \n', fp_noise)
+#         print('new tp_scores: \n', tp_scores)
+#         print('new fp_scores: \n', fp_scores)
+#         print('tp_bboxes', tp_bboxes.shape)
+#         print(tp_bboxes)
+#         print('fp_bboxes', fp_bboxes.shape)
+#         print(fp_bboxes)            
+            
+        if verbose:
+            print()
+            print(' --------------------------------------------------------------------------------------')
+            print(' class id : {:3d}'.format(class_id))                
+            print(' --------------------------------------------------------------------------------------')
+            #  print(' class id : {:3d}     q3 score: {:.4f}  q1_score: {:.4f}'.format(class_id, q3_score, q1_score))                
+            print('  GT boxes : {:3d}     q3 count/score: {:3d} / {:.4f}  q1_count/score: {:3d} / {:.4f} '.format(
+                    gt_bbox_count, q3_count, q3_score, q1_count, q1_score))
+
+            print('\n  TP Boxes: \t box \t\t\t orig_score \t noise \t\t new_score')
+            print(' ','-'*80)
+            for i, (box, orig_score, noise, new_score) in enumerate(zip(tp_bboxes, orig_tp_scores, tp_noise, tp_scores)):
+                print(' ',i,' \t', box, '\t\t', orig_score, '\t', noise, '\t', new_score)
+            print('\n  FP Boxes: \t box \t\t\t orig_score \t noise \t\t new_score')
+            print(' ','-'*80)
+            for i, (box, orig_score, noise, new_score) in enumerate(zip(fp_bboxes, orig_fp_scores, fp_noise, fp_scores)):
+                print(' ',i,' \t', box, '\t\t', orig_score, '\t', noise, '\t', new_score)
+
+        ##  Compute IoU between each GT box and its corresponding FP box. if their overlap > 0.80, reduce the
+        ##  boundaries of the FP bbox by multiplying it's coordinates by 0.85, and use this modified FP box
+        overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+        large_ious = np.where(overlaps > 0.80)[0]    
+        
+        # if there *are* ious > 0.8, modify the reduce the corresponing FP bboxes 
+        if len(large_ious) > 0:
+            if verbose :
+                print('Large IOUS encountered!!!! :', large_ious)
+                print('---------------------------------------------')
+                print('class id :', class_id, 'class prediction avg:', cls_tp_score, cls_fp_score)
+                print('---------------------------------------------')
+                print(' pre adjustment overlaps ', overlaps.shape, ' max: ', overlaps.max() )
+                print('---------------------------------------------')
+                print(overlaps,'\n')            
+                print('fp_bboxes before adjustment ', fp_bboxes.shape)
+                print(fp_bboxes[large_ious])
+            fp_bboxes[large_ious] = np.rint(fp_bboxes[large_ious].astype(np.float) * 0.85)
+            overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+            if verbose :
+                print('fp_bboxes after adjustment ', fp_bboxes.shape)
+                print(fp_bboxes[large_ious])
+                print(' post adjustment overlaps ', overlaps.shape, ' max: ', overlaps.max() )
+                print(' ---------------------------------------------')
+                print(overlaps,'\n')
+
+        m_overlap = overlaps.max()
+        max_overlap = m_overlap if m_overlap > max_overlap else max_overlap    
+
+        classes   = np.expand_dims(gt_nz_class_ids[gt_class_ixs], axis = -1)
+        tp_ind    = np.ones((gt_class_ixs.shape[0],1)) 
+
+        class_tp  = np.concatenate([gt_nz_bboxes[gt_class_ixs], classes, tp_scores, tp_ind] , axis = -1)
+        class_fp  = np.concatenate([fp_bboxes, classes, fp_scores, -1 * tp_ind] , axis = -1)
+        mod_detections  = np.vstack([mod_detections, class_tp, class_fp])
+        # print('classes :', classes.shape, '\n', classes, '\n')    
+        # print('scores   :', scores.shape  , '\n', scores)
+        # print('tp_ind :', tp_ind.shape, '\n', tp_ind)
+        # print('fp_ind :', fp_ind.shape, '\n', fp_ind)
+        # print('mod_detections:', mod_detections.shape)
+        # print(mod_detections)
+
+    ##----------------------------------------------------------------------------
+    ## 10.  Sort by decreasing score and Keep top DETECTION_MAX_INSTANCES detections
+    ##----------------------------------------------------------------------------
+    roi_count = config.DETECTION_MAX_INSTANCES
+    top_ids   = np.argsort(mod_detections[:,5])[::-1][:roi_count]
+    if verbose:
+        print()
+        print('GT boxes + fp boxes with noise, prior to sort:', mod_detections.shape)
+        print('-'*75)
+        print(mod_detections)    
+        print()
+        print('GT boxes + fp_boxes with noise - After Sort (Final):', mod_detections.shape)
+        print('-'*75)
+        print(mod_detections[top_ids])
+        print("\n MAX OVERLAP {:.5f}".format(max_overlap))
+    
+    return mod_detections[top_ids], max_overlap
+    
+    
+def add_evaluation_detections_3(gt_class_ids, gt_bboxes, config, class_pred_stats):
+    '''
+    Use GT bboxes and a series of False Postivies as detections to pass on to FCN
+    Genertes list of detections using GT and adds FP bboxes for all GT bboxes 
+
+    Scores are assigned using the 1st/3rd CLASS SCORE QUANTILES + uniform random noise    
+    GT and FP boxes are evenly split between 1st/3rd quantiles, with the 3rd Q getting
+    majority when there an odd number of GT boxes:
+    
+    In ODD number of bounding boxes, Q1 receives the lesser half of boxes
+    ---------------------------------------------------------------------
+    q1_count = gt_bbox_count // 2 
+    q3_count = gt_bbox_count - q1_count    
+    
+    Inputs:
+    ------
+        gt_class_ids: 
+        gt_bboxes:  
+        config
+                
+    Returns:
+    --------
+        detections      [M, (y1, x1, y2, x2, class_id, score)]  After inserting false positives 
+                        M = N * 2 (N: number of GT annotations)
+                        Number of FP insertions is equal to number of GT annotations
+    '''
+    # print('\n Add Evaluation Detections Method 2 (Evaluation Mode :{})'.format(config.EVALUATE_METHOD))    
+    verbose = config.VERBOSE
+    height, width   = config.IMAGE_SHAPE[:2]
+
+    ##----------------------------------------------------------------------------
+    ##  1.  Filter out boxes with class < 0 : background (0) and Crowds (neg classes)
+    ##----------------------------------------------------------------------------
+    gt_nz_idxs      = np.where(gt_class_ids > 0)[0]
+    gt_nz_class_ids = gt_class_ids[gt_nz_idxs]
+    gt_nz_bboxes    = gt_bboxes[gt_nz_idxs]
+
+    # print(' gt_nz_idxs     : ', gt_nz_idxs.shape, '\n', gt_nz_idxs)
+    # print(' gt_nz_class_ids: ', gt_nz_class_ids.shape, '\n',  gt_nz_class_ids)
+    # print(' gt_nz_bboxes   : ', gt_nz_bboxes.shape   , '\n', gt_nz_bboxes)
+
+    ##----------------------------------------------------------------------------
+    ##  2.  Generate False positives using ground truth info 
+    ##----------------------------------------------------------------------------
+    mod_detections = np.empty((0, 7))
+    max_overlap = 0
+
+    ## go through each class, gather the GTs for that class, and create their corrsponding FPs.
+
+    for class_id in np.unique(gt_nz_class_ids) :
+        # Pick detections of this class
+        gt_class_ixs = np.where(gt_nz_class_ids == class_id)[0]
+        tp_bboxes   =  gt_nz_bboxes[gt_class_ixs]
+
+        ## Generate Flip gt_bboxes for this class 
+        fp_bboxes   = flip_bbox(tp_bboxes, (height,width),   flip_x = True, flip_y = True)
+        
+ 
+        ## Get average score for the current class from predicted_classes information 
+        ## Apply Average score for each class from "predictions_info"
+        gt_bbox_count = gt_class_ixs.shape[0]
+        score_sz = (gt_bbox_count,1)
+        scale = 0.001
+        
+        q1_count = gt_bbox_count // 2 
+        q3_count = gt_bbox_count - q1_count
+        q1_score = class_pred_stats['pct'][class_id][0]   # 1st quantile 
+        q3_score = class_pred_stats['pct'][class_id][2]   # 3rd quantile
+        orig_tp_scores = np.zeros(score_sz)
+        orig_fp_scores = np.zeros(score_sz)
+        orig_tp_scores[:q3_count] = q3_score    
+        orig_tp_scores[q3_count:] = q1_score
+        orig_fp_scores[:q3_count] = q3_score    
+        orig_fp_scores[q3_count:] = q1_score                        
+            
+        fp_noise = np.round(np.random.uniform(low = -scale, high= scale, size = score_sz) ,4)
+        tp_noise = np.round(np.random.uniform(low = -scale, high= scale, size = score_sz) ,4)
+        
+        tp_scores  = orig_tp_scores + tp_noise
+        fp_scores  = orig_fp_scores + fp_noise
+
+        tp_scores  = np.clip(tp_scores, 0.0, 1.0)
+        fp_scores  = np.clip(fp_scores, 0.0, 1.0)            
+        
+#         print('Score size :', score_sz)
+#         print('orginal tp_scores: \n', orig_tp_scores)
+#         print('oringal fp_scores: \n', orig_fp_scores)
+#         print('tp noise     : \n', tp_noise)
+#         print('fp noise     : \n', fp_noise)
+#         print('new tp_scores: \n', tp_scores)
+#         print('new fp_scores: \n', fp_scores)
+#         print('tp_bboxes', tp_bboxes.shape)
+#         print(tp_bboxes)
+#         print('fp_bboxes', fp_bboxes.shape)
+#         print(fp_bboxes)            
+            
+        if verbose:
+            print()
+            print(' --------------------------------------------------------------------------------------')
+            print(' class id : {:3d}'.format(class_id))                
+            print(' --------------------------------------------------------------------------------------')
+            #  print(' class id : {:3d}     q3 score: {:.4f}  q1_score: {:.4f}'.format(class_id, q3_score, q1_score))                
+            print('  GT boxes : {:3d}     q3 count/score: {:3d} / {:.4f}  q1_count/score: {:3d} / {:.4f} '.format(
+                    gt_bbox_count, q3_count, q3_score, q1_count, q1_score))
+
+            print('\n  TP Boxes: \t box \t\t\t orig_score \t noise \t\t new_score')
+            print(' ','-'*80)
+            for i, (box, orig_score, noise, new_score) in enumerate(zip(tp_bboxes, orig_tp_scores, tp_noise, tp_scores)):
+                print(' ',i,' \t', box, '\t\t', orig_score, '\t', noise, '\t', new_score)
+            print('\n  FP Boxes: \t box \t\t\t orig_score \t noise \t\t new_score')
+            print(' ','-'*80)
+            for i, (box, orig_score, noise, new_score) in enumerate(zip(fp_bboxes, orig_fp_scores, fp_noise, fp_scores)):
+                print(' ',i,' \t', box, '\t\t', orig_score, '\t', noise, '\t', new_score)
+
+        ##  Compute IoU between each GT box and its corresponding FP box. if their overlap > 0.80, reduce the
+        ##  boundaries of the FP bbox by multiplying it's coordinates by 0.85, and use this modified FP box
+        overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+        large_ious = np.where(overlaps > 0.80)[0]    
+        
+        # if there *are* ious > 0.8, modify the reduce the corresponing FP bboxes 
+        if len(large_ious) > 0:
+            if verbose :
+                print('Large IOUS encountered!!!! :', large_ious)
+                print('---------------------------------------------')
+                print('class id :', class_id, 'class prediction avg:', cls_tp_score, cls_fp_score)
+                print('---------------------------------------------')
+                print(' pre adjustment overlaps ', overlaps.shape, ' max: ', overlaps.max() )
+                print('---------------------------------------------')
+                print(overlaps,'\n')            
+                print('fp_bboxes before adjustment ', fp_bboxes.shape)
+                print(fp_bboxes[large_ious])
+            fp_bboxes[large_ious] = np.rint(fp_bboxes[large_ious].astype(np.float) * 0.85)
+            overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+            if verbose :
+                print('fp_bboxes after adjustment ', fp_bboxes.shape)
+                print(fp_bboxes[large_ious])
+                print(' post adjustment overlaps ', overlaps.shape, ' max: ', overlaps.max() )
+                print(' ---------------------------------------------')
+                print(overlaps,'\n')
+
+        m_overlap = overlaps.max()
+        max_overlap = m_overlap if m_overlap > max_overlap else max_overlap    
+
+        classes   = np.expand_dims(gt_nz_class_ids[gt_class_ixs], axis = -1)
+        tp_ind    = np.ones((gt_class_ixs.shape[0],1)) 
+
+        class_tp  = np.concatenate([gt_nz_bboxes[gt_class_ixs], classes, tp_scores, tp_ind] , axis = -1)
+        class_fp  = np.concatenate([fp_bboxes, classes, fp_scores, -1 * tp_ind] , axis = -1)
+        mod_detections  = np.vstack([mod_detections, class_tp, class_fp])
+        # print('classes :', classes.shape, '\n', classes, '\n')    
+        # print('scores   :', scores.shape  , '\n', scores)
+        # print('tp_ind :', tp_ind.shape, '\n', tp_ind)
+        # print('fp_ind :', fp_ind.shape, '\n', fp_ind)
+        # print('mod_detections:', mod_detections.shape)
+        # print(mod_detections)
+
+    ##----------------------------------------------------------------------------
+    ## 10.  Sort by decreasing score and Keep top DETECTION_MAX_INSTANCES detections
+    ##----------------------------------------------------------------------------
+    roi_count = config.DETECTION_MAX_INSTANCES
+    top_ids   = np.argsort(mod_detections[:,5])[::-1][:roi_count]
+    if verbose:
+        print()
+        print('GT boxes + fp boxes with noise, prior to sort:', mod_detections.shape)
+        print('-'*75)
+        print(mod_detections)    
+        print()
+        print('GT boxes + fp_boxes with noise - After Sort (Final):', mod_detections.shape)
+        print('-'*75)
+        print(mod_detections[top_ids])
+        print("\n MAX OVERLAP {:.5f}".format(max_overlap))
+    
+    return mod_detections[top_ids], max_overlap
+    
+    
+def add_evaluation_detections_1(gt_class_ids, gt_bboxes, config, class_pred_stats):
+    '''
+    Use GT bboxes and a series of False Postivies as detections to pass on to FCN
+    Genertes list of detections using GT and adds FP bboxes for all GT bboxes 
+    
+    Scores are assigned using the AVERAGE CLASS SCORE + uniform random noise    
+    
+    Inputs:
+    ------
+        gt_class_ids: 
+        gt_bboxes:  
+        config
+                
+    Returns:
+    --------
+        detections      [M, (y1, x1, y2, x2, class_id, score)]  After inserting false positives 
+                        M = N * 2 (N: number of GT annotations)
+                        Number of FP insertions is equal to number of GT annotations
+    '''
+    # print('\n Add Evaluation Detections Method 1 (Evaluation Mode :{})'.format(config.EVALUATE_METHOD))
+    verbose = config.VERBOSE
+    height, width   = config.IMAGE_SHAPE[:2]
+
+    ##----------------------------------------------------------------------------
+    ##  1.  Filter out boxes with class < 0 : background (0) and Crowds (neg classes)
+    ##----------------------------------------------------------------------------
+    gt_nz_idxs      = np.where(gt_class_ids > 0)[0]
+    gt_nz_class_ids = gt_class_ids[gt_nz_idxs]
+    gt_nz_bboxes    = gt_bboxes[gt_nz_idxs]
+
+    ##----------------------------------------------------------------------------
+    ##  2.  Generate False positives using ground truth info 
+    ##----------------------------------------------------------------------------
+    mod_detections = np.empty((0, 7))
+    max_overlap = 0
+
+    ## go through each class, gather the GTs for that class, and create their corrsponding FPs.
+
+    for class_id in np.unique(gt_nz_class_ids) :
+        # Pick detections of this class
+        gt_class_ixs = np.where(gt_nz_class_ids == class_id)[0]
+        tp_bboxes   =  gt_nz_bboxes[gt_class_ixs]
+
+        ## Generate Flip gt_bboxes for this class 
+        fp_bboxes   = flip_bbox(tp_bboxes, (height,width),   flip_x = True, flip_y = True)
+        
+ 
+        ## Get average score for the current class from predicted_classes information 
+        ## Apply Average score for each class from "predictions_info"
+        gt_bbox_count = gt_class_ixs.shape[0]
+        score_sz = (gt_bbox_count,1)
+        scale = 0.001
+        
+        cls_avg_score   = class_pred_stats['avg'][class_id]  ## np.average(dt_nz[dt_class_ixs,5])
+        orig_tp_scores = np.full(score_sz, cls_avg_score)
+        orig_fp_scores = np.full(score_sz, cls_avg_score)
+
+        fp_noise = np.round(np.random.uniform(low = -scale, high= scale, size = score_sz) ,4)
+        tp_noise = np.round(np.random.uniform(low = -scale, high= scale, size = score_sz) ,4)
+        
+        tp_scores  = orig_tp_scores + tp_noise
+        fp_scores  = orig_fp_scores + fp_noise
+#         print('Score size :', score_sz)
+#         print('orginal tp_scores: \n', orig_tp_scores)
+#         print('oringal fp_scores: \n', orig_fp_scores)
+#         print('tp noise     : \n', tp_noise)
+#         print('fp noise     : \n', fp_noise)
+#         print('new tp_scores: \n', tp_scores)
+#         print('new fp_scores: \n', fp_scores)
+#         print('tp_bboxes', tp_bboxes.shape)
+#         print(tp_bboxes)
+#         print('fp_bboxes', fp_bboxes.shape)
+#         print(fp_bboxes)
+ 
+        tp_scores  = np.clip(tp_scores, 0.0, 1.0)
+        fp_scores  = np.clip(fp_scores, 0.0, 1.0)            
+            
+            
+        if verbose:
+            print()
+            print(' --------------------------------------------------------------------------------------')
+            print(' class id : {:3d}     class avg score: {:.4f}    GT boxes : {:3d}'.format(class_id, cls_avg_score, gt_bbox_count))                
+            print(' --------------------------------------------------------------------------------------')
+            print('\n  TP Boxes: \t box \t\t\t orig_score \t noise \t\t new_score')
+            print(' ','-'*80)
+            for i, (box, orig_score, noise, new_score) in enumerate(zip(tp_bboxes, orig_tp_scores, tp_noise, tp_scores)):
+                print(' ',i,' \t', box, '\t\t', orig_score, '\t', noise, '\t', new_score)
+            print('\n  FP Boxes: \t box \t\t\t orig_score \t noise \t\t new_score')
+            print(' ','-'*80)
+            for i, (box, orig_score, noise, new_score) in enumerate(zip(fp_bboxes, orig_fp_scores, fp_noise, fp_scores)):
+                print(' ',i,' \t', box, '\t\t', orig_score, '\t', noise, '\t', new_score)
+
+        ##  Compute IoU between each GT box and its corresponding FP box. if their overlap > 0.80, reduce the
+        ##  boundaries of the FP bbox by multiplying it's coordinates by 0.85, and use this modified FP box
+        overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+        large_ious = np.where(overlaps > 0.80)[0]    
+        
+        # if there *are* ious > 0.8, modify the reduce the corresponing FP bboxes 
+        if len(large_ious) > 0:
+            if verbose :
+                print('Large IOUS encountered!!!! :', large_ious)
+                print('---------------------------------------------')
+                print('class id :', class_id, 'class prediction avg:', cls_tp_score, cls_fp_score)
+                print('---------------------------------------------')
+                print(' pre adjustment overlaps ', overlaps.shape, ' max: ', overlaps.max() )
+                print('---------------------------------------------')
+                print(overlaps,'\n')            
+                print('fp_bboxes before adjustment ', fp_bboxes.shape)
+                print(fp_bboxes[large_ious])
+            fp_bboxes[large_ious] = np.rint(fp_bboxes[large_ious].astype(np.float) * 0.85)
+            overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+            if verbose :
+                print('fp_bboxes after adjustment ', fp_bboxes.shape)
+                print(fp_bboxes[large_ious])
+                print(' post adjustment overlaps ', overlaps.shape, ' max: ', overlaps.max() )
+                print(' ---------------------------------------------')
+                print(overlaps,'\n')
+
+        m_overlap = overlaps.max()
+        max_overlap = m_overlap if m_overlap > max_overlap else max_overlap    
+
+        classes   = np.expand_dims(gt_nz_class_ids[gt_class_ixs], axis = -1)
+        tp_ind    = np.ones((gt_class_ixs.shape[0],1)) 
+
+        class_tp  = np.concatenate([gt_nz_bboxes[gt_class_ixs], classes, tp_scores, tp_ind] , axis = -1)
+        class_fp  = np.concatenate([fp_bboxes, classes, fp_scores, -1 * tp_ind] , axis = -1)
+        mod_detections  = np.vstack([mod_detections, class_tp, class_fp])
+
+    ##----------------------------------------------------------------------------
+    ## 10.  Sort by decreasing score and Keep top DETECTION_MAX_INSTANCES detections
+    ##----------------------------------------------------------------------------
+    roi_count = config.DETECTION_MAX_INSTANCES
+    top_ids   = np.argsort(mod_detections[:,5])[::-1][:roi_count]
+    if verbose:
+        print()
+        print('GT boxes + fp boxes with noise, prior to sort:', mod_detections.shape)
+        print('-'*75)
+        print(mod_detections)    
+        print()
+        print('GT boxes + fp_boxes with noise - After Sort (Final):', mod_detections.shape)
+        print('-'*75)
+        print(mod_detections[top_ids])
+        print("\n MAX OVERLAP {:.5f}".format(max_overlap))
+    
+    return mod_detections[top_ids], max_overlap    
+    
+    
+    
+
+        
+class DetectionEvaluateLayer(KE.Layer):
+    '''
+    Takes classified proposal boxes and their bounding box deltas and
+    returns the final detection boxes.
+    Input:
+    -------
+    rpn_proposal_rois:     [batch, N, (y1, x1, y2, x2)] in normalized coordinates.
+                           Proposal bboxes generated by RPN
+                           Might be zero padded if there are not enough proposals.
+    mrcnn_class : 
+    mrcnn_bbox  :  
+    input_image_meta:
+    
+    
+    Returns:
+    --------
+    
+    detections:         [batch, num_max_detections, 6 (y1, x1, y2, x2, class_id, class_score)] in pixels
+    
+    '''
+
+    def __init__(self, config=None, class_pred_stats = None, **kwargs):
+        # super(DetectionLayer, self).__init__(**kwargs)
+        super().__init__(**kwargs)
+        print('\n>>> Detection Layer (Evaluation Mode :{})'.format(config.EVALUATE_METHOD))
+        self.config = config
+        self.verbose = config.VERBOSE
+        self.class_pred_stats = class_pred_stats
+        if config.EVALUATE_METHOD == 1:
+            self.build_evaluation_detections = add_evaluation_detections_1
+        elif config.EVALUATE_METHOD == 2:
+            self.build_evaluation_detections = add_evaluation_detections_2
+        else:
+            self.build_evaluation_detections = add_evaluation_detections_3
+            
+        
+    def call(self, inputs):
+        print('    Detection Layer : call() ', type(inputs), len(inputs))    
+        # logt('rpn_proposals_roi ',  inputs[0], verbose = self.verbose)
+        # logt('mrcnn_class.shape ',  inputs[1], verbose = self.verbose) 
+        # logt('mrcnn_bboxes.shape',  inputs[2], verbose = self.verbose)
+        # logt('input_image_meta  ',  inputs[0], verbose = self.verbose) 
+        logt('input_gt_class_ids',  inputs[0], verbose = self.verbose) 
+        logt('input_gt_bboxes   ',  inputs[1], verbose = self.verbose)
+    
+        def wrapper(gt_class_ids, gt_bboxes):
+        # def wrapper(rois, mrcnn_class, mrcnn_bbox, image_meta, gt_class_ids, gt_bboxes):
+            from mrcnn.utils import parse_image_meta
+            mod_detections_batch = []
+            
+            for b in range(self.config.BATCH_SIZE):
+                                
+                # Run the regular detection graph, as we do in inference mode
+                # 24-01-2019 : In add_evaluation_detections_1 & 2 we do not need the inference detections, 
+                # So this has been commented out. 
+                # _, _, window, _ =  parse_image_meta(image_meta)
+                # detections      =  refine_detections(rois[b], mrcnn_class[b], mrcnn_bbox[b], window[b], self.config)
+                
+                ## Call routine to build the control file using GT annotations, adding false detections:
+                
+                # mod_detections  =  add_evaluation_detections_1(detections, image_meta[b], gt_class_ids[b], gt_bboxes[b], self.config)
+                mod_detections, max_overlap  =  self.build_evaluation_detections( gt_class_ids[b], gt_bboxes[b], self.config, self.class_pred_stats)
+                
+                if self.config.VERBOSE:
+                    print(' original detections (GT annotations) shape        :', gt_bboxes[b].shape)                
+                    print(' modified detections (after adding false positives):', mod_detections.shape)
+                    # print(' Max Overlap: ', max_overlap)
+                    # print(detections)
+                
+                # Pad with zeros if detections < DETECTION_MAX_INSTANCES
+                gap = self.config.DETECTION_MAX_INSTANCES - mod_detections.shape[0]
+                assert gap >= 0
+                if gap > 0:
+                    mod_detections = np.pad(mod_detections, [(0, gap), (0, 0)], 'constant', constant_values=0)
+                
+                mod_detections_batch.append(mod_detections)
+
+            # Stack detections and cast to float32
+            # TODO: track where float64 is introduced
+            mod_detections_batch = np.array(mod_detections_batch).astype(np.float32)
+            num_columns = mod_detections_batch.shape[-1]
+
+            # Reshape output
+            # [batch, num_detections, (y1, x1, y2, x2, class_score, dt_ind)] in pixels
+            return np.reshape(mod_detections_batch, [self.config.BATCH_SIZE, self.config.DETECTION_MAX_INSTANCES, num_columns])
+
+        # Return wrapped function
+        return tf.py_func(wrapper, inputs, tf.float32, name = 'detections')
+
+    def compute_output_shape(self, input_shape):
+        return (None, self.config.DETECTION_MAX_INSTANCES, 7)
+        
+        
+        
+    
+"""
+Archived on 24-01-2019
+
+def add_evaluation_detections_2_old (gt_class_ids, gt_bboxes, config, class_pred_stats):
+    '''
+    Use GT bboxes and a series of False Postivies as detections to pass on to FCN
+    Genertes list of detections using GT and adds FP bboxes for all GT bboxes 
+
     Inputs:
     ------
         gt_class_ids: 
@@ -72,11 +670,22 @@ def add_evaluation_detections_2(gt_class_ids, gt_bboxes, config, class_pred_stat
          
         ## Get average score for the current class from predicted_classes information 
         ## Apply Average score for each class from "predictions_info"
+        score_sz = (gt_class_ixs.shape[0],1)
+        # print('Score size :', score_sz)
         if config.EVALUATE_METHOD == 1:
-            cls_fp_score = cls_tp_score = class_pred_stats['avg'][class_id]  ## np.average(dt_nz[dt_class_ixs,5])
+            cls_fp_score = cls_tp_score = class_pred_stats['avg'][class_id] 
+            tp_scores = fp_scores = np.full(score_sz, cls_tp_score)
         else:
             cls_fp_score = class_pred_stats['pct'][class_id][0]   # 1st quantile 
             cls_tp_score = class_pred_stats['pct'][class_id][2]   # 3rd quantile
+            tp_scores    = np.random.choice([cls_tp_score, cls_fp_score], size= score_sz)
+            fp_scores    = np.random.choice([cls_fp_score, cls_tp_score], size= score_sz)
+        
+        ## Add gaussian noise to the scores and clip to [0.0001, 0.9999]
+        tp_scores += np.round(np.random.normal(scale = 0.0001, size = score_sz) ,4)
+        fp_scores += np.round(np.random.normal(scale = 0.0001, size = score_sz) ,4)            
+        tp_scores  = np.clip(tp_scores, 0.0001, 0.9999)
+        fp_scores  = np.clip(fp_scores, 0.0001, 0.9999)         
         
         if verbose:
             print()
@@ -122,8 +731,6 @@ def add_evaluation_detections_2(gt_class_ids, gt_bboxes, config, class_pred_stat
         
         # build detections 
         classes   = np.expand_dims(gt_nz_class_ids[gt_class_ixs], axis = -1)
-        tp_scores = np.ones((gt_class_ixs.shape[0],1)) * cls_tp_score
-        fp_scores = np.ones((gt_class_ixs.shape[0],1)) * cls_fp_score
         tp_ind    = np.ones((gt_class_ixs.shape[0],1)) 
          
         class_tp  = np.concatenate([gt_nz_bboxes[gt_class_ixs], classes, tp_scores, tp_ind] , axis = -1)
@@ -151,7 +758,10 @@ def add_evaluation_detections_2(gt_class_ids, gt_bboxes, config, class_pred_stat
     
     return mod_detections[top_ids], max_overlap
 
-def add_evaluation_detections_1(detections, image_meta, gt_class_ids, gt_bboxes, config):
+#---------------------------------------------------------------------------------------------    
+#   Archived ~ 12-2018
+#---------------------------------------------------------------------------------------------   
+def add_evaluation_detections_old(detections, image_meta, gt_class_ids, gt_bboxes, config):
     '''
     Takes identifed detections, adds FP bboxes for all GT bboxes and adds them to the list of detections  
     False Positives are based off of Ground Truth bounding boxes
@@ -258,199 +868,5 @@ def add_evaluation_detections_1(detections, image_meta, gt_class_ids, gt_bboxes,
     
     
     return mod_detections[top_ids]
-
-        
-class DetectionEvaluateLayer(KE.Layer):
-    '''
-    Takes classified proposal boxes and their bounding box deltas and
-    returns the final detection boxes.
-    Input:
-    -------
-    rpn_proposal_rois:     [batch, N, (y1, x1, y2, x2)] in normalized coordinates.
-                           Proposal bboxes generated by RPN
-                           Might be zero padded if there are not enough proposals.
     
-    mrcnn_class : 
-    mrcnn_bbox  :  
-    input_image_meta:
-    
-    
-    Returns:
-    --------
-    
-    detections:         [batch, num_max_detections, 6 (y1, x1, y2, x2, class_id, class_score)] in pixels
-    
-    '''
-
-    def __init__(self, config=None, class_pred_stats = None, **kwargs):
-        # super(DetectionLayer, self).__init__(**kwargs)
-        super().__init__(**kwargs)
-        print('\n>>> Detection Layer (Evaluation Mode :{})'.format(config.EVALUATE_METHOD))
-        self.config = config
-        self.verbose = config.VERBOSE
-        self.class_pred_stats = class_pred_stats
-
-    def call(self, inputs):
-        print('    Detection Layer : call() ', type(inputs), len(inputs))    
-        logt('rpn_proposals_roi ',  inputs[0], verbose = self.verbose)
-        logt('mrcnn_class.shape ',  inputs[1], verbose = self.verbose) 
-        logt('mrcnn_bboxes.shape',  inputs[2], verbose = self.verbose)
-        logt('input_image_meta  ',  inputs[3], verbose = self.verbose) 
-        logt('input_gt_class_ids',  inputs[4], verbose = self.verbose) 
-        logt('input_gt_bboxes   ',  inputs[5], verbose = self.verbose)
-    
-        def wrapper(rois, mrcnn_class, mrcnn_bbox, image_meta, gt_class_ids, gt_bboxes):
-            from mrcnn.utils import parse_image_meta
-            mod_detections_batch = []
-            # if self.verbose:
-                # logt('eval() detection wrapper - rpn_proposals_roi  ',  rois       , verbose = self.verbose)
-                # logt('eval() detection wrapper - mrcnn_class.shape  ',  mrcnn_class, verbose = self.verbose)
-                # logt('eval() detection wrapper - mrcnn_bboxes.shape ',  mrcnn_bbox , verbose = self.verbose)
-                # logt('eval() detection wrapper - image_meta         ',  image_meta , verbose = self.verbose)
-                # logt('eval() detection wrapper - gt_class_ids       ',  gt_class_ids, verbose = self.verbose)
-                # logt('eval() detection wrapper - gt_bboxes          ',  gt_bboxes   , verbose = self.verbose)
-            # process item per item in batch 
-            
-            for b in range(self.config.BATCH_SIZE):
-                _, _, window, _ =  parse_image_meta(image_meta)
-                
-                ## Run the regular detection graph, as we do in inference mode
-                detections      =  refine_detections(rois[b], mrcnn_class[b], mrcnn_bbox[b], window[b], self.config)
-                
-                ## In addtion, we all a routine to add false detections:
-                # mod_detections  =  add_evaluation_detections_1(detections, image_meta[b], gt_class_ids[b], gt_bboxes[b], self.config)
-                mod_detections, max_overlap  =  add_evaluation_detections_2( gt_class_ids[b], gt_bboxes[b], self.config, self.class_pred_stats)
-                if self.config.VERBOSE:
-                    print(' detections shape    :', detections.shape)                
-                    print(' mod_detections shape after adding false detections:', mod_detections.shape)
-                print(' Max Overlap: ', max_overlap)
-                    # print(detections)
-                
-                # Pad with zeros if detections < DETECTION_MAX_INSTANCES
-                gap = self.config.DETECTION_MAX_INSTANCES - mod_detections.shape[0]
-                assert gap >= 0
-                if gap > 0:
-                    mod_detections = np.pad(mod_detections, [(0, gap), (0, 0)], 'constant', constant_values=0)
-                
-                mod_detections_batch.append(mod_detections)
-
-            # Stack detections and cast to float32
-            # TODO: track where float64 is introduced
-            mod_detections_batch = np.array(mod_detections_batch).astype(np.float32)
-            num_columns = mod_detections_batch.shape[-1]
-
-            # Reshape output
-            # [batch, num_detections, (y1, x1, y2, x2, class_score, dt_ind)] in pixels
-            return np.reshape(mod_detections_batch, [self.config.BATCH_SIZE, self.config.DETECTION_MAX_INSTANCES, num_columns])
-
-        # Return wrapped function
-        return tf.py_func(wrapper, inputs, tf.float32, name = 'detections')
-
-    def compute_output_shape(self, input_shape):
-        return (None, self.config.DETECTION_MAX_INSTANCES, 7)
-        
-        
-        
-    
-"""
-def add_evaluation_detections_2(gt_class_ids, gt_bboxes, config, class_pred_stats):
-    '''
-    Use GT bboxes and a series of False Postivies as detections to pass on to FCN
-    Genertes list of detections using GT and adds FP bboxes for all GT bboxes 
-     
-    Inputs:
-    ------
-        gt_class_ids: 
-        gt_bboxes:  
-        config
-                
-    Returns:
-    --------
-        detections      [M, (y1, x1, y2, x2, class_id, score)]  After inserting false positives 
-                        M = N * 2 (N: number of GT annotations)
-                        Number of FP insertions is equal to number of GT annotations
-    '''
-    verbose = config.VERBOSE
-    height, width   = config.IMAGE_SHAPE[:2]
-
-    ##----------------------------------------------------------------------------
-    ##  1.  Filter out boxes with class < 0 : background (0) and Crowds (neg classes)
-    ##----------------------------------------------------------------------------
-    gt_nz_idxs      = np.where(gt_class_ids > 0)[0]
-    gt_nz_class_ids = gt_class_ids[gt_nz_idxs]
-    gt_nz_bboxes    = gt_bboxes[gt_nz_idxs]
-
-    # print(' gt_nz_idxs     : ', gt_nz_idxs.shape, '\n', gt_nz_idxs)
-    # print(' gt_nz_class_ids: ', gt_nz_class_ids.shape, '\n',  gt_nz_class_ids)
-    # print(' gt_nz_bboxes   : ', gt_nz_bboxes.shape   , '\n', gt_nz_bboxes)
-
-    ##----------------------------------------------------------------------------
-    ##  2.  Generate False positives using ground truth info 
-    ##----------------------------------------------------------------------------
-    mod_detections = np.empty((0, 7))
-    max_overlap = 0
-
-    ## go through each class, gather the GTs for that class, and create their corrsponding FPs.
-     
-    for class_id in np.unique(gt_nz_class_ids) :
-        # Pick detections of this class
-        gt_class_ixs = np.where(gt_nz_class_ids == class_id)[0]
-        tp_bboxes   =  gt_nz_bboxes[gt_class_ixs]
-        
-        ## Generate Flip gt_bboxes for this class 
-        fp_bboxes   = flip_bbox(tp_bboxes, (height,width),   flip_x = True, flip_y = True)
-         
-        
-        ## Get average score for the current class from predicted_classes information 
-        ## Apply Average score for each class from "predictions_info"
-        cls_avg_score = class_pred_avg[class_id] ## np.average(dt_nz[dt_class_ixs,5])
-        
-        ##  Apply NMS between the flipped bounding boxes and detected boudiing boxes??
-        ##  returns indices into the gt_class_ixs 
-        overlaps, _,_,_ = overlaps_graph_np(tp_bboxes, fp_bboxes)
-        m_overlap = np.max(overlaps)
-        max_overlap = m_overlap if m_overlap > max_overlap else max_overlap
-        if verbose:
-            print()
-            print('class id :', class_id, 'class prediction avg:', cls_avg_score)
-            print('---------------------------------------------')
-            print('gt_class_indexes : ', gt_class_ixs.shape, gt_class_ixs)
-            print('tp_bboxes', tp_bboxes.shape)
-            print(tp_bboxes)
-            print('fp_bboxes', fp_bboxes.shape)
-            print(fp_bboxes)
-            print('\noverlaps', overlaps.shape, ' max: ', m_overlap)
-            print('---------------------------------------------')
-            print(overlaps,'\n')
-         
-        classes  = np.expand_dims(gt_nz_class_ids[gt_class_ixs], axis = -1)
-        scores   = np.ones((gt_class_ixs.shape[0],1)) * cls_avg_score
-        tp_ind   = np.ones((gt_class_ixs.shape[0],1)) 
-        fp_ind   = -tp_ind 
-        class_fp = np.concatenate([fp_bboxes, classes, scores, fp_ind] , axis = -1)
-        class_tp = np.concatenate([gt_nz_bboxes[gt_class_ixs], classes, scores, tp_ind] , axis = -1)
-        mod_detections  = np.vstack([mod_detections, class_tp, class_fp])
-        # print('classes :', classes.shape, '\n', classes, '\n')    
-        # print('scores   :', scores.shape  , '\n', scores)
-        # print('tp_ind :', tp_ind.shape, '\n', tp_ind)
-        # print('fp_ind :', fp_ind.shape, '\n', fp_ind)
-        # print('mod_detections:', mod_detections.shape)
-        # print(mod_detections)
-
-
-    
-    ##----------------------------------------------------------------------------
-    ## 10.  Sort by decreasing score and Keep top DETECTION_MAX_INSTANCES detections
-    ##----------------------------------------------------------------------------
-    roi_count = config.DETECTION_MAX_INSTANCES
-    top_ids   = np.argsort(mod_detections[:,5])[::-1][:roi_count]
-    if verbose:
-        print('detections + fp boxes:', mod_detections.shape)
-        print(mod_detections)    
-        print('final detections: sorted tp_boxes + fp_boxes:', mod_detections.shape)
-        print(mod_detections[top_ids])
-        print("\n\n MAX OVERLAP", max_overlap)
-    
-    return mod_detections[top_ids], max_overlap
-"""
-        
+"""        

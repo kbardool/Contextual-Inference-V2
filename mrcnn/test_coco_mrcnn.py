@@ -24,7 +24,7 @@ from mrcnn.utils        import log, stack_tensors, stack_tensors_3d, write_stdou
 from mrcnn.datagen      import data_generator, load_image_gt
 from mrcnn.coco         import prep_coco_dataset
 from mrcnn.utils        import command_line_parser, display_input_parms, Paths
-
+ 
 pp = pprint.PrettyPrinter(indent=2, width=100)
 np.set_printoptions(linewidth=100,precision=4,threshold=1000, suppress = True)
 os_platform = platform.system()
@@ -40,7 +40,7 @@ print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,k
 ##------------------------------------------------------------------------------------
 parser = command_line_parser()
 input_parms  =" --batch_size     1  "
-input_parms +=" --mrcnn_logs_dir train_mrcnn_coco "
+input_parms +=" --mrcnn_logs_dir train_mrcnn_coco_subset "
 # input_parms +=" --fcn_logs_dir   train_fcn8_subset " 
 input_parms +=" --mrcnn_model    last "
 # input_parms +=" --lr 0.00001     --val_steps 8 " 
@@ -49,12 +49,26 @@ input_parms +=" --mrcnn_model    last "
 # input_parms +=" --fcn_arch       fcn8 " 
 # input_parms +=" --fcn_layers     all " 
 input_parms +=" --sysout         screen "
-input_parms +=" --coco_classes       78 79 80 81 82 44 46 47 48 49 50 51 34 35 36 37 38 39 40 41 42 43 10 11 13 14 15 "
+input_parms +=" --coco_classes   78 79 80 81 82 44 46 47 48 49 50 51 34 35 36 37 38 39 40 41 42 43 10 11 13 14 15 "
 
 # input_parms +=" --new_log_folder    "
 args = parser.parse_args(input_parms.split())
-# args = parser.parse_args()
 verbose = 0
+
+syst = platform.system()
+if syst == 'Windows':
+    save_path = "E:/git_projs/MRCNN3/train_coco/test_results"
+    # test_dataset = "E:/git_projs/MRCNN3/train_newshapes/newshapes_test_dataset_1000_B.pkl"
+elif syst == 'Linux':
+    save_path = "/home/kbardool/mrcnn3/train_coco/test_results"
+    # test_dataset = "/home/kbardool/mrcnn3/train_newshapes/newshapes_test_dataset_1000_B.pkl"
+else :
+    raise Error('unrecognized system ')
+
+print(' OS ' , syst, ' : ', save_path)
+# print(' OS ' , syst, ' : ', test_dataset)
+
+
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
 ##----------------------------------------------------------------------------------------------            
@@ -68,54 +82,7 @@ if args.sysout == 'FILE':
     print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
     display_input_parms(args)
 
-##------------------------------------------------------------------------------------
-## setup project directories
-##   DIR_ROOT         : Root directory of the project 
-##   MODEL_DIR        : Directory to save logs and trained model
-##   COCO_MODEL_PATH  : Path to COCO trained weights
-##---------------------------------------------------------------------------------
-paths = Paths( mrcnn_training_folder = args.mrcnn_logs_dir, fcn_training_folder =  args.fcn_logs_dir)
-paths.display()
-
-##------------------------------------------------------------------------------------
-## Build configuration object 
-##------------------------------------------------------------------------------------
-mrcnn_config                      = CocoConfig()
-mrcnn_config.NAME                 = 'mrcnn'              
-mrcnn_config.TRAINING_PATH        = paths.MRCNN_TRAINING_PATH
-mrcnn_config.COCO_DATASET_PATH    = paths.COCO_DATASET_PATH 
-mrcnn_config.COCO_MODEL_PATH      = paths.COCO_MODEL_PATH   
-mrcnn_config.RESNET_MODEL_PATH    = paths.RESNET_MODEL_PATH 
-mrcnn_config.VGG16_MODEL_PATH     = paths.VGG16_MODEL_PATH  
-mrcnn_config.COCO_CLASSES         = None 
-mrcnn_config.DETECTION_PER_CLASS  = 200
-mrcnn_config.HEATMAP_SCALE_FACTOR = 4
-
-mrcnn_config.BATCH_SIZE           = int(args.batch_size)                  # Batch size is 2 (# GPUs * images/GPU).
-mrcnn_config.IMAGES_PER_GPU       = int(args.batch_size)                  # Must match BATCH_SIZE
-mrcnn_config.STEPS_PER_EPOCH      = int(args.steps_in_epoch)
-
-mrcnn_config.EPOCHS_TO_RUN        = int(args.epochs)
-mrcnn_config.FCN_INPUT_SHAPE      = mrcnn_config.IMAGE_SHAPE[0:2]
-mrcnn_config.LAST_EPOCH_RAN       = int(args.last_epoch)
-
-# mrcnn_config.LEARNING_RATE        = float(args.lr)
-# mrcnn_config.WEIGHT_DECAY         = 2.0e-4
-# mrcnn_config.VALIDATION_STEPS     = int(args.val_steps)
-# mrcnn_config.REDUCE_LR_FACTOR     = 0.5
-# mrcnn_config.REDUCE_LR_COOLDOWN   = 30
-# mrcnn_config.REDUCE_LR_PATIENCE   = 40
-# mrcnn_config.EARLY_STOP_PATIENCE  = 80
-# mrcnn_config.EARLY_STOP_MIN_DELTA = 1.0e-4
-# mrcnn_config.MIN_LR               = 1.0e-10
-
-mrcnn_config.NEW_LOG_FOLDER       = args.new_log_folder  
-mrcnn_config.SYSOUT               = args.sysout
-mrcnn_config.VERBOSE              = verbose
-    
-mrcnn_config.DETECTION_MAX_INSTANCES  = 200
-mrcnn_config.DETECTION_MIN_CONFIDENCE = 0.1
-mrcnn_config.DETECTION_PER_CLASS      = mrcnn_config.DETECTION_MAX_INSTANCES 
+mrcnn_config = build_coco_config(model = 'mrcnn', mode = 'inference', args = args)
 
 ##------------------------------------------------------------------------------------
 ## Build Mask RCNN Model in INFERENCE mode
@@ -132,7 +99,6 @@ mrcnn_model = mrcnn_modellib.MaskRCNN(mode='inference', config=mrcnn_config)
 ##------------------------------------------------------------------------------------
 ## Display model configuration information
 ##------------------------------------------------------------------------------------
-paths.display()
 mrcnn_config.display()  
 mrcnn_model.display_layer_info()
 

@@ -41,7 +41,7 @@ display_input_parms(args)
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
 ##----------------------------------------------------------------------------------------------            
-if args.sysout == 'FILE':
+if args.sysout in [ 'FILE', 'HEADER', 'ALL'] :
     sysout_name = "{:%Y%m%dT%H%M}_sysout.out".format(start_time)
     print('    Output is written to file....', sysout_name)    
     sys.stdout = io.StringIO()
@@ -67,7 +67,7 @@ mrcnn_model = mrcnn_modellib.MaskRCNN(mode='trainfcn', config=mrcnn_config)
 ##------------------------------------------------------------------------------------
 ## Display model configuration information
 ##------------------------------------------------------------------------------------
-mrcnn_config.display()  
+mrcnn_model.config.display()  
 mrcnn_model.display_layer_info()
     
 ##------------------------------------------------------------------------------------
@@ -85,16 +85,13 @@ except:
     pass    
 fcn_model = fcn_modellib.FCN(mode="training", arch = args.fcn_arch, config=fcn_config)
 
-# if args.sysout == 'FILE':
-    # sysout_path = fcn_model.log_dir
-    # f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
-    # content = sys.stdout.getvalue()   #.encode('utf_8')
-    # f_obj.write(content)
-    # sys.stdout = f_obj
-    # sys.stdout.flush()
-    # f_obj.close()    
-    # sys.stdout = sys.__stdout__
-    # print(' Run information written to ', sysout_name)    
+if args.sysout in ['ALL']:
+   sysout_path = fcn_model.log_dir
+   f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
+   content = sys.stdout.getvalue()   #.encode('utf_8')
+   f_obj.write(content)
+   sys.stdout = f_obj
+   sys.stdout.flush()
 
 ##------------------------------------------------------------------------------------
 ## Display model configuration information
@@ -119,8 +116,10 @@ else:
 ##------------------------------------------------------------------------------------
 ## Build & Load Training and Validation datasets
 ##------------------------------------------------------------------------------------
-dataset_train = prep_coco_dataset(["train","val35k"], mrcnn_config, shuffle = True, load_coco_classes =args.coco_classes, loadAnns='active_only')
-dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config, shuffle = True, load_coco_classes =args.coco_classes, loadAnns='active_only')
+dataset_train = prep_coco_dataset(["train","val35k"], mrcnn_config, shuffle = True, 
+                                  load_coco_classes =args.coco_classes, loadAnns='active_only')
+dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config, shuffle = True, 
+                                  load_coco_classes =args.coco_classes, loadAnns='active_only')
 
 dataset_train.display_active_class_info()
 dataset_val.display_active_class_info()
@@ -141,27 +140,19 @@ fcn_model.train_in_batches(
             dataset_val, 
             layers = train_layers,
             losses = loss_names,
-            sysout_name  = sysout_name)
-
-
-#------------------------------------------------------------------------------------
-# Final save - only works with weights - Model is not JSON serializable
-#------------------------------------------------------------------------------------
-# final_save = 'fcn_{:04d}_final'.format(fcn_model.epoch) 
-# file = fcn_model.save_model(filename = final_save)            
-# print(' --> Final weights file saved: ', file)
-
+            sysout_name = sysout_name)
 
 ##----------------------------------------------------------------------------------------------
 ## If in debug mode write stdout intercepted IO to output file  
 ##----------------------------------------------------------------------------------------------            
-end_time = datetime.now()
-# if args.sysout == 'FILE':
-    # print(' --> Execution ended at:', end_time.strftime("%m-%d-%Y @ %H:%M:%S"))
-    # sys.stdout.flush()
-    # f_obj.close()    
-    # sys.stdout = sys.__stdout__
-    # print(' Run information written to ', sysout_name)    
+end_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
+if args.sysout in  ['ALL']:
+    print(' --> Execution ended at:', end_time)
+    sys.stdout.flush()
+    f_obj.close()    
+    sys.stdout = sys.__stdout__
+    print(' Run information written to ', sysout_name)    
  
-print(' --> Execution ended at:',end_time.strftime("%m-%d-%Y @ %H:%M:%S"))
-exit(' Execution terminated ' ) 
+print(' --> Execution ended at:',end_time)
+exit(' Execution terminated ' )
+

@@ -100,9 +100,10 @@ class ModelBase():
         if init_with == "last":
             print(' ---> last')
             # Load the last model you trained and continue training, placing checkpouints in same folder
-            last_file = self.find_last()
-            print('   Last file is :', last_file)
-            loc= self.load_weights(last_file[1], by_name=True, verbose = verbose)
+            last_file = self.find_last(verbose = verbose)[1]
+            
+            print('   Last file is :', last_file, file = sys.__stdout__)
+            loc= self.load_weights(self.find_last()[1], by_name=True, verbose = verbose)
             
         elif init_with == "init":
             print(' ---> init :', self.config.VGG16_MODEL_PATH)
@@ -319,10 +320,10 @@ class ModelBase():
             log_dir: The directory where events and weights are saved
             checkpoint_path: the path to the last checkpoint file
         '''
-        
+        if verbose:
+            print('>>> find_last checkpoint in : ', self.model_dir)
         # Get directory names. Each directory corresponds to a model
         dir_name, checkpoint = None, None    
-
         dir_names = next(os.walk(self.model_dir))[1]
         key = self.config.NAME.lower()
         dir_names = list(filter(lambda f: f.startswith(key), dir_names))

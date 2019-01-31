@@ -20,7 +20,6 @@ import mrcnn.model_mrcnn  as mrcnn_modellib
 import mrcnn.model_fcn    as fcn_modellib
 import mrcnn.visualize    as visualize
 
-
 from datetime             import datetime   
 from mrcnn.utils          import command_line_parser, display_input_parms, Paths
 from mrcnn.coco           import prep_coco_dataset 
@@ -42,7 +41,7 @@ display_input_parms(args)
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
 ##----------------------------------------------------------------------------------------------            
-if args.sysout == 'FILE':
+if args.sysout in [ 'FILE', 'HEADER', 'ALL'] :
     sysout_name = "{:%Y%m%dT%H%M}_sysout.out".format(start_time)
     print('    Output is written to file....', sysout_name)    
     sys.stdout = io.StringIO()
@@ -52,7 +51,7 @@ if args.sysout == 'FILE':
     display_input_parms(args)
     
 ##------------------------------------------------------------------------------------
-## Build Mask RCNN Model in TRAINFCN mode
+## Build Mask RCNN Model in TRAINING mode
 ##------------------------------------------------------------------------------------
 mrcnn_config = build_coco_config('mrcnn','training', args, verbose = 1)
 
@@ -65,13 +64,13 @@ except:
 KB.clear_session()
 mrcnn_model = mrcnn_modellib.MaskRCNN(mode='training', config=mrcnn_config)
 
-# if args.sysout == 'FILE':
-   # sysout_path = mrcnn_model.log_dir
-   # f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
-   # content = sys.stdout.getvalue()   #.encode('utf_8')
-   # f_obj.write(content)
-   # sys.stdout = f_obj
-   # sys.stdout.flush()
+if args.sysout in ['ALL']:
+   sysout_path = fcn_model.log_dir
+   f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
+   content = sys.stdout.getvalue()   #.encode('utf_8')
+   f_obj.write(content)
+   sys.stdout = f_obj
+   sys.stdout.flush()
 
 ##------------------------------------------------------------------------------------
 ## Display model configuration information
@@ -92,10 +91,12 @@ else:
     mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = exclude_list, verbose = 1)
 
 ##----------------------------------------------------------------------------------------------
-## Build COCO Training and Validation Datasets
+## Build & Load Training and Validation datasets
 ##----------------------------------------------------------------------------------------------
-dataset_train = prep_coco_dataset(["train","val35k"], mrcnn_config, shuffle = True, load_coco_classes=args.coco_classes, loadAnns='active_only')
-dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config, shuffle = True, load_coco_classes=args.coco_classes, loadAnns='active_only')
+dataset_train = prep_coco_dataset(["train","val35k"], mrcnn_config, shuffle = True, 
+                                  load_coco_classes=args.coco_classes, loadAnns='active_only')
+dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config, shuffle = True, 
+                                  load_coco_classes=args.coco_classes, loadAnns='active_only')
 
 
 ##----------------------------------------------------------------------------------------------
@@ -114,7 +115,7 @@ dataset_val   = prep_coco_dataset(["minival"]       , mrcnn_config, shuffle = Tr
 ##----------------------------------------------------------------------------------------------
 # train_layers = [ 'mrcnn', 'fpn','rpn']
 # loss_names   = [ "mrcnn_class_loss", "mrcnn_bbox_loss"]
-train_layers = [ 'res3+']
+train_layers = args.mrcnn_layers
 loss_names   = [ "rpn_class_loss", "rpn_bbox_loss" , "mrcnn_class_loss", "mrcnn_bbox_loss"]
 mrcnn_model.epoch = mrcnn_model.config.LAST_EPOCH_RAN
 
@@ -124,47 +125,20 @@ mrcnn_model.train(dataset_train,
             epochs_to_run = mrcnn_model.config.EPOCHS_TO_RUN,
             layers = train_layers,
             losses = loss_names,
-            sysout_name  = sysout_name)
+            sysout_name = sysout_name)
             
 ##----------------------------------------------------------------------------------------------
-## If in debug mode write stdout intercepted IO to output file  - moved to train_mrcnn_xxxx
+## If in debug mode write stdout intercepted IO to output file
 ##----------------------------------------------------------------------------------------------            
-end_time = datetime.now()
-# if args.sysout == 'FILE':
-    # print(' --> Execution ended at:', end_time.strftime("%m-%d-%Y @ %H:%M:%S"))
-    # sys.stdout.flush()
-    # f_obj.close()    
-    # sys.stdout = sys.__stdout__
-    # print(' Run information written to ', sysout_name)    
-
-print(' --> Execution ended at:',datetime.now().strftime("%m-%d-%Y @ %H:%M:%S"))
+end_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
+if args.sysout in  ['ALL']:
+    print(' --> Execution ended at:', end_time)
+    sys.stdout.flush()
+    f_obj.close()    
+    sys.stdout = sys.__stdout__
+    print(' Run information written to ', sysout_name)    
+ 
+print(' --> Execution ended at:',end_time)
 exit(' Execution terminated ' ) 
 
-            
-
-"""
-#------------------------------------------------------------------------------------
-# setup tf session and debugging 
-#------------------------------------------------------------------------------------
-# keras_backend.set_session(tf_debug.LocalCLIDebugWrapperSession(tf.Session()))
-# if 'tensorflow' == KB.backend():
-#     from tensorflow.python import debug as tf_debug
-#
-#    config = tf.ConfigProto(device_count = {'GPU': 0} )
-#    tf_sess = tf.Session(config=config)    
-#    tf_sess = tf_debug.LocalCLIDebugWrapperSession(tf_sess)
-#    KB.set_session(tf_sess)
-#
-#
-#   tfconfig = tf.ConfigProto(
-#               gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5),
-#               device_count = {'GPU': 1}
-#              )    
-#     tfconfig = tf.ConfigProto()
-#     tfconfig.gpu_options.allow_growth=True
-#     tfconfig.gpu_options.visible_device_list = "0"
-#     tfconfig.gpu_options.per_process_gpu_memory_fraction=0.5
-#     tf_sess = tf.Session(config=tfconfig)
-#     set_session(tf_sess)
-#------------------------------------------------------------------------------------
-"""
+           

@@ -445,23 +445,38 @@ def byclass_to_byimage_np(in_array, seqid_column = 7):
          to                                  
             a per-image tensor shaped  as  [ num_bboxes, columns]
     '''
-    p_sum = np.sum(np.abs(in_array[:,:,0:4]), axis=-1)
-    # a,b = np.where(in_array[...,seqid_column]>0)
+    assert in_array.ndim == 3, "number of dimensions must be 3  is : given {}".format(in_array.ndim)
+    if in_array.ndim == 3:
+        p_sum = np.sum(np.abs(in_array[:,:,0:4]), axis=-1)
+        class_idxs, bbox_idxs = np.where(p_sum > 0)
+        output = in_array[class_idxs, bbox_idxs, :]
+    # elif in_array.ndim == 4:
+        # p_sum = np.sum(np.abs(in_array[:,:,:,0:4]), axis=-1, keepdims = True)
+        # img_idxs, class_idxs, bbox_idxs, _ = np.where(p_sum > 0)
+        # output = in_array[img_idxs, class_idxs, bbox_idxs, :]
+    else:
+        raise ValueError("number of dimensions must be 3 or 4, is : given {}".format(in_array.ndim)) 
+    #p_sum = np.sum(np.abs(in_array[:,:,0:4]), axis=-1)
 
     # class_idxs contains the indices of the first dimension (class)
-    # bbox_idxs contains the indices of the second dim (bboxes)
-    class_idxs,bbox_idxs = np.where(p_sum > 0)
-    max_bboxes = in_array.shape[-2]
-    non_zero_bboxes = class_idxs.shape[0]
-    output = np.zeros((non_zero_bboxes, in_array.shape[-1]))
-    # print(' class_idxs : {} , {} '.format(class_idxs.shape, class_idxs))
-    # print(' bbox_idxs : {} , {} '.format(bbox_idxs.shape, bbox_idxs))
-    # print(' max_bboxes: {} , non_zero bboxes: {}  output shape is: {}'.format(max_bboxes, non_zero_bboxes,output.shape))
+    #  bbox_idxs contains the indices of the second dim (bboxes)
+    # class_idxs, bbox_idxs = np.where(p_sum > 0)
     
-    for cls , box in zip(class_idxs, bbox_idxs):
+    # max_bboxes      = in_array.shape[-2]
+    # non_zero_bboxes = class_idxs.shape[0]
+    # output = np.zeros((non_zero_bboxes, in_array.shape[-1]))
+    
+    # print(' class_idxs: {} , {} '.format(class_idxs.shape, class_idxs))
+    # print(' bbox_idxs : {} , {} '.format(bbox_idxs.shape, bbox_idxs))
+    # print(' max_bboxes: {} , non_zero bboxes: {}'.format(max_bboxes, non_zero_bboxes))
+    # print(' output    : {}'.format(output.shape))
+    
+    ## 29-01-2019 -- modified to simpler form below 
+    # for cls , box in zip(class_idxs, bbox_idxs):
         # print( ' building output: ', cls, box, max_bboxes  - in_array[cls, box, seqid_column].astype(int))
-        output[max_bboxes - in_array[cls, box, seqid_column].astype(int) ] = in_array[cls, box]
-
+        # output[max_bboxes - in_array[cls, box, seqid_column].astype(int) ] = in_array[cls, box]
+    # output = in_array[class_idxs, bbox_idxs, :]
+    
     return output
 
     
@@ -838,9 +853,9 @@ def compute_recall(pred_boxes, gt_boxes, iou):
     gt_boxes:       [N, (y1, x1, y2, x2)] in image coordinates
     '''
     # Measure overlaps
-    overlaps = compute_overlaps(pred_boxes, gt_boxes)
-    iou_max = np.max(overlaps, axis=1)
-    iou_argmax = np.argmax(overlaps, axis=1)
+    overlaps     = compute_overlaps(pred_boxes, gt_boxes)
+    iou_max      = np.max(overlaps, axis=1)
+    iou_argmax   = np.argmax(overlaps, axis=1)
     positive_ids = np.where(iou_max >= iou)[0]
     matched_gt_boxes = iou_argmax[positive_ids]
 
@@ -1819,10 +1834,10 @@ def command_line_parser():
                         help="MRCNN layers to train" )
                         
     parser.add_argument('--evaluate_method', required=False,
-                        choices = [1,2],
+                        choices = [1,2,3],
                         default=1, type = int, 
                         metavar="<evaluation method>",
-                        help="Evaluation method : 1 or 2")
+                        help="Evaluation method : [1,2,3]")
                         
     parser.add_argument('--fcn_model', required=False,
                         default='last',
@@ -1893,10 +1908,10 @@ def command_line_parser():
                         help="Optimization Method: SGD, RMSPROP, ADAGRAD, ...")
                         
     parser.add_argument('--sysout', required=False,
-                        choices=['SCREEN', 'FILE'],
+                        choices=['SCREEN', 'FILE', 'HEADER', 'ALL'],
                         default='screen', type=str.upper,
                         metavar="<sysout>",
-                        help="sysout destination: 'screen' or 'file'")
+                        help="sysout destination: 'screen', 'file', 'header' , 'all' (header == file) ")
 
     parser.add_argument('--new_log_folder', required=False,
                         default=False, action='store_true',

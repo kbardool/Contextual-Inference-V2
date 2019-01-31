@@ -10,7 +10,7 @@ Written by Waleed Abdulla
 ## L2 normalization layers (import fcn_layer_no_L2)
 ##
 ##
-import os, sys, glob, random, math, datetime, itertools, json, re, logging, pprint
+import os, sys, glob, random, math, datetime, itertools, json, re, logging, pprint, warnings
 from   collections import OrderedDict
 import numpy as np
 import scipy.misc
@@ -31,6 +31,7 @@ import mrcnn.loss                  as loss
 from   mrcnn.datagen               import data_generator
 from   mrcnn.utils                 import (log, logt,  parse_image_meta_graph, parse_image_meta, 
                                            parse_active_class_ids_graph)
+from   datetime                    import datetime                                           
 from   mrcnn.model_base            import ModelBase
 # from   mrcnn.fcn16_layer           import fcn16_graph
 # from   mrcnn.fcn_layer_no_L2       import fcn_graph
@@ -43,7 +44,7 @@ assert LooseVersion(tf.__version__) >= LooseVersion("1.3.0")
 assert LooseVersion(keras.__version__) >= LooseVersion('2.0.8')
 pp = pprint.PrettyPrinter(indent=4, width=100)
 tf.get_variable_scope().reuse_variables()
-
+warnings.filterwarnings('ignore', '.*output shape of zoom.*')
 #  from keras.callbacks import TensorBoard
 #  
 #  class LRTensorBoard(TensorBoard):
@@ -206,7 +207,8 @@ class FCN(ModelBase):
             
 
             fcn_scores   = KL.Lambda(lambda x:  fcn_scoring_graph(x, config, mode), name = 'fcn_scoring')([fcn_hm , pr_hm_scores])
-            
+            print(' GT HM.op_type()       :', gt_hm.op.type)    
+            print(' GT HM SCORES.op_type():', gt_hm_scores.op.type)                
             logt('* gt_hm_scores shape ', gt_hm_scores,verbose = verbose)
             logt('* pr_hm_scores shape ', pr_hm_scores,verbose = verbose)
             logt('* fcn_heatmap shape  ', fcn_hm,verbose = verbose)
@@ -299,6 +301,7 @@ class FCN(ModelBase):
             print('     pr_hm         ', pr_hm.shape)
             print('     pr_hm_scores  ', pr_hm_scores.shape)
             print('     image_metas   ', image_metas.shape)
+
         fcn_hm, fcn_sm, fcn_hm_scores = self.keras_model.predict([pr_hm, pr_hm_scores], verbose = 0)
 
         if verbose:
@@ -317,8 +320,9 @@ class FCN(ModelBase):
             ## reshape fcn_hm_scores from per_class to per_image tensor
             ## fcn_hm_scores is by class  
             ## Convert fcn_hm_scores bboxes from NN coordinates to image coordinates
-            fcn_boxes_adj = utils.boxes_to_image_domain(fcn_hm_scores[i,:,:,:4],image_metas[i])
-            fcn_scores_by_class= np.dstack((fcn_boxes_adj, fcn_hm_scores[i,:,:,4:]))
+            fcn_boxes_adj       = utils.boxes_to_image_domain(fcn_hm_scores[i,:,:,:4],image_metas[i])
+            fcn_scores_by_class = np.dstack((fcn_boxes_adj, fcn_hm_scores[i,:,:,4:]))
+            # print('    Length of fcn_hm_scores_by_class: ', len(fcn_scores_by_class), fcn_scores_by_class.shape)
             fcn_scores_by_image = utils.byclass_to_byimage_np(fcn_scores_by_class, sequence_column)
             if verbose:
                 print(' Process input/results ', i)
@@ -452,7 +456,7 @@ class FCN(ModelBase):
             pr_scores_by_class   (81, 200, 23)
         '''
 
-        assert self.mode   == "inference", "Create model in evaluate mode."
+        assert self.mode   == "inference", "FCN model must be created in inference mode."
         assert len(evaluate_batch) == 5, " length of eval batch must be 4"
         sequence_column = 7
         
@@ -469,7 +473,9 @@ class FCN(ModelBase):
         fcn_input_hm          = np.stack([r['pr_hm'] for r in results] )
         fcn_input_hm_scores   = np.stack([r['pr_hm_scores'] for r in results] )
         fcn_input_image_metas = np.stack([r['image_meta'] for r in results] )
-
+        
+        # print(' Shape of fcn_input_hm: ', fcn_input_hm.shape)
+        # print(' Shape of fcn_input_hm_scres: ', fcn_input_hm_scores.shape)
         # fcn_hm, fcn_sm, fcn_hm_scores = self.keras_model.predict([fcn_input_hm, fnc_input_hm_scores], verbose = 1)
         fcn_results = self.detect([fcn_input_hm, fcn_input_hm_scores, fcn_input_image_metas], verbose = verbose)
 
@@ -944,7 +950,7 @@ class FCN(ModelBase):
         ##----------------------------------------------------------------------------------------------
         ## If in debug mode write stdout intercepted IO to output file  - moved to train_xxxx
         ##----------------------------------------------------------------------------------------------            
-        if self.config.SYSOUT == 'FILE':
+        if self.config.SYSOUT in [ 'FILE', 'HEADER']:
             sysout_path = self.log_dir
             f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
             content = sys.stdout.getvalue()   #.encode('utf_8')
@@ -1222,7 +1228,7 @@ class FCN(ModelBase):
         ##----------------------------------------------------------------------------------------------
         ## If in debug mode write stdout intercepted IO to output file  - moved to train_xxxx
         ##----------------------------------------------------------------------------------------------            
-        if self.config.SYSOUT == 'FILE':
+        if self.config.SYSOUT in [ 'FILE', 'HEADER']:
             sysout_path = self.log_dir
             f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
             content = sys.stdout.getvalue()   #.encode('utf_8')
@@ -1248,15 +1254,19 @@ class FCN(ModelBase):
         else:
         
             while epoch_idx < final_epoch :
+                
+                if self.config.SYSOUT ==  'ALL':                    
+                    start_time_disp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                    print('{}   epoch {}  of {} epochs  '.format(start_time_disp, epoch_idx, final_epoch), file = sys.__stdout__)
+                
                 callbacks.on_epoch_begin(epoch_idx)
                 epoch_logs = {}
-                
+
                 ##------------------------------------------------------------------------
                 ## TRAINING Phase - emulating fit_generator()
                 ##------------------------------------------------------------------------
                 for steps_index in range(steps_per_epoch):
-                    
-                    # print(' self.epoch {}   final epoch:{}  step {} '.format(self.epoch, final_epoch, steps_index))
+                    # print(' self.epoch {}   final epoch:{}  step {} '.format(self.epoch, final_epoch, steps_index), file = sys.__stdout__)
                     batch_logs = {}
                     batch_logs['batch'] = steps_index
                     batch_logs['size']  = batch_size    

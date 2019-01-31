@@ -41,7 +41,7 @@ display_input_parms(args)
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
 ##----------------------------------------------------------------------------------------------            
-if args.sysout == 'FILE':
+if args.sysout in [ 'FILE', 'HEADER', 'ALL'] :
     sysout_name = "{:%Y%m%dT%H%M}_sysout.out".format(start_time)
     print('    Output is written to file....', sysout_name)    
     sys.stdout = io.StringIO()
@@ -64,13 +64,13 @@ except:
 KB.clear_session()
 mrcnn_model = mrcnn_modellib.MaskRCNN(mode='training', config=mrcnn_config)
 
-# if args.sysout == 'FILE':
-   # sysout_path = mrcnn_model.log_dir
-   # f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
-   # content = sys.stdout.getvalue()   #.encode('utf_8')
-   # f_obj.write(content)
-   # sys.stdout = f_obj
-   # sys.stdout.flush()
+if args.sysout in ['ALL']:
+   sysout_path = fcn_model.log_dir
+   f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
+   content = sys.stdout.getvalue()   #.encode('utf_8')
+   f_obj.write(content)
+   sys.stdout = f_obj
+   sys.stdout.flush()
 
 ##------------------------------------------------------------------------------------
 ## Display model configuration information
@@ -90,9 +90,8 @@ else:
     exclude_list = []
     mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = exclude_list, verbose = 1)
 
-    
 ##------------------------------------------------------------------------------------
-## Build shape dataset for Training and Validation       
+## Build & Load Training and Validation datasets
 ##------------------------------------------------------------------------------------
 dataset_train = prep_newshape_dataset(mrcnn_model.config, 10000)
 dataset_val   = prep_newshape_dataset(mrcnn_model.config,  2500)
@@ -127,16 +126,16 @@ mrcnn_model.train(dataset_train,
             sysout_name = sysout_name)
             
 ##----------------------------------------------------------------------------------------------
-## If in debug mode write stdout intercepted IO to output file  - moved to train_mrcnn_xxxx
+## If in debug mode write stdout intercepted IO to output file
 ##----------------------------------------------------------------------------------------------            
-end_time = datetime.now()
-# if args.sysout == 'FILE':
-    # print(' --> Execution ended at:', end_time.strftime("%m-%d-%Y @ %H:%M:%S"))
-    # sys.stdout.flush()
-    # f_obj.close()    
-    # sys.stdout = sys.__stdout__
-    # print(' Run information written to ', sysout_name)    
-
-print(' --> Execution ended at:',datetime.now().strftime("%m-%d-%Y @ %H:%M:%S"))
+end_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
+if args.sysout in  ['ALL']:
+    print(' --> Execution ended at:', end_time)
+    sys.stdout.flush()
+    f_obj.close()    
+    sys.stdout = sys.__stdout__
+    print(' Run information written to ', sysout_name)    
+ 
+print(' --> Execution ended at:',end_time)
 exit(' Execution terminated ' ) 
             

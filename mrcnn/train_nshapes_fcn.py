@@ -5,7 +5,7 @@
 ## Pass predicitions from MRCNN to use as training data for FCN
 ##
 ##-------------------------------------------------------------------------------------------
-import os, sys, math, io, time, gc, platform, pprint
+import os, sys, math, io, time, gc, platform, pprint, pickle
 import numpy as np
 import tensorflow as tf
 import keras
@@ -19,11 +19,11 @@ print(sys.path)
 import mrcnn.model_mrcnn  as mrcnn_modellib
 import mrcnn.model_fcn    as fcn_modellib
 import mrcnn.visualize    as visualize
-import mrcnn.new_shapes   as shapes
-from datetime import datetime   
+
+from datetime             import datetime   
 from mrcnn.utils          import command_line_parser, display_input_parms, Paths
-from mrcnn.new_shapes     import prep_newshapes_dataset
-from mrcnn.prep_notebook  import mrcnn_newshapes_train
+from mrcnn.newshapes      import prep_newshape_dataset
+from mrcnn.prep_notebook  import mrcnn_newshape_train, build_newshapes_config
 
 start_time = datetime.now()
 start_time_disp = start_time.strftime("%m-%d-%Y @ %H:%M:%S")
@@ -41,7 +41,7 @@ display_input_parms(args)
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
 ##----------------------------------------------------------------------------------------------            
-if args.sysout == 'FILE':
+if args.sysout in [ 'FILE', 'HEADER', 'ALL'] :
     sysout_name = "{:%Y%m%dT%H%M}_sysout.out".format(start_time)
     print('    Output is written to file....', sysout_name)    
     sys.stdout = io.StringIO()
@@ -83,15 +83,15 @@ try :
     gc.collect()
 except: 
     pass 
-fcn_model = fcn_modellib.FCN(mode="training", config=fcn_config, model_dir=MODEL_DIR)
+fcn_model = fcn_modellib.FCN(mode="training", arch = args.fcn_arch, config=fcn_config)
 
-# if args.sysout == 'FILE':
-   # sysout_path = fcn_model.log_dir
-   # f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
-   # content = sys.stdout.getvalue()   #.encode('utf_8')
-   # f_obj.write(content)
-   # sys.stdout = f_obj
-   # sys.stdout.flush()
+if args.sysout in ['ALL']:
+   sysout_path = fcn_model.log_dir
+   f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
+   content = sys.stdout.getvalue()   #.encode('utf_8')
+   f_obj.write(content)
+   sys.stdout = f_obj
+   sys.stdout.flush()
    
 ##------------------------------------------------------------------------------------
 ## Display model configuration information
@@ -100,7 +100,7 @@ fcn_config.display()
 fcn_model.display_layer_info()
 
 ##------------------------------------------------------------------------------------
-## Load Mask RCNN Model Weight file
+## Load MRCNN Model Weight file
 ##------------------------------------------------------------------------------------
 exclude_list = []
 mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = exclude_list)   
@@ -114,11 +114,16 @@ else:
     print(' FCN Training starting from randomly initialized weights ...')
 
 ##------------------------------------------------------------------------------------
-## Build shape dataset for Training and Validation       
+## Build & Load Training and Validation datasets
 ##------------------------------------------------------------------------------------
-dataset_train = prep_newshape_dataset(mrcnn_model.config, 10000)
-dataset_val   = prep_newshape_dataset(mrcnn_model.config,  2500)
-
+# dataset_train = prep_newshape_dataset(mrcnn_model.config, 10000)
+# dataset_val   = prep_newshape_dataset(mrcnn_model.config,  2500)
+with open('E:\\git_projs\\MRCNN3\\train_newshapes\\newshapes_training_dataset_10000_A.pkl', 'rb') as outfile:
+    dataset_train = pickle.load(outfile)
+with open('E:\\git_projs\\MRCNN3\\train_newshapes\\newshapes_validation_dataset_2500_A.pkl', 'rb') as outfile:
+    dataset_val = pickle.load(outfile)
+    
+print(' Training file size: ', len(dataset_train.image_ids), ' Validation file size: ', len(dataset_val.image_ids))    
 dataset_train.display_active_class_info()
 dataset_val.display_active_class_info()
 
@@ -140,25 +145,17 @@ fcn_model.train_in_batches(
             losses = loss_names,
             sysout_name = sysout_name)
 
-
-#------------------------------------------------------------------------------------
-# Final save - only works with weights - Model is not JSON serializable
-#------------------------------------------------------------------------------------
-# final_save = 'fcn_{:04d}_final'.format(fcn_model.epoch) 
-# file = fcn_model.save_model(filename = final_save)            
-# print(' --> Final weights file saved: ', file)
-
-
 ##----------------------------------------------------------------------------------------------
 ## If in debug mode write stdout intercepted IO to output file  
 ##----------------------------------------------------------------------------------------------            
-end_time = datetime.now()
-# if args.sysout == 'FILE':
-    # print(' --> Execution ended at:', end_time.strftime("%m-%d-%Y @ %H:%M:%S"))
-    # sys.stdout.flush()
-    # f_obj.close()    
-    # sys.stdout = sys.__stdout__
-    # print(' Run information written to ', sysout_name)    
+end_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
+if args.sysout in  ['ALL']:
+    print(' --> Execution ended at:', end_time)
+    sys.stdout.flush()
+    f_obj.close()    
+    sys.stdout = sys.__stdout__
+    print(' Run information written to ', sysout_name)    
  
-print(' --> Execution ended at:',end_time.strftime("%m-%d-%Y @ %H:%M:%S"))
+print(' --> Execution ended at:',end_time)
 exit(' Execution terminated ' )
+
