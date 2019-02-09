@@ -112,8 +112,7 @@ class Config(object):
     ## 12-22-2018 changed this to 0.3 to avoid images with no RoIs. 
     ## 12-22-2018 further lowered this to 0.2
     ROI_GT_IOU_THRESHOLD = 0.2
-    
-    
+        
     # Pooled ROIs
     POOL_SIZE = 7
     MASK_POOL_SIZE = 14
@@ -161,7 +160,6 @@ class Config(object):
     DETECTION_PER_CLASS = 200
     # heatscale downscale factor (applied to IMAGE_MAX_DIM)
     HEATMAP_SCALE_FACTOR = 4
-
     
     
     def __init__(self):
@@ -186,8 +184,12 @@ class Config(object):
         
     def display(self):
         """Display Configuration values."""
-        print("\nConfiguration Parameters:")
-        print("-------------------------")
+        ttl = (self.NAME.upper() if self.NAME is not None else '') + " Configuration Parameters:"
+        
+        print()
+        print(ttl)
+        print("-"*len(ttl))
+        
         for a in dir(self):
             if not a.startswith("__") and not callable(getattr(self, a)):
                 print("{:30} {}".format(a, getattr(self, a)))

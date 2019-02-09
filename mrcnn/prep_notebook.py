@@ -111,6 +111,8 @@ def build_coco_config( model = None, mode = 'training', args = None, verbose = 0
         config.VGG16_MODEL_PATH   = paths.FCN_VGG16_MODEL_PATH
 
         if mode == 'training':
+        
+        
             config.WEIGHT_DECAY         = 1.0e-6     ## FCN Weight decays are 5.0e-4 or 2.0e-4 changed to 1e-6 15-12-2018
             config.BATCH_MOMENTUM       = 0.9
 
@@ -128,6 +130,8 @@ def build_coco_config( model = None, mode = 'training', args = None, verbose = 0
             config.TRAINING_LAYERS      = args.fcn_layers
             config.TRAINING_LOSSES      = args.fcn_losses
             config.OPTIMIZER            = args.opt
+            config.FCN_BCE_LOSS_METHOD  = args.fcn_bce_loss_method
+            config.FCN_BCE_LOSS_CLASS   = args.fcn_bce_loss_class
 
     if verbose: 
         config.display()
@@ -238,6 +242,8 @@ def build_newshapes_config( model = None, mode = 'training', args = None, verbos
             config.TRAINING_LAYERS      = args.fcn_layers
             config.TRAINING_LOSSES      = args.fcn_losses
             config.OPTIMIZER            = args.opt
+            config.FCN_BCE_LOSS_METHOD  = args.fcn_bce_loss_method
+            config.FCN_BCE_LOSS_CLASS   = args.fcn_bce_loss_class
 
 
     return config
@@ -248,8 +254,6 @@ def build_newshapes_config( model = None, mode = 'training', args = None, verbos
 ## NEWSHAPES - MRCNN Training
 ##------------------------------------------------------------------------------------    
 def  build_mrcnn_training_pipeline_newshapes( args = None, mrcnn_config = None,  mode = 'training',verbose = 0):
-    
-    utils.display_input_parms(args)    
     
     if mrcnn_config is None :
         mrcnn_config = build_newshapes_config('mrcnn','training', args, verbose = verbose)
@@ -265,13 +269,7 @@ def  build_mrcnn_training_pipeline_newshapes( args = None, mrcnn_config = None, 
     mrcnn_model = mrcnn_modellib.MaskRCNN(mode=mode, config=mrcnn_config)
 
     # display model layer info
-    print()
-    print(' MRCNN Configuration Parameters ')
-    print(' ------------------------------ ')
     mrcnn_config.display()             
-    print()
-    print(' MRCNN IO Layers ')
-    print(' --------------- ')
     mrcnn_model.display_layer_info()
     
     # if args.mrcnn_model == 'coco':
@@ -319,13 +317,7 @@ def build_mrcnn_inference_pipeline_newshapes(args = None, mrcnn_config = None,  
     mrcnn_model = mrcnn_modellib.MaskRCNN(mode= mode, config=mrcnn_config)
         
     # display model layer info
-    print()
-    print(' MRCNN Configuration Parameters ')
-    print(' ------------------------------ ')
     mrcnn_config.display()             
-    print()
-    print(' MRCNN IO Layers ')
-    print(' --------------- ')
     mrcnn_model.display_layer_info()
     
     # Load MRCNN Model weights  
@@ -361,7 +353,7 @@ def build_fcn_training_pipeline_newshapes( args = None, mrcnn_config = None,  mo
 
     print('MODE IS:' , mode)    
     ## Build Mask RCNN Model in TRAINFCN mode
-    mrcnn_model  = build_mrcnn_training_pipeline_newshapes( mode = mode, args = args, verbose = 0)
+    mrcnn_model  = build_mrcnn_training_pipeline_newshapes( mode = 'trainfcn', args = args, verbose = 0)
 
     
     fcn_config = build_newshapes_config('fcn','training', args, verbose = verbose)
@@ -374,13 +366,7 @@ def build_fcn_training_pipeline_newshapes( args = None, mrcnn_config = None,  mo
     fcn_model = fcn_modellib.FCN(mode="training", arch = args.fcn_arch, config=fcn_config)
 
     ## Display model configuration information
-    print()
-    print(' FCN Configuration Parameters ')
-    print(' ------------------------------ ')
     fcn_config.display()             
-    print()
-    print(' FCN IO Layers ')
-    print(' --------------- ')
     fcn_model.display_layer_info()
     
     ## Load FCN Model weights  
@@ -400,7 +386,7 @@ def build_fcn_inference_pipeline_newshapes( args = None, mrcnn_config = None,  m
     print('MODE IS:' , mode)    
     
     ## Build MRCNN Model in Inference mode
-    mrcnn_model  = build_mrcnn_inference_pipeline_newshapes( mode = mode, args = args, verbose = 0)
+    mrcnn_model  = build_mrcnn_inference_pipeline_newshapes( mode = mode, args = args, verbose = verbose)
     
     fcn_config = build_newshapes_config("fcn","inference", args, verbose = verbose)
 
@@ -515,6 +501,8 @@ def build_mrcnn_inference_pipeline( args = None, mrcnn_config = None , verbose =
     
     return mrcnn_model
     
+
+    
 #######################################################################################    
 ## MRCNN evaluate pipeline
 #######################################################################################
@@ -552,6 +540,9 @@ def build_mrcnn_evaluate_pipeline( args, mrcnn_config = None , verbose = 0):
     mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = None)  
     
     return mrcnn_model
+
+
+
     
 #######################################################################################    
 ## FCN Training pipeline
@@ -567,22 +558,22 @@ def build_fcn_training_pipeline( args = None, batch_size = 2,
     ## Parse command line arguments
     ##------------------------------------------------------------------------------------
     if args is None:
-        parser = command_line_parser()
-        input_parms = " --epochs 2 --steps_in_epoch 32  --last_epoch 0 "
-        input_parms +=" --batch_size "+str(batch_size)+ " --lr 0.00001 --val_steps 8 " 
-        input_parms +=" --mrcnn_logs_dir train_mrcnn_coco "
-        input_parms +=" --fcn_logs_dir " + fcn_train_dir + " " 
-        input_parms +=" --mrcnn_model    last "
-        input_parms +=" --fcn_model    " + fcn_weight_file + " "
-        input_parms +=" --opt            adam "
-        input_parms +=" --fcn_arch       fcn8 " 
-        input_parms +=" --fcn_layers     all " 
-        input_parms +=" --sysout         screen "
-        input_parms +=" --coco_classes   62 63 67 78 79 80 81 82 72 73 74 75 76 77"
-        input_parms +=" --new_log_folder    "
+        print(' args input missing')
+        return 
+         # parser = command_line_parser()
+        # input_parms = " --epochs 2 --steps_in_epoch 32  --last_epoch 0 "
+        # input_parms +=" --batch_size "+str(batch_size)+ " --lr 0.00001 --val_steps 8 " 
+        # input_parms +=" --mrcnn_logs_dir train_mrcnn_coco "
+        # input_parms +=" --fcn_logs_dir " + fcn_train_dir + " " 
+        # input_parms +=" --mrcnn_model    last "
+        # input_parms +=" --fcn_model    " + fcn_weight_file + " "
+        # input_parms +=" --opt            adam "
+        # input_parms +=" --fcn_arch       fcn8 " 
+        # input_parms +=" --fcn_layers     all " 
+        # input_parms +=" --new_log_folder    "
         # input_parms +="--fcn_model /home/kbardool/models/train_fcn_adagrad/shapes20180709T1732/fcn_shapes_1167.h5"
-        print(input_parms)
-        args = parser.parse_args(input_parms.split())
+        # print(input_parms)
+        # args = parser.parse_args(input_parms.split())
     
     utils.display_input_parms(args)   
         
@@ -592,50 +583,10 @@ def build_fcn_training_pipeline( args = None, batch_size = 2,
     if args.sysout == 'FILE':
         sys.stdout = io.StringIO()
 
-    # setup project directories
-    #---------------------------------------------------------------------------------
-    paths = Paths(fcn_training_folder = args.fcn_logs_dir, mrcnn_training_folder = args.mrcnn_logs_dir)
-    paths.display()
+    if mrcnn_config is None :
+        mrcnn_config = build_coco_config('mrcnn','trainfcn', args, verbose = verbose)
 
-    # Build configuration object 
-    #------------------------------------------------------------------------------------                          
-    mrcnn_config                    = CocoConfig()
-    # import mrcnn.new_shapes as new_shapes
-    # mrcnn_config = new_shapes.NewShapesConfig()
-
-    mrcnn_config.NAME                 = 'mrcnn'              
-    mrcnn_config.TRAINING_PATH        = paths.MRCNN_TRAINING_PATH
-    mrcnn_config.COCO_DATASET_PATH    = paths.COCO_DATASET_PATH 
-    mrcnn_config.COCO_MODEL_PATH      = paths.COCO_MODEL_PATH   
-    mrcnn_config.RESNET_MODEL_PATH    = paths.RESNET_MODEL_PATH 
-    mrcnn_config.VGG16_MODEL_PATH     = paths.VGG16_MODEL_PATH  
-    mrcnn_config.COCO_CLASSES         = None 
-    mrcnn_config.DETECTION_PER_CLASS  = mrcnn_config.DETECTION_MAX_INSTANCES 
-    
-    mrcnn_config.HEATMAP_SCALE_FACTOR =  int(args.scale_factor)
-    mrcnn_config.BATCH_SIZE           = int(args.batch_size)                  # Batch size is 2 (# GPUs * images/GPU).
-    mrcnn_config.IMAGES_PER_GPU       = int(args.batch_size)                  # Must match BATCH_SIZE
-                                      
-    mrcnn_config.STEPS_PER_EPOCH      = int(args.steps_in_epoch)
-    mrcnn_config.LEARNING_RATE        = float(args.lr)
-    mrcnn_config.EPOCHS_TO_RUN        = int(args.epochs)
-    mrcnn_config.FCN_INPUT_SHAPE      = mrcnn_config.IMAGE_SHAPE[0:2]
-    mrcnn_config.LAST_EPOCH_RAN       = int(args.last_epoch)
-    mrcnn_config.NEW_LOG_FOLDER       = False
-    mrcnn_config.SYSOUT               = args.sysout
-    mrcnn_config.VERBOSE              = verbose
-    # mrcnn_config.WEIGHT_DECAY       = 2.0e-4
-    # mrcnn_config.VALIDATION_STEPS   = int(args.val_steps)
-    # mrcnn_config.REDUCE_LR_FACTOR   = 0.5
-    # mrcnn_config.REDUCE_LR_COOLDOWN = 30
-    # mrcnn_config.REDUCE_LR_PATIENCE = 40
-    # mrcnn_config.EARLY_STOP_PATIENCE= 80
-    # mrcnn_config.EARLY_STOP_MIN_DELTA = 1.0e-4
-    # mrcnn_config.MIN_LR             = 1.0e-10
-    # mrcnn_config.OPTIMIZER          = args.opt.upper()
-    # mrcnn_config.display() 
-
-
+    #------------------------------------------------------------------------------------
     #  Build MRCNN Model
     #------------------------------------------------------------------------------------
     try :
@@ -647,48 +598,8 @@ def build_fcn_training_pipeline( args = None, batch_size = 2,
     KB.clear_session()
     mrcnn_model = mrcnn_modellib.MaskRCNN(mode='trainfcn', config=mrcnn_config)
     
-    #------------------------------------------------------------------------------------
-    # Build configuration for FCN model
-    #------------------------------------------------------------------------------------
-    fcn_config = CocoConfig()
-    fcn_config.COCO_DATASET_PATH      = paths.COCO_DATASET_PATH 
-    fcn_config.COCO_HEATMAP_PATH      = paths.COCO_HEATMAP_PATH 
-    # fcn_config.COCO_MODEL_PATH      = COCO_MODEL_PATH   
-    # fcn_config.RESNET_MODEL_PATH    = RESNET_MODEL_PATH 
-    fcn_config.NAME                   = 'fcn'              
-    fcn_config.TRAINING_PATH          = paths.FCN_TRAINING_PATH
-    fcn_config.VGG16_MODEL_PATH       = paths.FCN_VGG16_MODEL_PATH
-    fcn_config.HEATMAP_SCALE_FACTOR   = mrcnn_config.HEATMAP_SCALE_FACTOR
-    fcn_config.FCN_INPUT_SHAPE        = fcn_config.IMAGE_SHAPE[0:2] // mrcnn_config.HEATMAP_SCALE_FACTOR 
-                                      
-    fcn_config.BATCH_SIZE             = int(args.batch_size)                 # Batch size is 2 (# GPUs * images/GPU).
-    fcn_config.IMAGES_PER_GPU         = int(args.batch_size)                   # Must match BATCH_SIZE
-    fcn_config.EPOCHS_TO_RUN          = int(args.epochs)
-    fcn_config.STEPS_PER_EPOCH        = int(args.steps_in_epoch)
-    fcn_config.LAST_EPOCH_RAN         = int(args.last_epoch)
-                                      
-    fcn_config.LEARNING_RATE          = float(args.lr)
-    fcn_config.VALIDATION_STEPS       = int(args.val_steps)
-    fcn_config.BATCH_MOMENTUM         = 0.9
-    fcn_config.WEIGHT_DECAY           = 2.0e-4     ## FCN Weight decays are 5.0e-4 or 2.0e-4
-                                      
-    fcn_config.REDUCE_LR_FACTOR       = 0.5
-    fcn_config.REDUCE_LR_COOLDOWN     = 15
-    fcn_config.REDUCE_LR_PATIENCE     = 50
-    fcn_config.REDUCE_LR_MIN_DELTA    = 1e-6
-                                      
-    fcn_config.EARLY_STOP_PATIENCE    = 150
-    fcn_config.EARLY_STOP_MIN_DELTA   = 1.0e-7
-                                      
-    fcn_config.MIN_LR                 = 1.0e-10
-    fcn_config.CHECKPOINT_PERIOD      = 1     
-                                      
-    fcn_config.TRAINING_LAYERS        = args.fcn_layers
-    fcn_config.NEW_LOG_FOLDER         = args.new_log_folder
-    fcn_config.OPTIMIZER              = args.opt
-    fcn_config.SYSOUT                 = args.sysout
-    fcn_config.VERBOSE                = verbose
-
+    ### Build configuration for FCN model
+    fcn_config = build_coco_config('fcn','training', args, verbose = verbose)
 
     ## Build FCN Model in Training Mode
     try :
@@ -1238,6 +1149,85 @@ def run_mrcnn_detection(mrcnn_model, dataset, image_ids = None, verbose = 0, dis
     return mrcnn_results     
     
 
+    
+##------------------------------------------------------------------------------------    
+## Run FCN detection on a list of image ids
+##------------------------------------------------------------------------------------            
+def run_fcn_only_detection(fcn_model, dataset, input, image_ids = None, verbose = 0):
+    '''
+    Runs the fcn detection for on input list of image ids.
+
+        images_ids:          List of images ids, potentially of different sizes.
+
+        Returns a list of dicts, one dict per image. The dict contains:
+            N : NUMBER OF DETECTIONS 
+            M : NUMBER OF GROUND TRUTH ANNOTATIONS (BBOXES/CLASSES)
+            
+           class_ids................  (N,)
+           detections...............  (200, 6)
+           fcn_hm...................  (256, 256, 81)
+           fcn_scores...............  (N, 23)
+           fcn_scores_by_class......  (81, 200, 23)
+           fcn_sm...................  (256, 256, 81)
+           gt_bbox..................  (M, 4)
+           gt_class_id..............  (M,)
+           image....................  (640, 480, 3)
+           image_meta...............  (89,)
+           molded_image.............  (1024, 1024, 3)
+           molded_rois..............  (N, 4)
+           orig_image_meta..........  (89,)
+           pr_hm....................  (256, 256, 81)
+           pr_hm_scores.............  (81, 200, 23)
+           pr_scores................  (N, 23)
+           pr_scores_by_class.......  (81, 200, 23)
+           rois.....................  (N, 4)
+           scores...................  (N,)            
+            
+            
+    '''
+    if not isinstance(image_ids, list):
+        image_ids = [image_ids]
+
+    images       = [dataset.load_image(image_id) for image_id in image_ids]
+    
+    if verbose:
+        for image_id in image_ids :
+            print("Image Id  : {}     External Id: {}.{}     Image Reference: {}".format( image_id, 
+                dataset.image_info[image_id]["source"], dataset.image_info[image_id]["id"], dataset.image_reference(image_id)))
+
+    # Run object detection
+
+    fcn_results = fcn_model.detect(input, verbose= verbose)
+
+    # add GT information 
+    
+    if verbose:
+        print('===> Return from fcn_model.detect_from_images() : ', type(fcn_results), len(fcn_results), len(image_ids))
+
+    for image_id, result in zip(image_ids, fcn_results):
+        _, image_meta, gt_class_id, gt_bbox =\
+            load_image_gt(dataset, fcn_model.config, image_id, use_mini_mask=False)
+        if verbose:
+            print('Image meta: ', image_meta[:10])    
+        
+        result['orig_image_meta'] = image_meta
+        result['image_meta']      = image_meta
+        result['gt_bboxes']       = gt_bbox
+        result['gt_class_ids']    = gt_class_id
+
+    # Display results
+    if verbose:
+        np.set_printoptions(linewidth=180,precision=4,threshold=10000, suppress = True)
+        print(' Length of results from MRCNN detect: ', len(fcn_results))
+        r = fcn_results[0]
+        print('fcn_results keys: ')
+        print('--------------------')
+        for i in sorted(r.keys()):
+            print('   {:.<25s}  {}'.format(i , r[i].shape))        
+        print()
+ 
+    return fcn_results
+    
 ##------------------------------------------------------------------------------------    
 ## Run FCN detection on a list of image ids
 ##------------------------------------------------------------------------------------            
@@ -1319,11 +1309,6 @@ def run_fcn_detection(fcn_model, mrcnn_model, dataset, image_ids = None, verbose
  
     return fcn_results
 
-
-
-
-
-
 ##------------------------------------------------------------------------------------    
 ## Run MRCNN evaluation on an image ids
 ##------------------------------------------------------------------------------------            
@@ -1355,6 +1340,11 @@ def run_fcn_evaluation(fcn_model, mrcnn_model, dataset, image_ids = None, verbos
     fcn_results = fcn_model.evaluate(mrcnn_model, eval_batch, verbose = verbose)    
 
     return fcn_results
+    
+    
+    
+    
+    
     
 #######################################################################################    
 ## OLD SHAPES model preparation

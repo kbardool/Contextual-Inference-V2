@@ -177,6 +177,7 @@ class MaskRCNN(ModelBase):
         ##----------------------------------------------------------------------------
         ##  FPN network - Build the Feature Pyramid Network (FPN) layers.
         ##----------------------------------------------------------------------------
+        print('self.verbose:', self.verbose)
         P2, P3, P4, P5, P6 = fpn_graph(Resnet_Layers, verbose = self.verbose)
         
         # Note that P6 is used in RPN, but not in the classifier heads.
@@ -240,9 +241,7 @@ class MaskRCNN(ModelBase):
         outputs =  [KL.Lambda(lambda  o: tf.concat(o ,axis=1, name=n) ,name = n) (list(o)) for o, n in zip(outputs, output_names)]
         print('\n>>> RPN Outputs ',  type(outputs))
         for i in outputs:
-            print('     ', i.name)
-
-            
+            print('     ', i.name)           
             
         rpn_class_logits, rpn_class, rpn_bbox = outputs
 
@@ -304,7 +303,7 @@ class MaskRCNN(ModelBase):
             # output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
             # output_rois = KL.Lambda(lambda x: KB.identity(x), name= "output_rois")(rois)
             #------------------------------------------------------------------------------------
-
+            
             ##------------------------------------------------------------------------------------
             ##  MRCNN Network Classification Head
             ##  TODO: verify that this handles zero padded ROIs
@@ -316,10 +315,10 @@ class MaskRCNN(ModelBase):
             ##----------------------------------------------------------------------------
             ##  Contextual Layer(CHM) to generate contextual feature maps using outputs from MRCNN 
             ##----------------------------------------------------------------------------         
-            pr_hm, pr_hm_scores \
-                =  CHMLayer(config, name = 'cntxt_layer' ) ([mrcnn_class, mrcnn_bbox, output_rois])
+            pr_hm, pr_hm_scores, pr_tensor \
+                =  CHMLayer(config, name = 'cntxt_layer' ) ([mrcnn_class, mrcnn_bbox, output_rois, target_class_ids])
                 
-            gt_hm, gt_hm_scores \
+            gt_hm, gt_hm_scores, gt_tensor \
                 =  CHMLayerTarget(config, name = 'cntxt_layer_gt' ) ([target_class_ids, roi_gt_boxes])
                 
             logt('pr_hm ', pr_hm, verbose = self.verbose )                         
@@ -376,7 +375,7 @@ class MaskRCNN(ModelBase):
                          , mrcnn_class       , mrcnn_bbox        , output_rois
                          , target_class_ids  , target_bbox_deltas, roi_gt_boxes  
                          , mrcnn_class_logits, active_class_ids  , rpn_roi_proposals
-                       ]
+                         , pr_tensor, gt_tensor]
             
             if mode == 'training':
                 outputs.extend([rpn_class_loss , rpn_bbox_loss, mrcnn_class_loss , mrcnn_bbox_loss])
@@ -388,8 +387,9 @@ class MaskRCNN(ModelBase):
             ##------------------------------------------------------------------------------------
             ##  FPN Layer - Network Heads - Proposal classifier and BBox regressor heads
             ##------------------------------------------------------------------------------------
-            mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
-                fpn_classifier_graph(rpn_roi_proposals, mrcnn_feature_maps, config.IMAGE_SHAPE, config.POOL_SIZE, config.NUM_CLASSES)
+            mrcnn_class_logits, mrcnn_class, mrcnn_bbox = \
+                fpn_classifier_graph(rpn_roi_proposals, mrcnn_feature_maps, 
+                                     config.IMAGE_SHAPE, config.POOL_SIZE, config.NUM_CLASSES, verbose = self.verbose)
                 
             ##------------------------------------------------------------------------------------
             ##  Detection Layer

@@ -35,10 +35,12 @@ def build_predictions_inference(detected_rois, config):
     batch_size      = config.BATCH_SIZE
     num_classes     = config.NUM_CLASSES
     h, w            = config.IMAGE_SHAPE[:2]
-    class_column    = 4
-    score_column    = 5
-    dt_type_column  = 6
-    sequence_column = 7
+    CLASS_COLUMN    = 4
+    SCORE_COLUMN    = 5
+    DT_TYPE_COLUMN  = 6
+    SEQUENCE_COLUMN = 7
+    NORM_SCORE_COLUMN = 8
+
     # num_rois        = config.DETECTION_MAX_INSTANCES 
     num_rois        = KB.int_shape(detected_rois)[1]
     num_cols        = KB.int_shape(detected_rois)[-1]
@@ -67,7 +69,7 @@ def build_predictions_inference(detected_rois, config):
     # column -2 contains the prediceted class 
     #  (NOT USED)   pred_classes_exp = tf.to_float(tf.expand_dims(pred_classes ,axis=-1))    
     #---------------------------------------------------------------------------
-    pred_classes = tf.to_int32(detected_rois[..., class_column])
+    pred_classes = tf.to_int32(detected_rois[..., CLASS_COLUMN])
     # print(pred_classes.eval())
 
     ##------------------------------------------------------------------------------------
@@ -93,9 +95,9 @@ def build_predictions_inference(detected_rois, config):
     ##  Apply a per class score normalization using the score column (COLUMN 5)
     ##  
     ##--------------------------------------------------------------------------------------------
-    normalizer   = tf.reduce_max(pred_scatt[..., score_column], axis = -1, keepdims=True)
+    normalizer   = tf.reduce_max(pred_scatt[..., SCORE_COLUMN], axis = -1, keepdims=True)
     normalizer   = tf.where(normalizer < 1.0e-15,  tf.ones_like(normalizer), normalizer)
-    norm_score   = tf.expand_dims(pred_scatt[..., score_column]/normalizer, axis = -1)
+    norm_score   = tf.expand_dims(pred_scatt[..., SCORE_COLUMN]/normalizer, axis = -1)
     pred_scatt   = tf.concat([pred_scatt, norm_score],axis = -1)   
     print('    - Add normalized score --\n')
     print('    normalizer             : ', normalizer.shape)  
@@ -109,7 +111,7 @@ def build_predictions_inference(detected_rois, config):
     ## 22-09-2018: sort is now based on sequence which was added as last column
     ##             (previously sort was on bbox scores)
     ##------------------------------------------------------------------------------------
-    _, sort_inds = tf.nn.top_k(pred_scatt[..., sequence_column], k=pred_scatt.shape[2])
+    _, sort_inds = tf.nn.top_k(pred_scatt[..., SEQUENCE_COLUMN], k=pred_scatt.shape[2])
     
     # build indexes to gather rows from pred_scatter based on sort order    
     class_grid, batch_grid, roi_grid = tf.meshgrid(tf.range(num_classes),tf.range(batch_size), tf.range(num_rois))
@@ -163,16 +165,16 @@ def build_heatmap_inference(in_tensor, config, names = None):
     num_detections    = config.DETECTION_MAX_INSTANCES
     img_h, img_w      = config.IMAGE_SHAPE[:2]
     batch_size        = config.BATCH_SIZE
-    class_column      = 4
-    score_column      = 5
-    dt_type_column    = 6
-    sequence_column   = 7
-    norm_score_column = 8
     num_classes       = config.NUM_CLASSES 
     heatmap_scale     = config.HEATMAP_SCALE_FACTOR
     grid_h, grid_w    = config.IMAGE_SHAPE[:2] // heatmap_scale    
     # rois_per_image  = config.DETECTION_PER_CLASS
     rois_per_image    = (in_tensor.shape)[2]  
+    CLASS_COLUMN      = 4
+    SCORE_COLUMN      = 5
+    DT_TYPE_COLUMN    = 6
+    SEQUENCE_COLUMN   = 7
+    NORM_SCORE_COLUMN = 8
 
     print('\n ')
     print('  > build_inference_heatmap() for ', names )
@@ -247,7 +249,7 @@ def build_heatmap_inference(in_tensor, config, names = None):
     ##--------------------------------------------------------------------------------------------
     ## (0) Generate scores using prob_grid and pt2_dense - (NEW METHOD added 09-21-2018)
     ##--------------------------------------------------------------------------------------------
-    old_style_scores = tf.map_fn(build_hm_score_v2, [prob_grid, bboxes_scaled, pt2_dense[:, norm_score_column]], 
+    old_style_scores = tf.map_fn(build_hm_score_v2, [prob_grid, bboxes_scaled, pt2_dense[:, NORM_SCORE_COLUMN]], 
                                  dtype = tf.float32, swap_memory = True)
     old_style_scores = tf.scatter_nd(pt2_ind, old_style_scores, 
                                      [batch_size, num_classes, rois_per_image, KB.int_shape(old_style_scores)[-1]],
@@ -286,7 +288,7 @@ def build_heatmap_inference(in_tensor, config, names = None):
     ## (3) multiply normalized heatmap by normalized score in in_tensor/ (pt2_dense column 7)
     ##     broadcasting : https://stackoverflow.com/questions/49705831/automatic-broadcasting-in-tensorflow
     ##---------------------------------------------------------------------------------------------    
-    prob_grid_cns = tf.transpose(tf.transpose(prob_grid_cns) * pt2_dense[:, norm_score_column])
+    prob_grid_cns = tf.transpose(tf.transpose(prob_grid_cns) * pt2_dense[:, NORM_SCORE_COLUMN])
     print('    prob_grid_cns: clipped/normed/scaled : ', prob_grid_cns.shape)
 
 

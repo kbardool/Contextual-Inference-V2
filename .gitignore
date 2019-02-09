@@ -5,3 +5,5 @@ mask_rcnn_coco.h5
 logs/
 assets/
 images/
+train_*/average_heatmaps
+train_*/*_results*/

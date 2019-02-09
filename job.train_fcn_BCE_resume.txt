@@ -1,0 +1,46 @@
+######################################################
+# HTCondor Submit Description File. COMMON TEMPLATE --   
+# Next commands should be added to all your submit files   
+######################################################
+ if !defined FNAME
+   FNAME = job_
+ endif
+ #ID     = $(Cluster).$(Process)
+ ID      = $(Cluster)
+ output  = $(FNAME)$(ID).out
+ error   = $(FNAME)$(ID).err
+ log     = $(FNAME)$(ID).log
+
+#-------------------------------------------------------
+#
+#-------------------------------------------------------
+Universe        = vanilla 
+Executable      = /users/students/r0653928/anaconda3/envs/TFG/bin/python
+Initialdir      = /users/students/r0653928/projs/mrcnn3/train_coco
+Arguments       = "../mrcnn/train_coco_fcn.py   \
+    --epochs             1070   \
+    --steps_in_epoch       64   \
+    --val_steps             8   \
+    --last_epoch         4930   \
+    --batch_size            1   \
+    --lr               0.00001  \
+    --fcn_arch         FCN8L2   \
+    --fcn_layers         all    \
+    --fcn_losses         fcn_BCE_loss \
+    --mrcnn_logs_dir     train_mrcnn_coco_subset \
+    --mrcnn_model        last   \
+    --fcn_logs_dir       train_fcn8L2_BCE_subset \
+    --fcn_model          last   \
+    --opt                adam   \
+    --coco_classes       78 79 80 81 82 44 46 47 48 49 50 51 34 35 36 37 38 39 40 41 42 43 10 11 13 14 15 \
+    --sysout             file   \
+    --new_log_folder "
+
+Notification     = Always
+RequestCpus      = 2
+RequestMemory    = 12G
+Request_GPUs     = 1
++RequestWalltime = 432000
+## Requirements = (machineowner == "Visics")  && (CUDAGlobalMemoryMb > 12000)  &&  (CUDACapability >=3.5)
+NiceUser         = False
+Queue

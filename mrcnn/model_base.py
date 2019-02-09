@@ -712,6 +712,10 @@ class ModelBase():
     ## 
     ##----------------------------------------------------------------------------------------------
     def display_layer_info(self):
+        ttl = self.config.NAME.upper() + ' IO Layers :'
+        print(ttl)
+        print('-'*len(ttl))
+    
         print(' Inputs:') 
         print(' -------')
     

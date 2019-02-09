@@ -41,7 +41,7 @@ print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,k
 parser = command_line_parser()
 input_parms = " --batch_size 1  "
 input_parms +=" --mrcnn_logs_dir train_mrcnn_newshapes "
-input_parms +=" --fcn_logs_dir   train_fcn8_l2_newshapes "
+input_parms +=" --fcn_logs_dir   train_fcn8L2_BCE2 "
 input_parms +=" --fcn_model      last "
 input_parms +=" --fcn_layer      all"
 input_parms +=" --fcn_arch       fcn8L2 " 
@@ -55,13 +55,15 @@ verbose = 0
 
 syst = platform.system()
 if syst == 'Windows':
-    save_path = "E:/git_projs/MRCNN3/train_newshapes/test_results"
+    save_path = "E:/git_projs/MRCNN3/train_newshapes/test_results_BCE2"
     test_dataset = "E:/git_projs/MRCNN3/train_newshapes/newshapes_test_dataset_1000_B.pkl"
-    DIR_WEIGHTS =  'F:/models_newshapes/train_fcn8_l2_newshapes/fcn20181224T0000'     
+    # DIR_WEIGHTS =  'F:/models_newshapes/train_fcn8_l2_newshapes/fcn20181224T0000'     
+    DIR_WEIGHTS =  'F:/models_newshapes/train_fcn8L2_BCE2/fcn20190131T0000'     
 elif syst == 'Linux':
     save_path = "/home/kbardool/mrcnn3/train_newshapes/test_results"
     test_dataset = "/home/kbardool/mrcnn3/train_newshapes/newshapes_test_dataset_1000_B.pkl"
     DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8_l2_newshapes/fcn20181224T0000' 
+    DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8L2_BCE2/fcn20190131T0000'     
 else :
     raise Error('unrecognized system ')
 
@@ -69,12 +71,13 @@ print(' OS ' , syst, ' SAVE_PATH    : ', save_path)
 print(' OS ' , syst, ' TEST_DATASET : ', test_dataset)
 print(' OS ' , syst, ' DIR_WEIGHTS  : ', DIR_WEIGHTS)
 
-files   = ['fcn_0001.h5', 'fcn_0150.h5', 'fcn_0346.h5', 'fcn_0421.h5',
-           'fcn_0450.h5', 'fcn_0482.h5', 'fcn_0521.h5', 'fcn_0610.h5',
-           'fcn_0687.h5', 'fcn_0793.h5', 'fcn_0821.h5', 'fcn_0940.h5',
-           'fcn_1012.h5', 'fcn_1127.h5', 'fcn_1644.h5', 'fcn_1776.h5',
-           'fcn_1848.h5', 'fcn_2017.h5', 'fcn_2084.h5']
+# files   = ['fcn_0001.h5', 'fcn_0150.h5', 'fcn_0346.h5', 'fcn_0421.h5',
+           # 'fcn_0450.h5', 'fcn_0482.h5', 'fcn_0521.h5', 'fcn_0610.h5',
+           # 'fcn_0687.h5', 'fcn_0793.h5', 'fcn_0821.h5', 'fcn_0940.h5',
+           # 'fcn_1012.h5', 'fcn_1127.h5', 'fcn_1644.h5', 'fcn_1776.h5',
+           # 'fcn_1848.h5', 'fcn_2017.h5', 'fcn_2084.h5']
 
+files   = ['fcn_0500.h5']
 
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO

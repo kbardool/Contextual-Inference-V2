@@ -624,12 +624,13 @@ def plot_pr_curves_by_ious(class_data, class_id, class_name , score = None, ax =
     
     for idx, iou_key in enumerate(sorted(class_data[score_key])):
 #         pp.pprint(class_data[score_key][iou_key])
+        #print('idx/iou_key: ', idx, iou_key)
         iou_thr = class_data[score_key][iou_key]['iou']
         avg_precs.append(class_data[score_key][iou_key]['avg_prec'])
         iou_thrs.append(iou_thr)    
         precisions = class_data[score_key][iou_key]['precisions']
         recalls = class_data[score_key][iou_key]['recalls']
-        ax = plot_pr_curve(precisions, recalls, label='{:.2f}'.format(iou_thr), color=COLORS[idx*2], ax=ax)
+        ax = plot_pr_curve(precisions, recalls, label='{:.2f}'.format(iou_thr), color=COLORS[idx], ax=ax)
 
 
     # prettify for printing:
@@ -684,7 +685,7 @@ def plot_mAP_by_IOU(all_data, score , class_ids = None , class_names = None, col
     num_disp_classes = len(disp_classes)
     columns = min(columns, num_disp_classes)
     rows    = math.ceil(num_disp_classes/columns)
-    fig = plt.figure(figsize=(8 *columns, 5* rows))
+    fig = plt.figure(figsize=(9 *columns, 6* rows))
 
     for idx, class_id in enumerate(disp_classes):
         #         print('idx:', idx, 'class_id: ',class_id)

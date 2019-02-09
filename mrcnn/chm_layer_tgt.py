@@ -31,12 +31,16 @@ def build_gt_tensor(gt_class_ids, norm_gt_bboxes, config):
     h, w            = config.IMAGE_SHAPE[:2]
     det_per_class   = config.DETECTION_PER_CLASS
     num_bboxes      = KB.int_shape(norm_gt_bboxes)[1]
-
     scale           = tf.constant([h,w,h,w], dtype = tf.float32)
     # dup_scale       = tf.reshape(tf.tile(scale, [num_rois]),[num_rois,-1])
     dup_scale       = scale * tf.ones([batch_size, num_bboxes, 1], dtype = 'float32')
     gt_bboxes       = tf.multiply(norm_gt_bboxes , dup_scale )
- 
+    CLASS_COLUMN      = 4
+    SCORE_COLUMN      = 5
+    DT_TYPE_COLUMN    = 6
+    SEQUENCE_COLUMN   = 7
+    NORM_SCORE_COLUMN = 8
+
     # num of bounding boxes is determined by bbox_list.shape[1] instead of config.DETECTION_MAX_INSTANCES
     # use of this routine for both input_gt_boxes, and target_gt_deltas
     if  num_bboxes == config.DETECTION_MAX_INSTANCES:
@@ -67,6 +71,8 @@ def build_gt_tensor(gt_class_ids, norm_gt_bboxes, config):
     gt_scores_exp = tf.to_float(KB.expand_dims(gt_scores, axis=-1))
     logt('gt_scores_exp  ', gt_scores_exp, verbose = verbose)
 
+    flag = tf.where(gt_classes_exp > 0, tf.ones_like(gt_classes_exp , dtype=tf.float32)*99, tf.zeros_like(gt_classes_exp , dtype=tf.float32))
+    logt('flag:', flag, verbose = verbose)
     ##------------------------------------------------------------------------------------
     ## Generate GT_ARRAY
     ##    Note that we add gt_scores_exp also at the end, to match the the dimensions of  
@@ -79,7 +85,7 @@ def build_gt_tensor(gt_class_ids, norm_gt_bboxes, config):
     
     sequence = gt_scores * (bbox_grid[...,::-1] + 1) 
     sequence = tf.to_float(tf.expand_dims(sequence, axis = -1))   
-    gt_array = tf.concat([gt_bboxes, gt_classes_exp, gt_scores_exp, sequence, gt_scores_exp ], 
+    gt_array = tf.concat([gt_bboxes, gt_classes_exp, gt_scores_exp, flag, sequence, gt_scores_exp ], 
                          axis=-1, name = 'gt_array')
 
     # print('    batch_grid shape  ', batch_grid.get_shape())
@@ -160,6 +166,11 @@ def build_gt_heatmap(in_tensor, config, names = None):
     #   strt_cls        = 0 if rois_per_image == 32 else 1
     # rois_per_image  = config.DETECTION_PER_CLASS
     rois_per_image  = (in_tensor.shape)[2]  
+    CLASS_COLUMN      = 4
+    SCORE_COLUMN      = 5
+    DT_TYPE_COLUMN    = 6
+    SEQUENCE_COLUMN   = 7
+    NORM_SCORE_COLUMN = 8
 
     if verbose:
         print('\n ')
@@ -182,7 +193,7 @@ def build_gt_heatmap(in_tensor, config, names = None):
     #    pt2_dense[6]    is bbox sequence id    
     #    pt2_dense[7]    is normalized score (per class)    
     #-----------------------------------------------------------------------------
-    pt2_sum = tf.reduce_sum(tf.abs(in_tensor[:,:,:,:4]), axis=-1)
+    pt2_sum = tf.reduce_sum(tf.abs(in_tensor[:,:,:,:CLASS_COLUMN]), axis=-1)
     pt2_ind = tf.where(pt2_sum > 0)
     pt2_dense = tf.gather_nd( in_tensor, pt2_ind)
 
@@ -215,7 +226,7 @@ def build_gt_heatmap(in_tensor, config, names = None):
     ##-----------------------------------------------------------------------------
     ##  Build mean and convariance tensors for Multivariate Normal Distribution 
     ##-----------------------------------------------------------------------------
-    pt2_dense_scaled = pt2_dense[:,:4]/heatmap_scale
+    pt2_dense_scaled = pt2_dense[ :, :CLASS_COLUMN ]/heatmap_scale
     width  = pt2_dense_scaled[:,3] - pt2_dense_scaled[:,1]      # x2 - x1
     height = pt2_dense_scaled[:,2] - pt2_dense_scaled[:,0]
     cx     = pt2_dense_scaled[:,1] + ( width  / 2.0)
@@ -284,7 +295,7 @@ def build_gt_heatmap(in_tensor, config, names = None):
     ## [ 1.0000     1.0000   138.0000     1.0000   144.0000  4531.1250   144.0000         
     ## [ 3.0000     1.0000   179.0000     1.0000    56.0000   547.5000    56.0000 
     ##--------------------------------------------------------------------------------------------
-    old_style_scores = tf.map_fn(build_hm_score_v2, [prob_grid, pt2_dense_scaled, pt2_dense[:,7]], 
+    old_style_scores = tf.map_fn(build_hm_score_v2, [prob_grid, pt2_dense_scaled, pt2_dense[:,NORM_SCORE_COLUMN] ], 
                                  dtype = tf.float32, swap_memory = True)
     old_style_scores = tf.scatter_nd(pt2_ind, old_style_scores, 
                                      [batch_size, num_classes, rois_per_image, 3], name = 'scores_scattered')
@@ -310,7 +321,7 @@ def build_gt_heatmap(in_tensor, config, names = None):
     gauss_heatmap   = tf.scatter_nd(pt2_ind, prob_grid_clipped, 
                                   [batch_size, num_classes, rois_per_image, grid_w, grid_h], 
                                   name = 'gauss_heatmap')
-    logt('\n    Scatter out the probability distributions based on class --------------') 
+    logt('Scatter out the probability distributions based on class --------------', verbose = verbose) 
     logt('pt2_ind       ', pt2_ind, verbose = verbose)
     logt('prob_grid     ', prob_grid, verbose = verbose)
     logt('gauss_heatmap ', gauss_heatmap, verbose = verbose)   # batch_sz , num_classes, num_rois, image_h, image_w
@@ -427,12 +438,13 @@ class CHMLayerTarget(KE.Layer):
         logt('gt_heatmap_scores ', gt_hm_scores, verbose = verbose)
         logt('complete', verbose = verbose)
         
-        return [ gt_hm, gt_hm_scores]
+        return [ gt_hm, gt_hm_scores, gt_tensor]
 
          
     def compute_output_shape(self, input_shape):
         # may need to change dimensions of first return from IMAGE_SHAPE to MAX_DIM
         return [
                  (None, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1], self.config.NUM_CLASSES)  # gt_heatmap
-              ,  (None, self.config.NUM_CLASSES   , self.config.TRAIN_ROIS_PER_IMAGE , 23)                  # gt_heatmap_scores   
-              ]
+                ,(None, self.config.NUM_CLASSES   , self.config.TRAIN_ROIS_PER_IMAGE , 23)                  # gt_heatmap_scores   
+                ,(None, self.config.NUM_CLASSES   , self.config.TRAIN_ROIS_PER_IMAGE , 8)
+               ]

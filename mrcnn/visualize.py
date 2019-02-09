@@ -292,7 +292,7 @@ def display_instances(image, boxes, class_ids, class_names,
         t.set_bbox(dict(facecolor='w', alpha=0.5, edgecolor='w'))
   
     ax.imshow(masked_image.astype(np.uint8))
-    plt.show()
+    # plt.show()
     return 
 
     
@@ -3061,46 +3061,6 @@ def inference_heatmaps_compare(input, image_id = 0, hm = 'hm' ,
     
     return
 
-    
-def display_mrcnn_scores(r, class_names, only = None):
-    '''
-    r:    results from mrcnn detect
-    cn:   class names
-    
-    '''
-    np_format = {}
-    float_formatter = lambda x: "%10.4f" % x
-    int_formatter   = lambda x: "%10d" % x
-    np_format['float'] = float_formatter
-    np_format['int']   = int_formatter
-    np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
-    
-    if only is None:
-        only = np.unique(r['class_ids'])
-    seq_start = r['pr_hm_scores'].shape[1]
-    # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
-    # print('  scores     : ', r['scores'], type(r['scores']))
-    print('--------------------------------------------------------------------------------------------------------------------------------------------------------------')
-    print('                                                           alt score 0                     alt score 1                              alt score 2                ')
-    print('        class                   mrcnn   normlzd    gaussian    bbox   nrm.scr*     ga.sum     mask    score    norm         ga.sum    mask   score   norm     ')
-    print('seq  id     name                score    score       sum       area   gau.sum      in mask    sum             score        in mask    sum            score    ')
-    print('--------------------------------------------------------------------------------------------------------------------------------------------------------------')
-
-    for cls,scr,pre, roi in zip(r['class_ids'], r['scores'], r['pr_scores'],r['rois']):
-    #     print(' {:4d}      {:12s}   {:.4f}   {:.4f}     {:.4f}  {:7.4f}  {:.4f}      {:.4f}   {}'.
-        cx = pre[1] + (pre[3]-pre[1])/2
-        cy = pre[0] + (pre[2]-pre[0])/2
-        if cls in only:
-
-            print('{:3.0f} {:3d} {:20s}   {:.4f}   {:.4f}     {:.4f}  {:9.4f}  {:.4f}      {:7.4f}   {:8.4f}   {:.4f}   {:.4f}     {:7.4f}   {:8.4f}   {:.4f}   {:.4f}'\
-                  '       {:6.2f}   {:6.2f}'.          
-              format(seq_start-pre[7], cls, class_names[cls], scr, pre[8], 
-                     pre[9], pre[10], pre[11], 
-                     pre[12], pre[13], pre[14], pre[17], 
-                     pre[18], pre[19], pre[20], pre[23],
-                     cx, cy ))     #,  pre[4],pre[5],pre[6],roi))
-
-    display_instances(r['image'], r['rois'], r['class_ids'], class_names, r['scores'], only_classes= only, size =12)
     
 """    
 ##----------------------------------------------------------------------

@@ -175,7 +175,7 @@ class FCN(ModelBase):
         
         num_classes = config.NUM_CLASSES
         if mode == 'training':
-            num_scores_columns = 23
+            num_scores_columns = 24
             num_bboxes  = config.TRAIN_ROIS_PER_IMAGE      # 200
         else:    
             num_scores_columns = 24
@@ -201,14 +201,13 @@ class FCN(ModelBase):
                                                   name = 'active_class_ids')(input_image_meta)
             # active_class_ids = KL.Lambda(lambda x:  parse_active_class_ids_graph(x), name = 'active_class_ids')(input_image_meta)
              
-            print('   active_class_ids  shape is : ', KB.int_shape(active_class_ids), ' Keras tensor ', KB.is_keras_tensor(active_class_ids) )        
+            logt(' active_class_ids    ', active_class_ids,verbose = verbose)
 
             fcn_hm, fcn_sm = self.fcn_graph(pr_hm , config, mode = mode)
             
-
             fcn_scores   = KL.Lambda(lambda x:  fcn_scoring_graph(x, config, mode), name = 'fcn_scoring')([fcn_hm , pr_hm_scores])
-            print(' GT HM.op_type()       :', gt_hm.op.type)    
-            print(' GT HM SCORES.op_type():', gt_hm_scores.op.type)                
+            logt(' GT HM.op_type()     ', gt_hm.op.type,verbose = verbose)
+            logt(' GT HM SCORES.op_type', gt_hm_scores.op.type,verbose = verbose)      
             logt('* gt_hm_scores shape ', gt_hm_scores,verbose = verbose)
             logt('* pr_hm_scores shape ', pr_hm_scores,verbose = verbose)
             logt('* fcn_heatmap shape  ', fcn_hm,verbose = verbose)
@@ -225,11 +224,15 @@ class FCN(ModelBase):
             fcn_MSE_loss = KL.Lambda(lambda x: loss.fcn_heatmap_MSE_loss_graph(*x), name="fcn_MSE_loss") \
                             ([gt_hm, fcn_hm])                                                 
                             
-            fcn_CE_loss  = KL.Lambda(lambda x: loss.fcn_heatmap_CE_loss_graph(*x) , name="fcn_CE_loss") \
-                            ([gt_hm, fcn_hm, active_class_ids])
-                            
-            fcn_BCE_loss  = KL.Lambda(lambda x: loss.fcn_heatmap_BCE_loss_graph(*x) , name="fcn_BCE_loss") \
-                            ([gt_hm, fcn_hm])
+            # fcn_CE_loss  = KL.Lambda(lambda x: loss.fcn_heatmap_CE_loss_graph(*x) , name="fcn_CE_loss") \
+                            # ([gt_hm, fcn_hm, active_class_ids])
+
+            if config.FCN_BCE_LOSS_METHOD == 2 :
+                fcn_BCE_loss  = KL.Lambda(lambda x: loss.fcn_heatmap_BCE_loss_graph_2(*x, config) , name="fcn_BCE_loss") \
+                                ([gt_hm, fcn_hm])
+            else:
+                fcn_BCE_loss  = KL.Lambda(lambda x: loss.fcn_heatmap_BCE_loss_graph(*x) , name="fcn_BCE_loss") \
+                                ([gt_hm, fcn_hm])
                             
             # Model Inputs 
             inputs  = [input_image_meta, pr_hm, pr_hm_scores, gt_hm, gt_hm_scores]

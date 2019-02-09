@@ -670,7 +670,33 @@ def overlaps_graph_np(proposals, gt_boxes):
     iou = intersection / union
 
     overlaps = np.reshape(iou, (proposals.shape[0], gt_boxes.shape[0]))
-    return  overlaps,np.expand_dims(intersection, axis =1), np.expand_dims(union,axis = 1), np.expand_dims(iou, axis = 1)
+    return  overlaps, np.expand_dims(intersection, axis =1), np.expand_dims(union,axis = 1), np.expand_dims(iou, axis = 1)
+
+
+
+##------------------------------------------------------------------------------------------
+##  Compute IoU between a box and an array of boxes  
+##------------------------------------------------------------------------------------------
+def compute_2D_iou(box1, box2):
+    """
+    Calculates IoU between two 2D bounding box arrays
+    box1:                1D vector [boxes_count, 4 (y1, x1, y2, x2)]
+    box2:                          [boxes_count, 4 (y1, x1, y2, x2)]
+    """
+    # Calculate intersection areas
+    y1 = np.maximum(box1[:,0], box2[:,0])
+    y2 = np.minimum(box1[:,2], box2[:,2])
+    x1 = np.maximum(box1[:,1], box2[:,1])
+    x2 = np.minimum(box1[:,3], box2[:,3])
+
+    intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
+
+    area1 = (box1[:,2] - box1[:,0]) * (box1[:,3] - box1[:,1])
+    area2 = (box2[:,2] - box2[:,0]) * (box2[:,3] - box2[:,1])
+
+    union = area1 + area2 - intersection
+    
+    return intersection / union  
 
 ##------------------------------------------------------------------------------------------
 ##  Compute IoU between a box and an array of boxes  
@@ -691,28 +717,8 @@ def compute_one_iou(box1, box2):
     intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
     union = area1 + area2 - intersection
     
-    return intersection / union  
-
-##------------------------------------------------------------------------------------------
-##  Compute IoU between a box and an array of boxes  
-##------------------------------------------------------------------------------------------
-def compute_1D_iou(box1, box2):
-    """
-    Calculates IoU between two 1D arrays indiviual bounding boxes 
-    box1:                1D vector [boxes_count (y1, x1, y2, x2)]
-    box2:                          [boxes_count (y1, x1, y2, x2)]
-    """
-    # Calculate intersection areas
-    area1 = (box1[:,2] - box1[:,0]) * (box1[:,3] - box1[:,1])
-    area2 = (box2[:,2] - box2[:,0]) * (box2[:,3] - box2[:,1])
-    y1 = np.maximum(box1[:,0], box2[:,0])
-    y2 = np.minimum(box1[:,2], box2[:,2])
-    x1 = np.maximum(box1[:,1], box2[:,1])
-    x2 = np.minimum(box1[:,3], box2[:,3])
-    intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
-    union = area1 + area2 - intersection
+    return intersection / union      
     
-    return intersection / union  
     
 ##------------------------------------------------------------------------------------------
 ##  Compute IoU between a box and an array of boxes  
@@ -1361,7 +1367,7 @@ def log(text, array=None):
             array.max() if array.size else ""))
     print(text)
 
-def logt(text, tensor=None, indent=1, verbose = 1):
+def logt(text = '', tensor=None, indent=1, verbose = 1):
     """Prints a text message. And, optionally, if a Numpy array is provided it
     prints it's shape, min, and max values.
     """
@@ -1375,8 +1381,16 @@ def logt(text, tensor=None, indent=1, verbose = 1):
         pass
     elif isinstance(tensor, list):
         text += (":  list length: {}".format(len(tensor)))
+    elif isinstance(tensor, str):
+        text += (":  value: {}".format(tensor))
+    elif isinstance(tensor, int):
+        text += (":  value: {}".format(tensor))
+    elif isinstance(tensor, float):
+        text += (":  value: {}".format(tensor))
     elif isinstance(tensor, np.ndarray):
         text += (":  shape: {}".format(tensor.shape))
+    elif isinstance(tensor, tuple):
+        text += (":  tuple length: {}".format(len(tensor)))
     else:
         text = '    '*indent+ text.strip()
         text = text.ljust(35)
@@ -1750,7 +1764,7 @@ class Paths(object):
         syst = platform.system()
         if syst == 'Windows':
             # Root directory of the project
-            print(' windows ' , syst)
+            print(' System Platform: ' , syst)
             # WINDOWS MACHINE ------------------------------------------------------------------
             self.DIR_ROOT          = "F:\\"
             self.DIR_TRAINING   = os.path.join(self.DIR_ROOT, training_folder)
@@ -1785,7 +1799,7 @@ class Paths(object):
         print("   -------------------------")
         for a in dir(self):
             if not a.startswith("__") and not callable(getattr(self, a)):
-                print("{:30} {}".format(a, getattr(self, a)))
+                print("   {:30} {}".format(a, getattr(self, a)))
         print()
     
 ##------------------------------------------------------------------------------------
@@ -1866,6 +1880,18 @@ def command_line_parser():
                         default='fcn_BCE_loss', 
                         metavar="/path/to/weights.h5",
                         help="FCN Losses: fcn_CE_loss, fcn_BCE_loss, fcn_MSE_loss" )
+                        
+    parser.add_argument('--fcn_bce_loss_method', required=False,
+                        choices = [1,2],
+                        default=1, type = int, 
+                        metavar="<BCE Loss evaluation method>",
+                        help="Evaluation method : [1: Loss on all classes ,2: Loss on one class only]")
+                        
+    parser.add_argument('--fcn_bce_loss_class', required=False,
+                        default=0, type = int, 
+                        metavar="<BCE Loss evaluation class>",
+                        help="Evaluation class")
+                        
 
     parser.add_argument('--last_epoch', required=False,
                         default=0,

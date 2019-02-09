@@ -12,7 +12,7 @@ import numpy as np
 import tensorflow as tf
 import keras.backend as KB
 import keras.engine as KE
-from mrcnn.utils        import apply_box_deltas_np, non_max_suppression, logt, flip_bbox, compute_1D_iou
+from mrcnn.utils        import apply_box_deltas_np, non_max_suppression, logt, flip_bbox, compute_2D_iou
 from mrcnn.detect_inf_layer import refine_detections
 import pprint
 
@@ -139,7 +139,7 @@ def add_evaluation_detections_2(gt_class_ids, gt_bboxes, config, class_pred_stat
 
         ##  Compute IoU between each GT box and its corresponding FP box. if their overlap > 0.80, reduce the
         ##  boundaries of the FP bbox by multiplying it's coordinates by 0.85, and use this modified FP box
-        overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+        overlaps = compute_2D_iou(tp_bboxes, fp_bboxes)
         large_ious = np.where(overlaps > 0.80)[0]    
         
         # if there *are* ious > 0.8, modify the reduce the corresponing FP bboxes 
@@ -155,7 +155,7 @@ def add_evaluation_detections_2(gt_class_ids, gt_bboxes, config, class_pred_stat
                 print('fp_bboxes before adjustment ', fp_bboxes.shape)
                 print(fp_bboxes[large_ious])
             fp_bboxes[large_ious] = np.rint(fp_bboxes[large_ious].astype(np.float) * 0.85)
-            overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+            overlaps = compute_2D_iou(tp_bboxes, fp_bboxes)
             if verbose :
                 print('fp_bboxes after adjustment ', fp_bboxes.shape)
                 print(fp_bboxes[large_ious])
@@ -467,7 +467,7 @@ def add_evaluation_detections_1(gt_class_ids, gt_bboxes, config, class_pred_stat
 
         ##  Compute IoU between each GT box and its corresponding FP box. if their overlap > 0.80, reduce the
         ##  boundaries of the FP bbox by multiplying it's coordinates by 0.85, and use this modified FP box
-        overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+        overlaps = compute_2D_iou(tp_bboxes, fp_bboxes)
         large_ious = np.where(overlaps > 0.80)[0]    
         
         # if there *are* ious > 0.8, modify the reduce the corresponing FP bboxes 
@@ -483,7 +483,7 @@ def add_evaluation_detections_1(gt_class_ids, gt_bboxes, config, class_pred_stat
                 print('fp_bboxes before adjustment ', fp_bboxes.shape)
                 print(fp_bboxes[large_ious])
             fp_bboxes[large_ious] = np.rint(fp_bboxes[large_ious].astype(np.float) * 0.85)
-            overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+            overlaps = compute_2D_iou(tp_bboxes, fp_bboxes)
             if verbose :
                 print('fp_bboxes after adjustment ', fp_bboxes.shape)
                 print(fp_bboxes[large_ious])
@@ -700,7 +700,7 @@ def add_evaluation_detections_2_old (gt_class_ids, gt_bboxes, config, class_pred
 
         ##  Compute IoU between each GT box and its corresponding FP box. if their overlap > 0.80, reduce the
         ##  boundaries of the FP bbox by multiplying it's coordinates by 0.85, and use this modified FP box
-        overlaps = compute_1D_iou(tp_bboxes, fp_bboxes)
+        overlaps = compute_2D_iou(tp_bboxes, fp_bboxes)
 
         # identify IoUs > 0.8    
         large_ious = np.where(overlaps > 0.80)[0]    

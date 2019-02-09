@@ -246,7 +246,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes,  config):
 
     ##------------------------------------------------------------------------------------------
     ## 2. Determine indices of negative ROI proposal boxes
-    ##    those with < 0.5 with every GT box and are not crowds bboxes 
+    ##    those with < ROI_GT_IOU_THRESHOLD  with every GT box and are not crowds bboxes 
     ##    the where creates a array with shape [# of answers, 1] so we use [:, 0] after
     ##------------------------------------------------------------------------------------------
     ## current method

@@ -23,7 +23,18 @@ import mrcnn.visualize    as visualize
 from datetime             import datetime   
 from mrcnn.utils          import command_line_parser, display_input_parms, Paths
 from mrcnn.newshapes      import prep_newshape_dataset
-from mrcnn.prep_notebook  import mrcnn_newshape_train, build_newshapes_config
+from mrcnn.prep_notebook  import build_newshapes_config
+
+syst = platform.system()
+if syst == 'Windows':
+    save_path    = "E:/git_projs/MRCNN3/train_newshapes/other"
+    dataset_path = "E:/git_projs/MRCNN3/train_newshapes/" 
+elif syst == 'Linux':
+    save_path    = "/home/kbardool/mrcnn3/train_newshapes/other"
+    dataset_path = "/home/kbardool/mrcnn3/train_newshapes/"
+else :
+    raise Error('unrecognized system ')
+
 
 start_time = datetime.now()
 start_time_disp = start_time.strftime("%m-%d-%Y @ %H:%M:%S")
@@ -118,9 +129,9 @@ else:
 ##------------------------------------------------------------------------------------
 # dataset_train = prep_newshape_dataset(mrcnn_model.config, 10000)
 # dataset_val   = prep_newshape_dataset(mrcnn_model.config,  2500)
-with open('E:\\git_projs\\MRCNN3\\train_newshapes\\newshapes_training_dataset_10000_A.pkl', 'rb') as outfile:
+with open(os.path.join(dataset_path, 'newshapes_training_dataset_10000_A.pkl'), 'rb') as outfile:
     dataset_train = pickle.load(outfile)
-with open('E:\\git_projs\\MRCNN3\\train_newshapes\\newshapes_validation_dataset_2500_A.pkl', 'rb') as outfile:
+with open(os.path.join(dataset_path,'newshapes_validation_dataset_2500_A.pkl'), 'rb') as outfile:
     dataset_val = pickle.load(outfile)
     
 print(' Training file size: ', len(dataset_train.image_ids), ' Validation file size: ', len(dataset_val.image_ids))    

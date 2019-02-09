@@ -29,24 +29,45 @@ def fpn_graph(Resnet_Layers, verbose = 0):
     print('\n>>> Feature Pyramid Network (FPN) Graph ')
     
     _, C2, C3, C4, C5 = Resnet_Layers
+
+    logt('Input FPN C5 ' , C5, verbose = verbose)    
+    logt('Input FPN C4 ' , C4, verbose = verbose)    
+    logt('Input FPN C3 ' , C3, verbose = verbose)    
+    logt('Input FPN C2 ' , C2, verbose = verbose)    
     
     P5 = KL.Conv2D(256, (1, 1), name='fpn_c5p5')(C5)
     logt('FPN P5 ' , P5, verbose = verbose)    
     
+    x = KL.UpSampling2D(size=(2, 2))(P5)
+    y = KL.Conv2D(256, (1, 1))(C4)
+    logt('   Upsampled P5 (x)' , x, verbose = verbose)    
+    logt('   Conv2D    C4 (y)' , y, verbose = verbose)    
+    
     P4 = KL.Add(name="fpn_p4add")([
          KL.UpSampling2D(size=(2, 2), name="fpn_p5upsampled")(P5),
          KL.Conv2D(256, (1, 1), name='fpn_c4p4')(C4)])
-    logt('FPN P4 ' , P4, verbose = verbose)    
+    logt('FPN P4 (x+y)' , P4, verbose = verbose)    
+
+    x = KL.UpSampling2D(size=(2, 2))(P4)
+    y = KL.Conv2D(256, (1, 1))(C3)
+    logt('   Upsampled P4 (x)' , x, verbose = verbose)    
+    logt('   Conv2D    C3 (y)' , y, verbose = verbose)    
     
     P3 = KL.Add(name="fpn_p3add")([
          KL.UpSampling2D(size=(2, 2), name="fpn_p4upsampled")(P4),
          KL.Conv2D(256, (1, 1), name='fpn_c3p3')(C3)])
-    logt('FPN P3 ' , P3, verbose = verbose)    
+    logt('FPN P3 (x+y)' , P3, verbose = verbose)    
+    
+    
+    x = KL.UpSampling2D(size=(2, 2))(P3)
+    y = KL.Conv2D(256, (1, 1))(C2)
+    logt('   Upsampled P3 (x)' , x, verbose = verbose)    
+    logt('   Conv2D    C2 (y)' , y, verbose = verbose)    
     
     P2 = KL.Add(name="fpn_p2add")([
          KL.UpSampling2D(size=(2, 2), name="fpn_p3upsampled")(P3),
          KL.Conv2D(256, (1, 1), name='fpn_c2p2')(C2)])
-    logt('FPN P2 ' , P2, verbose = verbose)    
+    logt('FPN P2 (x+y)' , P2, verbose = verbose)    
     
     # Attach 3x3 conv to all P layers to get the final feature maps.
     P2 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p2")(P2)
@@ -58,11 +79,13 @@ def fpn_graph(Resnet_Layers, verbose = 0):
     # subsampling from P5 with stride of 2.
     P6 = KL.MaxPooling2D(pool_size=(1, 1), strides=2, name="fpn_p6")(P5)
     if verbose:
-        logt('     FPN P2 shape :', P2)
-        logt('     FPN P3 shape :', P3)
-        logt('     FPN P4 shape :', P4)
-        logt('     FPN P5 shape :', P5)
-        logt('     FPN P6 shape :', P6)
+        print()
+        print('    FPN Final output') 
+        logt('     FPN P6 (Maxpool2D of P5 w/ stride 2)', P6)
+        logt('     FPN P5 (Conv2D (3,3) of P5)', P5)
+        logt('     FPN P4 (Conv2D (3,3) of P4)', P4)
+        logt('     FPN P3 (Conv2D (3,3) of P3)', P3)
+        logt('     FPN P2 (Conv2D (3,3) of P2)', P2)
 
     return [P2, P3, P4, P5, P6]
     
@@ -96,16 +119,18 @@ def fpn_classifier_graph(rois, feature_maps, image_shape, pool_size, num_classes
                         Deltas to apply to proposal boxes
                         
     '''
-    print('\n>>> FPN Classifier Graph ')
+    print('\n>>> FPN Classifier Graph verbose:', verbose)
     if verbose:
     
-        print('    INPUT: rois shape          :', rois.get_shape())
-        print('    INPUT: No of feature_maps  :', len(feature_maps))
-        for item in feature_maps:
-            print('        feature_maps shape  :', item.get_shape())
-        print('    INPUT: image_shape         :', image_shape)
-        print('    INPUT: pool_size           :', pool_size)
-        print('    INPUT: num_classes         :', num_classes)
+        logt('    INPUT: rois shape ', rois)
+        logt('    INPUT: mrcnn feature_maps ', len(feature_maps))
+        logt('    -      feature_map P2 ', feature_maps[0])
+        logt('    -      feature_map P3 ', feature_maps[1])
+        logt('    -      feature_map P4 ', feature_maps[2])
+        logt('    -      feature_map P5 ', feature_maps[3])
+        logt('    INPUT: image_shape', image_shape)
+        logt('    INPUT: pool_size  ', pool_size)
+        logt('    INPUT: num_classes', num_classes)
     
     # ROI Pooling
     # Shape: [batch, num_boxes, pool_height, pool_width, channels]
@@ -114,22 +139,49 @@ def fpn_classifier_graph(rois, feature_maps, image_shape, pool_size, num_classes
     logt('roi_align_classifier ' ,x, verbose = verbose)
     
     # Two 1024 FC layers (implemented with Conv2D for consistency)
-    # TimeDistributed applies the Conv2D layer to each slice of the batch input
+    #-------------------------------------------------------------------------------------------
+    # TimeDistributed : 
+    # 
+    #   Applies the Conv2D layer to each slice of the batch input. The input should be at least 3D,
+    #   and the dimension of index one will be considered to be the temporal dimension.
+    #
+    # Example: 
+    #   Consider a batch of 32 samples, where each sample is a sequence of 10 vectors of 16 dimensions. 
+    #   The batch input shape of the layer is then (32, 10, 16). The input_shape, not including the 
+    #   samples dimension, is (10, 16).
+    #   You can then use TimeDistributed to apply a Dense layer to each of the 10 timesteps, independently:
+    #   ## as the first layer in a model
+    #   model = Sequential()
+    #   model.add(TimeDistributed(Dense(8), input_shape=(10, 16)))
+    #   ## now model.output_shape == (None, 10, 8)
+    #
+    #   In subsequent layers, there is no need for the input_shape:
+    #   
+    #   model.add(TimeDistributed(Dense(32)))
+    #   # now model.output_shape == (None, 10, 32)
+    #
+    #   The output will then have shape (32, 10, 32).    
+    #-------------------------------------------------------------------------------------------
     
     x = KL.TimeDistributed(KL.Conv2D(1024, (pool_size, pool_size), padding="valid"), name="mrcnn_class_conv1")(x)
     logt('mrcnn_class_conv1' ,x, verbose = verbose)
+    
     x = KL.TimeDistributed(BatchNorm(axis=3), name='mrcnn_class_bn1')(x)
     logt('mrcnn_class_bn1  ' ,x, verbose = verbose)
+    
     x = KL.Activation('relu')(x)
     logt('mrcnn_class_relu1' ,x, verbose = verbose)
-    
+    logt( verbose = verbose)
     # x = KL.Dropout(0.5)(x)
     x = KL.TimeDistributed(KL.Conv2D(1024, (1, 1)), name="mrcnn_class_conv2")(x)
     logt('mrcnn_class_conv2 ' ,x, verbose = verbose)
+    
     x = KL.TimeDistributed(BatchNorm(axis=3), name='mrcnn_class_bn2')(x)
     logt('mrcnn_class_bn2   ' ,x, verbose = verbose)
+    
     x = KL.Activation('relu')(x)
     logt('mrcnn_class_relu2 ' ,x, verbose = verbose)
+    logt(verbose = verbose)
     
     shared = KL.Lambda(lambda x: KB.squeeze(KB.squeeze(x, 3), 2), name="pool_squeeze")(x)
     logt('pool_squeeze(Shared)', shared, verbose = verbose)
