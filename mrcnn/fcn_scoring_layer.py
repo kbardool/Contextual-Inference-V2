@@ -158,13 +158,12 @@ def fcn_scoring_graph(input, config, mode):
     ##  build indices and extract heatmaps corresponding to each bounding boxes' class id
     ##  build alternative scores#  based on normalized/sclaked clipped heatmap
     ##---------------------------------------------------------------------------------------------
-    hm_indices = tf.cast(pt2_ind[:, :2],dtype=tf.int32)
-    logt('hm_indices shape',  hm_indices, verbose = verbose)
-    
-    pt2_heatmaps = tf.gather_nd(in_heatmap_norm, hm_indices )
-    logt('pt2_heatmaps',  pt2_heatmaps, verbose = verbose)
-
+    hm_indices = tf.cast(pt2_ind[:, :2],dtype=tf.int32)    
+    pt2_heatmaps = tf.gather_nd(in_heatmap_norm, hm_indices)
     alt_scores_2 = tf.map_fn(build_hm_score_v3, [pt2_heatmaps, cy, cx,covar], dtype=tf.float32)    
+    
+    logt('hm_indices shape',  hm_indices, verbose = verbose)
+    logt('pt2_heatmaps',  pt2_heatmaps, verbose = verbose)
     logt('alt_scores_2',alt_scores_2, verbose = verbose)
     
     alt_scores_2_norm = tf.scatter_nd(pt2_ind, alt_scores_2, 
@@ -186,7 +185,7 @@ def fcn_scoring_graph(input, config, mode):
     logt('fcn_scores_dense    ', fcn_scores_dense , verbose = verbose)
 
     ##---------------------------------------------------------------------------------------------
-    ##  Scatter back to per-image tensor 
+    ##  Scatter back to per-image,class  tensor 
     ##---------------------------------------------------------------------------------------------
     seq_ids = tf.to_int32( rois_per_image - pt2_dense[:, SEQUENCE_COLUMN] )
     scatter_ind= tf.stack([hm_indices[:,0], seq_ids], axis = -1, name = 'scatter_ind')
@@ -233,9 +232,6 @@ class FCNScoringLayer(KE.Layer):
         logt('> FCNScoreLayer Call() ', len(inputs) , verbose = verbose)
         logt('  fcn_heatmap.shape    ', fcn_heatmap , verbose = verbose)
         logt('  pr_hm_scores.shape   ', pr_hm_scores, verbose = verbose)
-
-        # fcn_scores  = batch_slice_fcn([fcn_heatmap, pr_hm_scores, gt_hm_scores], my_score_fcn_heatmaps, 
-                                            # self.config.IMAGES_PER_GPU, self.config)
 
         fcn_scores  = fcn_scoring_graph([fcn_heatmap, pr_hm_scores], self.config)
 

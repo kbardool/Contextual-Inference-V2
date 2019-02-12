@@ -7,3 +7,4 @@ assets/
 images/
 train_*/average_heatmaps
 train_*/*_results*/
+.idea/

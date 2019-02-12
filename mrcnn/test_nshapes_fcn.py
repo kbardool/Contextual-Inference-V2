@@ -39,15 +39,16 @@ print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,k
 ## Parse command line arguments
 ##------------------------------------------------------------------------------------
 parser = command_line_parser()
-input_parms = " --batch_size 1  "
-input_parms +=" --mrcnn_logs_dir train_mrcnn_newshapes "
-input_parms +=" --fcn_logs_dir   train_fcn8L2_BCE2 "
-input_parms +=" --fcn_model      last "
-input_parms +=" --fcn_layer      all"
-input_parms +=" --fcn_arch       fcn8L2 " 
-input_parms +=" --sysout         screen "
-input_parms +=" --scale_factor   1"
-# input_parms +="--fcn_model /home/kbardool/models/train_fcn_adagrad/shapes20180709T1732/fcn_shapes_1167.h5"
+input_parms = " --batch_size            1 "
+input_parms +=" --mrcnn_logs_dir        train_mrcnn_newshapes "
+input_parms +=" --fcn_logs_dir          train_fcn8L2_BCE "
+input_parms +=" --fcn_model             last "
+input_parms +=" --fcn_layer             all"
+input_parms +=" --fcn_arch              fcn8L2 " 
+input_parms +=" --fcn_losses            fcn_BCE_loss "
+input_parms +=" --fcn_bce_loss_method   1 "
+input_parms +=" --sysout                screen "
+input_parms +=" --scale_factor          1"
 
 
 args = parser.parse_args(input_parms.split())
@@ -55,15 +56,16 @@ verbose = 0
 
 syst = platform.system()
 if syst == 'Windows':
-    save_path = "E:/git_projs/MRCNN3/train_newshapes/test_results_BCE2"
+    save_path  =  "E:/git_projs/MRCNN3/train_newshapes/BCE3_test_results"
     test_dataset = "E:/git_projs/MRCNN3/train_newshapes/newshapes_test_dataset_1000_B.pkl"
     # DIR_WEIGHTS =  'F:/models_newshapes/train_fcn8_l2_newshapes/fcn20181224T0000'     
     DIR_WEIGHTS =  'F:/models_newshapes/train_fcn8L2_BCE2/fcn20190131T0000'     
 elif syst == 'Linux':
-    save_path = "/home/kbardool/mrcnn3/train_newshapes/test_results"
+    save_path = "/home/kbardool/mrcnn3/train_newshapes/BCE3_test_results"
     test_dataset = "/home/kbardool/mrcnn3/train_newshapes/newshapes_test_dataset_1000_B.pkl"
-    DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8_l2_newshapes/fcn20181224T0000' 
-    DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8L2_BCE2/fcn20190131T0000'     
+    # DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8L2_BCE/fcn20181224T0000' 
+    DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8L2_BCE/fcn20190208T0000' 
+    # DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8L2_BCE2/fcn20190131T0000'     
 else :
     raise Error('unrecognized system ')
 
@@ -77,7 +79,17 @@ print(' OS ' , syst, ' DIR_WEIGHTS  : ', DIR_WEIGHTS)
            # 'fcn_1012.h5', 'fcn_1127.h5', 'fcn_1644.h5', 'fcn_1776.h5',
            # 'fcn_1848.h5', 'fcn_2017.h5', 'fcn_2084.h5']
 
-files   = ['fcn_0500.h5']
+# files   = ['fcn_0500.h5']
+
+# Files for BCE3 - Training with newly designed heatmap layer(adding FPs to the class channels)
+files  = ['fcn_0001.h5', 'fcn_0003.h5', 'fcn_0005.h5', 'fcn_0009.h5', 
+          'fcn_0012.h5', 'fcn_0020.h5', 'fcn_0023.h5', 'fcn_0027.h5', 
+          'fcn_0033.h5', 'fcn_0047.h5', 'fcn_0070.h5', 'fcn_0080.h5', 
+          'fcn_0101.h5', 'fcn_0106.h5', 'fcn_0112.h5', 'fcn_0124.h5', 
+          'fcn_0138.h5', 'fcn_0144.h5', 'fcn_0161.h5', 'fcn_0171.h5', 'fcn_0181.h5']
+
+
+
 
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
@@ -238,6 +250,7 @@ for FILE_IDX in range(len(files)):
     for i in sorted(All_APResults):
         print(i, All_APResults[i]['Epochs'])        
         
+    ##------------------------------------------------------------------------
     ## Save AP_Results
     ##------------------------------------------------------------------------
     with open(os.path.join(save_path, new_AP_results_file+'.pkl'), 'wb') as outfile:
@@ -245,6 +258,7 @@ for FILE_IDX in range(len(files)):
     print(' ***  Saved AP_results for epoch:',  All_APResults[i]['Epochs'], ' Weight file:', i)
     print('      to ----> ', save_path,'    Filename: ', new_AP_results_file)
 
+    ##------------------------------------------------------------------------
     ## Save Cls_info, pr_bboxes dictionaries
     ##------------------------------------------------------------------------
     cls_info_file = file_prefix+'_cls_info_epoch'+epochs+'_'+str(len(image_ids))
@@ -260,7 +274,7 @@ for FILE_IDX in range(len(files)):
         pickle.dump(pr_dict, outfile)    
     print(' ***  Saves complete')         
 
-    ##
+    ##--------------------------------------------------------------------------
     ## Display recent calculated reslts
     ##--------------------------------------------------------------------------
     np_format = {}
@@ -271,7 +285,8 @@ for FILE_IDX in range(len(files)):
     print()
     print('After {} training epochs.\nWeight file: {}'.format(epochs, weights_file))
     print()
-    print("{:6s} {:^10s} {:>13s} {:>13s} {:>13s} {:>13s} {:>13s} {:>13s} {:>13s}".format("Images", "Epochs", "MRCNN_AP_Orig", "MRCNN_AP_0", "FCN_AP_0", "MRCNN_AP_1", "FCN_AP_1", "MRCNN_AP_2", "FCN_AP_2"))
+    print("{:6s} {:^10s} {:>13s} {:>13s} {:>13s} {:>13s} {:>13s} {:>13s} {:>13s}".
+          format("Images", "Epochs", "MRCNN_AP_Orig", "MRCNN_AP_0", "FCN_AP_0", "MRCNN_AP_1", "FCN_AP_1", "MRCNN_AP_2", "FCN_AP_2"))
     print('-'*116)
     for LIMIT in [10,50,100,250,500]:
         print("{:<6d} {:^10s} {:13.5f} {:13.5f} {:13.5f} {:13.5f} {:13.5f} {:13.5f} {:13.5f}".format(LIMIT, epochs,

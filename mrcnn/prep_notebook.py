@@ -773,7 +773,7 @@ def get_inference_batch(dataset, config, image_ids = None, generator = None, dis
         images_ids:          List of images ids, potentially of different sizes.
 
     returns:
-        images              List of images in raw format
+        raw_images          List of images in raw format
         molded_images       [N, h, w, 3]. Images resized and normalized.
         image_metas         [N, length of meta data]. Details about each image.
         windows             [N, (y1, x1, y2, x2)]. The portion of the image that has the
@@ -793,7 +793,7 @@ def get_inference_batch(dataset, config, image_ids = None, generator = None, dis
     else:
         print('ERROR - dataset generator or list of image_ids must be passed to get_evaluate_batch()')
         return
-
+    raw_images    = np.array(images).astype(np.float32)
     molded_images = batch_x[0]
     image_metas   = batch_x[1]
         
@@ -807,7 +807,7 @@ def get_inference_batch(dataset, config, image_ids = None, generator = None, dis
         # visualize.display_images(images, titles = titles)        
         visualize.display_training_batch(dataset, [molded_images, image_metas], masks = True, size = 8)
         
-    return [images, molded_images, image_metas]
+    return [raw_images, molded_images, image_metas]
 
 
                 

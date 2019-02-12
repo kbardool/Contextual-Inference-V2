@@ -7,7 +7,7 @@ Licensed under the MIT License (see LICENSE for details)
 Written by Kevin Bardool
 """
 
-import os, sys, glob, random, math, datetime, itertools, logging, pprint, copy 
+import os, sys, glob, random, math, datetime, itertools, logging, pprint, copy
 import numpy as np
 # from scipy.stats import  multivariate_normal
 import tensorflow as tf
@@ -44,6 +44,7 @@ def normalize_scores(x, low = 0.0, high = 1.0, verbose = 0):
     logt('       output shape ', y, verbose = verbose)
 
     return y
+
     
 ##--------------------------------------------------------------------------------------------------------
 ## Build Mask and Score - version 3 
