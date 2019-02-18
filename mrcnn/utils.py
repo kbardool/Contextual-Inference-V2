@@ -716,7 +716,7 @@ def compute_one_iou(box1, box2):
     x2 = np.minimum(box1[3], box2[3])
     intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
     union = area1 + area2 - intersection
-    
+    print(' Intersection: {}   Union: {}   IoU: {} '.format(intersection , union , intersection /union ))
     return intersection / union      
     
     
@@ -797,7 +797,7 @@ def compute_ap(gt_boxes, gt_class_ids,
     pred_boxes = trim_zeros(pred_boxes)
     pred_scores= pred_scores[:pred_boxes.shape[0]]
     indices    = np.argsort(pred_scores)[::-1]   ## sort indices from largest to smallest
-  
+
     pred_boxes     = pred_boxes[indices]
     pred_class_ids = pred_class_ids[indices]
     pred_scores    = pred_scores[indices]

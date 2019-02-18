@@ -31,13 +31,49 @@ import seaborn as sns
 sns.set_style('white')
 sns.set_context('poster')
 pp = pprint.PrettyPrinter(indent=2, width=100)
-COLORS = [
-    '#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78', '#2ca02c',
-    '#98df8a', '#d62728', '#ff9896', '#9467bd', '#c5b0d5',
-    '#8c564b', '#c49c94', '#e377c2', '#f7b6d2', '#7f7f7f',
-    '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf', '#9edae5']
+COLORS = [ '#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78', '#2ca02c',  '#98df8a', '#d62728' ,
+           '#ff9896', '#9467bd', '#c5b0d5', '#8c564b', '#c49c94',  '#e377c2', '#f7b6d2' ,
+           '#7f7f7f', '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf',  '#9edae5', '#1f77b4']
+           
+BLUE     = '#1f77b4'
+LBLUE    = '#aec7e8'
+ORANGE   = '#ff7f0e'
+LORANGE  = '#ffbb78'
+GREEN    = '#2ca02c'
+LGREEN   = '#98df8a'
+RED      = '#d62728'
+LRED     = '#ff9896'
+PURPLE   = '#9467bd'
+LPURPLE  = '#c5b0d5'
+BROWN    = '#8c564b'
+LBROWN   = '#c49c94'
+PINK     = '#e377c2'
+LPINK    = '#f7b6d2'
+GRAY     = '#7f7f7f'
+LGRAY    = '#c7c7c7'
+GOLD     = '#bcbd22'
+LGOLD    = '#dbdb8d'
+AQUA     = '#17becf'
+LAQUA    = '#9edae5'
+
+SCORE_COLORS = {  'mrcnn_score_orig':  BLUE
+                , 'mrcnn_score_0'   :  LORANGE
+                , 'mrcnn_score_1'   :  LRED
+                , 'mrcnn_score_2'   :  LGREEN
+                
+                , 'fcn_score_0'     :  ORANGE 
+                , 'fcn_score_1'     :  RED
+                , 'fcn_score_2'     :  GREEN
+                , 'fcn_score_1_norm':  BROWN
+                , 'fcn_score_2_norm':  PINK
+               }
+                 
+# COLORS   = [ BLUE, LORANGE, ORANGE, GREEN, RED, PURPLE, BROWN, GRAY, GOLD, AQUA]
 
 
+##------------------------------------------------------------------------------------------
+##  
+##------------------------------------------------------------------------------------------        
 def calc_iou_individual(pred_box, gt_box):
     """Calculate IoU of single predicted and ground truth box
 
@@ -80,6 +116,9 @@ def calc_iou_individual(pred_box, gt_box):
     return iou
 
 
+##------------------------------------------------------------------------------------------
+##  
+##------------------------------------------------------------------------------------------        
 def get_single_image_results(gt_boxes, pred_boxes, iou_thr):
     """Calculates number of true_pos, false_pos, false_neg from single batch of boxes.
 
@@ -146,6 +185,9 @@ def get_single_image_results(gt_boxes, pred_boxes, iou_thr):
     return {'true_pos': tp, 'false_pos': fp, 'false_neg': fn}
 
 
+##------------------------------------------------------------------------------------------
+##  calc_precision_recall
+##------------------------------------------------------------------------------------------        
 def calc_precision_recall(img_results):
     """Calculates precision and recall from the set of images
 
@@ -177,6 +219,10 @@ def calc_precision_recall(img_results):
 
     return (precision, recall)
 
+    
+##------------------------------------------------------------------------------------------
+##  get_model_scores_map
+##------------------------------------------------------------------------------------------        
 def get_model_scores_map(pred_boxes, score_key):
     """Creates a dictionary of from model_scores to image ids.
 
@@ -189,10 +235,13 @@ def get_model_scores_map(pred_boxes, score_key):
             0.100929 : ['COCO_val2014_000000144798.jpg'],
             0.104556 : ['COCO_val2014_000000481573.jpg'],
     """
+    # print(' Get model_scores_map for score: ', score_key)
     model_scores_map = {}
     for img_id, val in pred_boxes.items():
         # for raw_score in val['scores']:
+        # print(img_id, ' items: ', val)
         for score in val[score_key]:
+            # print(val[score_key])
             # score = round(raw_score, 4)  <-- we are now writing all scores in rounded format
             if score not in model_scores_map.keys():
                 model_scores_map[score] = [img_id]
@@ -201,6 +250,9 @@ def get_model_scores_map(pred_boxes, score_key):
     return model_scores_map
 
     
+##------------------------------------------------------------------------------------------
+##  get_avg_precision_at_iou
+##------------------------------------------------------------------------------------------    
 def get_avg_precision_at_iou(gt_boxes, pr_boxes, iou_thr=0.5, score_key = 'scores'):
     """Calculates average precision at given IoU threshold.
 
@@ -299,7 +351,7 @@ def get_avg_precision_at_iou(gt_boxes, pr_boxes, iou_thr=0.5, score_key = 'score
         model_thrs.append(model_score_thr)
 
     precisions = np.array(precisions)
-    recalls = np.array(recalls)
+    recalls    = np.array(recalls)
     # print('final precsions:', precisions)
     # print('final recall   :', recalls)
     prec_at_rec = []
@@ -319,27 +371,73 @@ def get_avg_precision_at_iou(gt_boxes, pr_boxes, iou_thr=0.5, score_key = 'score
         'model_thrs'    : model_thrs,
         'prec_at_rec'   : prec_at_rec }
 
+    
+##------------------------------------------------------------------------------------------
+##  Build per-class mAP data structure 
+##------------------------------------------------------------------------------------------
+def build_mAP_data_structure_by_class(gt_boxes_class, pr_boxes_class, class_ids, scores, iou_thresholds = None):
+    '''
+    Loop over Classes, Scores, and IoU Thresholds and build AP info for each class / score / threshold
+   
+    Output Structure
+    ----------------
+    mAP_data                        is a dictionary keyed by class_id, e.g. mAP_data[1]. 
+    
+    Each CLASS dict                 (mAP_data[n]) dict keyed by the score name, e.g. 'mrcnn_score_orig', 'mrcnn_score_alt', etc....
+    
+    Each CLASS-SCORE dict           (mAP_data[n]['score_name']) dict keyed by iou threshold. e.g. 0.5, 0.55,...,0.95
+    
+    Each CLASS-SCORE-IOU dict       (mAP_data[n]['score_name'][0.5]) dict to Precision/Recall information for that
+                                    Score and given threshold and has the following keys: 
+                                    {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
+    
+                                    iou        :   indicates the iOU threshold of the dictionary entry
+                                    avg_prec   :   average precsion at this IoU
+                                    model_thrs :   score  thresholds
+                                    recalls    :   recall at threshold
+                                    precision  :   precision at threshold
 
-def plot_pr_curve(
-    precisions, recalls, category='Not Supplied', label=None, color=None, ax=None):
-    """Simple plotting helper function"""
+    
+    mAP_data[1]:  {'score1': { 0.50: {'iou':[], 'model_thrs':[], 'recalls':[], 'precisions':[], 'avg_prec':[]}
+                               0.55: {'iou':[], 'model_thrs':[], 'recalls':[], 'precisions':[], 'avg_prec':[]}
+                               ...
+                               ...
+                               0.95: {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
+                             }
+                   'score2': { 0.50: {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
+                               ...
+                             }
+                  }          
+                    
+    '''
+    assert class_ids is not None
+    assert scores is not None 
+    
+    print('Build mAP information for classes: ', class_ids, ' and scores ', scores)
+    mAP_data = {}
+    if iou_thresholds is None :
+        iou_thresholds = np.arange(0.20, 0.95, 0.05)
+    
+    for class_id in class_ids:
+        # mAP_data[class_id] = {}
+        class_by_score_data = {}
+        print(  'class_id: {:3d}  '.format(class_id))
+        
+        for score_key in scores:
+            mAP_by_iou_thr_data = {}
+            
+            for idx, thr in enumerate(iou_thresholds):
+                iou_thr = np.round(thr, 2)
+                # print(  'class_id: {:3d}   idx {:2d}   iou_thr: {:.2f}  score_key: {:20s}'.format(class_id, idx, iou_thr, score_key))
+                outp = get_avg_precision_at_iou(gt_boxes_class[class_id], pr_boxes_class[class_id], iou_thr=iou_thr, score_key = score_key)
+                outp['iou'] = iou_thr
+                mAP_by_iou_thr_data[iou_thr] = outp
+            class_by_score_data[score_key] = mAP_by_iou_thr_data
 
-    if ax is None:
-        plt.figure(figsize=(10,8))
-        ax = plt.gca()
+        mAP_data[class_id] = class_by_score_data
+    return mAP_data
 
-    if color is None:
-        color = COLORS[0]
-    ax.plot(recalls, precisions, label=label,  color=color)
-    # ax.scatter(recalls, precisions, label=label, s=4, color=color)
-    ax.set_xlabel(' recall ')
-    ax.set_ylabel(' precision ')
-    # ax.set_title('Precision-Recall curve for {}'.format(category))
-    ax.set_xlim([0.0,1.2])
-    ax.set_ylim([0.0,1.2])
-    return ax
-
-
+    
     
 ##------------------------------------------------------------------------------------------
 ##  Update mAP Dictionaries
@@ -358,14 +456,6 @@ def update_map_dictionaries(results, gt_dict, pr_dict, class_dict):
     zero_ix = np.where(r['gt_bboxes'][:, 3] == 0)[0]
     N = zero_ix[0] if zero_ix.shape[0] > 0 else r['gt_bboxes'].shape[0]
 
-#     for key in sorted(r):
-#         print(key.ljust(20), r[key].shape) 
-#     print(r['image_meta'])
-#     print(' Keyname :' , keyname)
-#     print('keyname:', keyname, 'zero_ix.shape: ', zero_ix.shape,'r[gt_bboxes].shape', r['gt_bboxes'].shape, ' N:', N)
-#     print(r['gt_bboxes'][:N,:].tolist())
-#     print(r['gt_class_ids'][:N].tolist())
-
     gt_dict[keyname] = {"boxes"     : r['gt_bboxes'][:N,:].tolist(),
                         "class_ids" : r['gt_class_ids'][:N].tolist()}
       
@@ -379,7 +469,9 @@ def update_map_dictionaries(results, gt_dict, pr_dict, class_dict):
                         "fcn_score_1"     : [],
                         "fcn_score_2"     : [] }
     
-    for cls, score, bbox, pr_score, fcn_score, det_ind in zip(r['class_ids'].tolist(), r['scores'].tolist(), r['molded_rois'].tolist(), 
+    for cls, score, bbox, pr_score, fcn_score, det_ind in zip(r['class_ids'].tolist(), 
+                                                              r['scores'].tolist(), 
+                                                              r['molded_rois'].tolist(), 
                                                               np.round(r['pr_scores'],4).tolist(), 
                                                               np.round(r['fcn_scores'],4).tolist(), 
                                                               r['detection_ind'].tolist()):
@@ -414,12 +506,160 @@ def update_map_dictionaries(results, gt_dict, pr_dict, class_dict):
 
     return gt_dict, pr_dict, class_dict    
     
+
+##------------------------------------------------------------------------------------------
+##  Update mAP Dictionaries
+##------------------------------------------------------------------------------------------    
+def fix_update_map_dictionaries(results, gt_dict, pr_dict, class_dict, verbose = 0):
+    
+    CLASS_COLUMN        = 4
+    ORIG_SCORE_COLUMN   = 5
+    DT_TYPE_COLUMN      = 6
+    SEQUENCE_COLUMN     = 7
+    NORM_SCORE_COLUMN   = 8    
+    BBOX_AREA_COLUMN    = 10
+    SCORE_0_COLUMN      = 11
+    CLIP_AREA_COLUMN    = 13
+    SCORE_1_COLUMN      = 14 
+    SCORE_1_NORM_COLUMN = 17
+    SCORE_2_COLUMN      = 20
+    SCORE_2_NORM_COLUMN = 23
+    r = results[0]
+    
+    assert r['class_ids'].shape[0] == r['pr_scores'].shape[0] == r['fcn_scores'].shape[0], " {} {} {} {} ".format(
+           r['class_ids'].shape, r['pr_scores'].shape,  r['fcn_scores'].shape, r['image_meta'])
+    
+    ## build keyname
+    keyname = 'newshapes_{:05d}'.format(r['image_meta'][0])
+    
+    ## 
+    zero_ix = np.where(r['gt_class_ids']== 0)[0]
+      
+    if zero_ix.shape[0] > 0 :
+        N = zero_ix[0] 
+        print('-----------------------------------------------------------')
+        print(' There are non zero items in the gt_class_id nparray  :', zero_ix.shape)
+        for i in zero_ix:
+            print(r['gt_bboxes'][i] , r['gt_class_ids'][i])
+        print('-----------------------------------------------------------')
+    else:
+        N = r['gt_class_ids'].shape[0]
+    print('zero_ix:', zero_ix.shape, 'N :', N)  
+    
+    gt_dict[keyname] = {"boxes"     : r['gt_bboxes'][:N,:].tolist(),
+                        "class_ids" : r['gt_class_ids'][:N].tolist()}
+      
+    pr_dict[keyname] =  {"scores"            : [], 
+                         "boxes"             : [], 
+                         "class_ids"         : [], 
+                         "det_ind"           : [],
+                         "mrcnn_score_orig"  : [],    
+                         "mrcnn_score_norm"  : [],
+                         "mrcnn_score_0"     : [],
+                         "mrcnn_score_1"     : [],
+                         "mrcnn_score_2"     : [],
+                         "mrcnn_score_1_norm": [],
+                         "mrcnn_score_2_norm": [],                         
+                         "fcn_score_0"       : [],
+                         "fcn_score_1"       : [],
+                         "fcn_score_2"       : [],
+                         "fcn_score_1_norm"  : [],
+                         "fcn_score_2_norm"  : [] }
+    
+ 
+        
+    for  pr_score, fcn_score in zip(np.round(r['pr_scores'],4), np.round(r['fcn_scores'],4) ):
+        assert np.all(pr_score[:NORM_SCORE_COLUMN] == fcn_score[:NORM_SCORE_COLUMN]), 'FCN_SCORE[:8] <> PR_SCORE[:8]'
+        pr_cls   = int(pr_score[CLASS_COLUMN])
+        pr_bbox  = pr_score[:4].tolist()
+        pr_scr   = pr_score[ORIG_SCORE_COLUMN]
+        pr_dict[keyname]['class_ids'].append(pr_cls)
+        pr_dict[keyname]['det_ind'].append(np.rint(pr_score[DT_TYPE_COLUMN]))
+        
+        pr_dict[keyname]['boxes'].append(pr_bbox)
+        pr_dict[keyname]['scores'].append(pr_score[ORIG_SCORE_COLUMN])
+                         
+        pr_dict[keyname]["mrcnn_score_orig"].append(pr_score[ORIG_SCORE_COLUMN])
+        pr_dict[keyname]["mrcnn_score_norm"].append(pr_score[NORM_SCORE_COLUMN])
+        
+        pr_dict[keyname]["mrcnn_score_0"   ].append(pr_score[SCORE_0_COLUMN])
+        
+        pr_dict[keyname]["mrcnn_score_1"     ].append(pr_score[SCORE_1_COLUMN])
+        pr_dict[keyname]["mrcnn_score_1_norm"].append(pr_score[SCORE_1_NORM_COLUMN])
+        pr_dict[keyname]["mrcnn_score_2"     ].append(pr_score[SCORE_2_COLUMN])
+        pr_dict[keyname]["mrcnn_score_2_norm"].append(pr_score[SCORE_2_NORM_COLUMN])
+        
+        pr_dict[keyname]["fcn_score_0"     ].append(fcn_score[SCORE_0_COLUMN])
+        pr_dict[keyname]["fcn_score_1"     ].append(fcn_score[SCORE_1_COLUMN])
+        pr_dict[keyname]["fcn_score_1_norm"].append(fcn_score[SCORE_1_NORM_COLUMN])
+        pr_dict[keyname]["fcn_score_2"     ].append(fcn_score[SCORE_2_COLUMN])
+        pr_dict[keyname]["fcn_score_2_norm"].append(fcn_score[SCORE_2_NORM_COLUMN])
+
+ 
+        
+        class_dict[pr_cls]['scores'].append(pr_score[ORIG_SCORE_COLUMN])
+        class_dict[pr_cls]['bboxes'].append(pr_bbox)
+        
+        class_dict[pr_cls]["mrcnn_score_orig"].append(pr_score[ORIG_SCORE_COLUMN])
+        class_dict[pr_cls]["mrcnn_score_norm"].append(pr_score[NORM_SCORE_COLUMN])
+        
+        class_dict[pr_cls]["mrcnn_score_0"     ].append(pr_score[SCORE_0_COLUMN])
+        class_dict[pr_cls]["mrcnn_score_1"     ].append(pr_score[SCORE_1_COLUMN])
+        class_dict[pr_cls]["mrcnn_score_2"     ].append(pr_score[SCORE_2_COLUMN])
+        class_dict[pr_cls]["mrcnn_score_1_norm"].append(pr_score[SCORE_1_NORM_COLUMN])
+        class_dict[pr_cls]["mrcnn_score_2_norm"].append(pr_score[SCORE_2_NORM_COLUMN])
+                
+        class_dict[pr_cls]["fcn_score_0"     ].append(fcn_score[SCORE_0_COLUMN])
+        class_dict[pr_cls]["fcn_score_1"     ].append(fcn_score[SCORE_1_COLUMN])
+        class_dict[pr_cls]["fcn_score_2"     ].append(fcn_score[SCORE_2_COLUMN])
+        class_dict[pr_cls]["fcn_score_1_norm"].append(fcn_score[SCORE_1_NORM_COLUMN])
+        class_dict[pr_cls]["fcn_score_2_norm"].append(fcn_score[SCORE_2_NORM_COLUMN])
+        
+        if verbose:
+            np_format = { 'float'  : lambda x: "{:<10.4f}".format(x) , 
+                          'int'    : lambda x: "{:>10d}".format(x) }
+            np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)        
+            print()
+    #         print('   Class: ', cls   , 'Score: ', np.round(score,4), 'BBox: ', bbox )
+            print('PR Class: ', pr_cls, 'Score: ', pr_scr           , 'BBox: ', pr_bbox, pr_score[:4].tolist() )
+            print()
+            print('pr_score  : ', pr_score[[4,5,6,7,8,9,10,11,12,13,14,17,18,19,20,23]] )
+            print('fcn_score : ', fcn_score[[4,5,6,7,8,9,10,11,12,13,14,17,18,19,20,23]] )
+
+    return gt_dict, pr_dict, class_dict    
+    
+
+        
+##------------------------------------------------------------------------------------------
+##  Plot PR Curve 
+##------------------------------------------------------------------------------------------    
+def plot_pr_curve(
+    precisions, recalls, category='Not Supplied', label=None, color=None, ax=None):
+    """Simple plotting helper function"""
+
+    if ax is None:
+        plt.figure(figsize=(10,8))
+        ax = plt.gca()
+
+    if color is None:
+        color = COLORS[0]
+    ax.plot(recalls, precisions, label=label,  color=color)
+    # ax.scatter(recalls, precisions, label=label, s=4, color=color)
+    ax.set_xlabel(' recall ')
+    ax.set_ylabel(' precision ')
+    # ax.set_title('Precision-Recall curve for {}'.format(category))
+    ax.set_xlim([0.0,1.2])
+    ax.set_ylim([0.0,1.2])
+    return ax
+
+    
 ##------------------------------------------------------------------------------------------
 ##  Plot Score Distribution
 ##------------------------------------------------------------------------------------------    
 def plot_score_distribution(all_class_info, score, columns = 4, kde = True):
 #     ext_class_ids = [1,2,3,4,5,6]
 #     class_ids = [1,2,3,4,5,6]
+    
     num_classes = len(all_class_info)
     rows     = math.ceil(num_classes/columns)
     fig = plt.figure(figsize=(columns*8, rows * 5))
@@ -446,6 +686,8 @@ def plot_score_distribution(all_class_info, score, columns = 4, kde = True):
         sns.distplot(x, ax = ax, kde = kde, rug = True)
         idx += 1
     fig.tight_layout(rect=[0, 0.02, 1, 0.97])
+    plt.show()
+    
     
 ##------------------------------------------------------------------------------------------
 ##  filter  mAP data structure by class and return info only pertinent to class_id 
@@ -493,68 +735,6 @@ def filter_by_class(gt_boxes, pr_boxes, class_ids):
                     
     return output_gt_boxes, output_pr_boxes 
 
-    
-##------------------------------------------------------------------------------------------
-##  Build per-class mAP data structure 
-##------------------------------------------------------------------------------------------
-
-def build_mAP_data_structure_by_class(gt_boxes_class, pr_boxes_class, class_ids, scores, iou_thresholds = None):
-    '''
-    build AP info for each class at different thresholds 
-    
-    mAP_data                        is a dictionary keyed by class_id, e.g. mAP_data[1]. 
-    
-    Each CLASS DICTIONARY           (mAP_data[n]) dict keyed by the score name, e.g. 'mrcnn_score_orig', 'mrcnn_score_alt', etc....
-    
-    Each CLASS-SCORE DICTIONARY     (mAP_data[n]['score_name']) dict keyed by iou threshold. e.g. 0.5, 0.55,...,0.95
-    
-    Each CLASS-SCORE-IOU DICTIONARY (mAP_data[n]['score_name'][0.5]) dict to Precision/Recall information for that
-                                    Score and given threshold and has the following keys: 
-                                    {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
-    
-    iou :         indicates the iOU threshold of the dictionary entry
-    model_thrs:   score thresholds
-    recalls   :   recall at threshold
-    precision :   precision at threshold
-    
-    mAP_data[1]:  {'score1': { 0.50: {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
-                               0.55: {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
-                               ...
-                               ...
-                               0.95: {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
-                             }
-                   'score2': { 0.50: {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
-                               ...
-                             }
-                  }          
-                    
-    '''
-    assert class_ids is not None
-    assert scores is not None 
-    
-    print('Build mAP information for classes: ', class_ids, ' and scores ', scores)
-    mAP_data = {}
-    if iou_thresholds is None :
-        iou_thresholds = np.arange(0.20, 0.95, 0.05)
-#     class_ids = [1,2,3,4,5,6]
-#     scores    = ['scores', 'mrcnn_score_orig', 'mrcnn_score_norm']
-    
-    for class_id in class_ids:
-        # mAP_data[class_id] = {}
-        class_by_score_data = {}
-        print(  'class_id: {:3d}  '.format(class_id))
-        for score_key in scores:
-            mAP_by_iou_thr_data = {}
-            for idx, thr in enumerate(iou_thresholds):
-                iou_thr = np.round(thr, 2)
-                # print(  'class_id: {:3d}   idx {:2d}   iou_thr: {:.2f}  score_key: {:20s}'.format(class_id, idx, iou_thr, score_key))
-                outp = get_avg_precision_at_iou(gt_boxes_class[class_id], pr_boxes_class[class_id], iou_thr=iou_thr, score_key = score_key)
-                outp['iou'] = iou_thr
-                mAP_by_iou_thr_data[iou_thr] = outp
-            class_by_score_data[score_key] = mAP_by_iou_thr_data
-
-        mAP_data[class_id] = class_by_score_data
-    return mAP_data
 
 ##------------------------------------------------------------------------------------------
 ##  Build mAP data structure (for all classes combined)
@@ -614,17 +794,17 @@ def build_mAP_data_structure_combined(gt_boxes, pr_boxes, scores, iou_thresholds
     
     
 ##------------------------------------------------------------------------------------------
-##  Plot plot_pr_curves_by_ious
+##   Plot PR Curves for multiple IoU thresholds - for one class
 ##------------------------------------------------------------------------------------------
 
-def plot_pr_curves_by_ious(class_data, class_id, class_name , score = None, ax = None ):
+def plot_pr_curves_by_ious_for_one_class(class_data, class_id, class_name , score = None, ax = None ):
     avg_precs = []
     iou_thrs = []
     score_key = score
     
     for idx, iou_key in enumerate(sorted(class_data[score_key])):
-#         pp.pprint(class_data[score_key][iou_key])
-        #print('idx/iou_key: ', idx, iou_key)
+        # pp.pprint(class_data[score_key][iou_key])
+        # print('idx/iou_key: ', idx, iou_key)
         iou_thr = class_data[score_key][iou_key]['iou']
         avg_precs.append(class_data[score_key][iou_key]['avg_prec'])
         iou_thrs.append(iou_thr)    
@@ -653,21 +833,12 @@ def plot_pr_curves_by_ious(class_data, class_id, class_name , score = None, ax =
     for xval in np.linspace(0.0, 1.0, 11):
         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=2)
 
-#     str_avg_precs = ''.join([" {:10.4f}".format(ap)  for ap in avg_precs])
-#     str_iou_thrs  = ''.join([" {:10.4f}".format(thr) for thr in iou_thrs])
-#     print('--------------------------------------------')
-#     print(' class_id : ', class_id, ' - ', class_name)
-#     print('--------------------------------------------')
-#     print('iou_thrs : ', str_iou_thrs)
-#     print('avg precs: ', str_avg_precs)
-#     print('map      : %{:.2f}'.format(mAP))
-#     print()
     return avg_precs, iou_thrs
 
 
 
 ##------------------------------------------------------------------------------------------
-##  Plot mAPs by IoU PR Curves
+##  Plot PR Curves for multiple IoU thresholds
 ##------------------------------------------------------------------------------------------
 # _, ax = plt.subplots(rows, cols, figsize=(size*cols, size*rows))
 def plot_mAP_by_IOU(all_data, score , class_ids = None , class_names = None, columns = 3):
@@ -678,6 +849,7 @@ def plot_mAP_by_IOU(all_data, score , class_ids = None , class_names = None, col
         if not isinstance(class_ids, list):
             class_ids = [class_ids]
         disp_classes = class_ids       ## [36,37,38,39,40,41] #,42]
+        
     all_precs = {}
     all_thrs  = []
     all_mAPs  = {}
@@ -694,7 +866,7 @@ def plot_mAP_by_IOU(all_data, score , class_ids = None , class_names = None, col
         subplot = (row * columns) + col +1
 
         ax= fig.add_subplot(rows, columns, subplot)
-        avg_precs, iou_thrs = plot_pr_curves_by_ious(all_data[class_id], class_id, class_names[class_id], score = disp_score , ax = ax)    
+        avg_precs, iou_thrs = plot_pr_curves_by_ious_for_one_class(all_data[class_id], class_id, class_names[class_id], score = disp_score , ax = ax)    
         all_precs[class_id] = avg_precs
         all_mAPs[class_id]  = 100*np.mean(avg_precs)
         all_thrs.append(''.join([" {:10.4f}".format(thr) for thr in iou_thrs]))
@@ -743,9 +915,9 @@ def plot_mAP_by_IOU(all_data, score , class_ids = None , class_names = None, col
 
 
 ##------------------------------------------------------------------------------------------
-##  Plot mAP by Scores
+##   Plot PR Curves for multiple calculated scores - for one class
 ##------------------------------------------------------------------------------------------
-def plot_pr_curves_by_scores(class_data, class_id, class_name, scores = None, iou = None , ax = None ):
+def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, scores, iou = None , ax = None ):
     avg_precs = {}
     iou_thrs = {}
     score_keys = []
@@ -754,10 +926,13 @@ def plot_pr_curves_by_scores(class_data, class_id, class_name, scores = None, io
     if ax is None:
         plt.figure(figsize=(10,10))
         ax = plt.gca()
-    
-    for idx, score_key in enumerate(sorted(class_data)):
-        if  scores is not None and score_key not in  scores:
-            continue        
+
+    # scores is always passed ffom plot_mAP_by_scores, so it's nver None
+    # so we loop on scores instead of sorted(class_data)
+    # for idx, score_key in enumerate(sorted(class_data)):
+    for idx, score_key in enumerate(scores):
+        # if  scores is not None and score_key not in  scores:
+            # continue        
 #         print('score_key is: {:20s} iou: {:6.3f}  avg_prec: {:10.4f}'.format(score_key,  iou_key, class_data[score_key][iou_key]['avg_prec']))
         score_keys.append(score_key)
         avg_precs[score_key] = class_data[score_key][iou_key]['avg_prec']
@@ -765,8 +940,11 @@ def plot_pr_curves_by_scores(class_data, class_id, class_name, scores = None, io
         recalls    = class_data[score_key][iou_key]['recalls']
         label      = '{:15s}'.format(score_key)
         
+        score_idx  = scores.index(score_key)
+        # print('idx: ', idx, ' Score_key: ' , score_key, 'Score Index: ' , score_idx, 'color:', SCORE_COLORS[score_key])
+        
         #### ax = plot_pr_curve(precisions, recalls, label= label, color=COLORS[idx*2], ax=ax)
-        ax.plot(recalls, precisions, label=label,  color=COLORS[idx*2])
+        ax.plot(recalls, precisions, label=label,  color=SCORE_COLORS[score_key])
 
 
     ax.set_title(' Class: {:2d} - {} @IoU: {:4.2f} '.format(class_id, class_name, iou), fontsize=14)
@@ -785,7 +963,7 @@ def plot_pr_curves_by_scores(class_data, class_id, class_name, scores = None, io
 
     
 ##------------------------------------------------------------------------------------------
-##  Plot mAPs by Scores PR Curves
+##   Plot PR Curves for multiple calculated scores 
 ##------------------------------------------------------------------------------------------
 def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  class_names = None, columns = 2):
     
@@ -815,7 +993,7 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
         subplot = (row * columns) + col +1
         ax= fig.add_subplot(rows, columns, subplot)
         
-        class_precs = plot_pr_curves_by_scores(all_data[class_id], class_id, class_names[class_id], scores = disp_scores, iou = iou, ax = ax)    
+        class_precs = plot_pr_curves_by_scores_for_one_class(all_data[class_id], class_id, class_names[class_id], scores = disp_scores, iou = iou, ax = ax)    
         all_precs[class_id] = class_precs
         # ax.autoscale_view()
         
@@ -973,7 +1151,8 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
         disp_scores  = [ 'mrcnn_score_orig', 'mrcnn_score_0', 'mrcnn_score_1', 'mrcnn_score_2', 'fcn_score_0', 'fcn_score_1', 'fcn_score_2']
     else:
         disp_scores   = scores
-
+    
+    print('disp_scores: ', disp_scores)
     iou_key    = iou        
     all_mAPs   = {}
     all_IoUs   = {}
@@ -1023,8 +1202,11 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
         # print('label: ', label)
         # ax.plot(all_IoUs[score_key], all_mAPs[score_key], 's:', label=label,  color=COLORS[idx*2])
         
-        label = 'cls {:15s}'.format(score_key)        
-        ax.bar(r, all_mAPs[score_key], color=COLORS[idx*2], width=barWidth, edgecolor='white', label=label)
+        score_idx  = scores.index(score_key)
+        # print('idx: ', idx, ' Score_key: ' , score_key, 'Score Index: ' , score_idx, 'color:', SCORE_COLORS[score_key])
+
+        label = '{:15s}'.format(score_key)        
+        ax.bar(r, all_mAPs[score_key], color=SCORE_COLORS[score_key], width=barWidth, edgecolor='white', label=label)
 
     ax.set_xlabel('Class', fontsize= 16)
     ax.set_ylabel('AP', fontsize= 16)
@@ -1032,7 +1214,7 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
     ax.set_xlim([0.0 - margin, width])
     ax.set_ylim([0.0,1.0])
     ax.set_title('mAP for various scores @ IoU {}'.format(iou_key), fontsize=16)
-    leg = plt.legend(loc='upper left', frameon=True, fontsize = 10, markerscale = 0.5, framealpha = 1.0)    
+    leg = plt.legend(loc='lower left', frameon=True, fontsize = 10, markerscale = 0.5, framealpha = 1.0)    
     leg.set_title('Score',prop={'size':10})
     
     for yval in np.linspace(0.0, 1.0, 11):

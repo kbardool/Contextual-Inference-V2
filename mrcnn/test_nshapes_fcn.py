@@ -23,7 +23,7 @@ from mrcnn.newshapes     import prep_newshape_dataset
 from mrcnn.utils         import command_line_parser, display_input_parms, Paths
 from mrcnn.prep_notebook import build_newshapes_config, build_fcn_inference_pipeline_newshapes, run_fcn_detection
 # from mrcnn.utils         import trim_zeros, compute_overlaps
-from mrcnn.calculate_map import update_map_dictionaries
+from mrcnn.calculate_map import fix_update_map_dictionaries
 
 pp = pprint.PrettyPrinter(indent=2, width=100)
 np.set_printoptions(linewidth=100,precision=4,threshold=1000, suppress = True)
@@ -56,16 +56,16 @@ verbose = 0
 
 syst = platform.system()
 if syst == 'Windows':
-    save_path  =  "E:/git_projs/MRCNN3/train_newshapes/BCE3_test_results"
-    test_dataset = "E:/git_projs/MRCNN3/train_newshapes/newshapes_test_dataset_1000_B.pkl"
-    # DIR_WEIGHTS =  'F:/models_newshapes/train_fcn8_l2_newshapes/fcn20181224T0000'     
-    DIR_WEIGHTS =  'F:/models_newshapes/train_fcn8L2_BCE2/fcn20190131T0000'     
+    save_path     = 'E:/git_projs/MRCNN3/train_newshapes/BCE3_test_results'
+    test_dataset  = 'E:/git_projs/MRCNN3/train_newshapes/newshapes_test_dataset_1000_B.pkl'
+    # DIR_WEIGHTS = 'F:/models_newshapes/train_fcn8_l2_newshapes/fcn20181224T0000'     
+    DIR_WEIGHTS   = 'F:/models_newshapes/train_fcn8L2_BCE2/fcn20190131T0000'     
 elif syst == 'Linux':
-    save_path = "/home/kbardool/mrcnn3/train_newshapes/BCE3_test_results"
-    test_dataset = "/home/kbardool/mrcnn3/train_newshapes/newshapes_test_dataset_1000_B.pkl"
-    # DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8L2_BCE/fcn20181224T0000' 
-    DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8L2_BCE/fcn20190208T0000' 
-    # DIR_WEIGHTS =  '/home/kbardool/models_newshapes/train_fcn8L2_BCE2/fcn20190131T0000'     
+    save_path     = '/home/kbardool/mrcnn3/train_newshapes/BCE3_test_results'
+    test_dataset  = '/home/kbardool/mrcnn3/train_newshapes/newshapes_test_dataset_1000_B.pkl'
+    # DIR_WEIGHTS = '/home/kbardool/models_newshapes/train_fcn8L2_BCE2/fcn20190131T0000'     
+    # DIR_WEIGHTS = '/home/kbardool/models_newshapes/train_fcn8L2_BCE/fcn20181224T0000' 
+    DIR_WEIGHTS   = '/home/kbardool/models_newshapes/train_fcn8L2_BCE/fcn20190208T0000' 
 else :
     raise Error('unrecognized system ')
 
@@ -89,8 +89,6 @@ files  = ['fcn_0001.h5', 'fcn_0003.h5', 'fcn_0005.h5', 'fcn_0009.h5',
           'fcn_0138.h5', 'fcn_0144.h5', 'fcn_0161.h5', 'fcn_0171.h5', 'fcn_0181.h5']
 
 
-
-
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
 ##----------------------------------------------------------------------------------------------            
@@ -104,6 +102,9 @@ if args.sysout == 'FILE':
     print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
     display_input_parms(args)
 
+##----------------------------------------------------------------------------------------------
+## Build MRCNN and FCN models
+##----------------------------------------------------------------------------------------------
 mrcnn_model, fcn_model = build_fcn_inference_pipeline_newshapes(args = args,verbose = 1)
 
 ##----------------------------------------------------------------------------------------------
@@ -144,12 +145,14 @@ for i in sorted(All_APResults):
 ##----------------------------------------------------------------------------------------------
 ##  Initialize data structures 
 ##----------------------------------------------------------------------------------------------
+
 orig_score = 5
 norm_score = 8
 alt_scr_0  = 11
 alt_scr_1  = 14   # in MRCNN alt_scr_1 ans alt_scr_2 are the same
 alt_scr_2  = 20
-IMGS = 500
+IMGS       = 500
+
 # shuffled_image_ids = np.copy(dataset_test.image_ids)
 # np.random.shuffle(shuffled_image_ids)
 # image_ids = np.random.choice(dataset_test.image_ids, 300)
@@ -173,19 +176,23 @@ for FILE_IDX in range(len(files)):
     pr_dict = {}
 
     for a,b in zip(dataset_test.class_ids, dataset_test.class_names):
-        class_dict.append({'id'   : int(a),
-                           'name' : b,
-                           'scores': [],
-                           'bboxes': [],
-                           'mrcnn_score_orig' : [],
-                           'mrcnn_score_norm' : [], 
-                           'mrcnn_score_0' : [],
-                           'mrcnn_score_1' : [],
-                           'mrcnn_score_2' : [],
-                           'fcn_score_0' : [],
-                           'fcn_score_1' : [],
-                           'fcn_score_2' : [],                      
-                          })
+        class_dict.append({'id'                  : int(a),
+                           'name'                : b,
+                           'scores'              : [],
+                           'bboxes'              : [],
+                           'mrcnn_score_orig'    : [],
+                           'mrcnn_score_norm'    : [], 
+                           'mrcnn_score_0'       : [],
+                           'mrcnn_score_1'       : [],
+                           'mrcnn_score_2'       : [],
+                           'mrcnn_score_1_norm'  : [],
+                           'mrcnn_score_2_norm'  : [],
+                           'fcn_score_0'         : [],
+                           'fcn_score_1'         : [],
+                           'fcn_score_2'         : [],                      
+                           'fcn_score_1_norm'    : [],
+                           'fcn_score_2_norm'    : [],
+                          }) 
 
     # Compute VOC-Style mAP @ IoU=0.5
     # Running on 10 images. Increase for better accuracy. 
@@ -204,7 +211,7 @@ for FILE_IDX in range(len(files)):
         # Run object detection
         fcn_results = run_fcn_detection(fcn_model, mrcnn_model, dataset_test, image_id, verbose = 0)  
     
-        gt_dict, pr_dict, class_dict = update_map_dictionaries(fcn_results, gt_dict,pr_dict, class_dict)
+        gt_dict, pr_dict, class_dict = fix_update_map_dictionaries(fcn_results, gt_dict,pr_dict, class_dict)
 
         r = fcn_results[0] 
 

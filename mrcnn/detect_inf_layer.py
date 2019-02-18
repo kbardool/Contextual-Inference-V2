@@ -128,7 +128,8 @@ def refine_detections(rois, probs, deltas, window, config):
         # pp.pprint(pre_nms_rois[ixs])
         # print('pre_nms_scores.shape :', pre_nms_scores[ixs].shape)
         # pp.pprint(pre_nms_scores[ixs])    
-        # Apply NMS
+        
+        # Apply NMS - Suppress anything with IoU higher than config.DETECTION_NMS_THRESHOLD
         class_keep = non_max_suppression(pre_nms_rois[ixs], 
                                          pre_nms_scores[ixs],
                                          config.DETECTION_NMS_THRESHOLD)

@@ -166,7 +166,7 @@ def fcn32_l2_graph(feature_map , config, mode):
 
     # FC_SIZE = 2048 
     FC_SIZE = 4096
-    x = KL.Conv2D(FC_SIZE, (7, 7), activation='relu', padding='same', name="fc1"',
+    x = KL.Conv2D(FC_SIZE, (7, 7), activation='relu', padding='same', name="fc1",
                         kernel_initializer='glorot_uniform', bias_initializer='zeros', 
                         kernel_regularizer=l2(weight_decay))(x)
     print()

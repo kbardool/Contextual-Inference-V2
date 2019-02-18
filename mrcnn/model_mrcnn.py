@@ -473,6 +473,8 @@ class MaskRCNN(ModelBase):
             pr_scores            (N, 23)
             pr_scores_by_class   (81, 200, 23)
         '''
+        if verbose:
+            print('===>  mrcnn_model.detect()')
 
         assert self.mode   == "inference", "Create model in inference mode."
         assert len(images) == self.config.BATCH_SIZE, "len(images): {:3d} must be equal to BATCH_SIZE: {:3d}".format(len(images),self.config.BATCH_SIZE)
@@ -489,19 +491,20 @@ class MaskRCNN(ModelBase):
         if verbose:
             log("molded_images", molded_images)
             log("image_metas"  , image_metas)
-            print('===>  call mrcnn_model.keras_model.predict()')
+            print('===>  call mrcnn_model.predict()')
             
         ## Run object detection pipeline
         detections, rpn_roi_proposals, mrcnn_class, mrcnn_bbox, pr_hm, pr_hm_scores =  \
                   self.keras_model.predict([molded_images, image_metas], verbose=0)
         if verbose:
-            print('===> mrcnn.detect() : Return from  predict()')
-            print('    Length of detections   : ', len(detections))
-            print('    Length of rpn_roi_proposals   : ', len(rpn_roi_proposals   ))
-            print('    Length of mrcnn_class  : ', len(mrcnn_class))
-            print('    Length of mrcnn_bbox   : ', len(mrcnn_bbox ))
-            print('    Length of pr_hm        : ', len(pr_hm))
-            print('    Length of pr_hm_scores : ', len(pr_hm_scores))
+            print('===> return from  mrcnn_model.predict()')
+            print('     detections        : ', detections.shape)
+            # print(detections)
+            print('     rpn_roi_proposals : ', rpn_roi_proposals.shape)
+            print('     mrcnn_class       : ', mrcnn_class.shape)
+            print('     mrcnn_bbox        : ', mrcnn_bbox.shape)
+            print('     pr_hm             : ', pr_hm.shape)
+            print('     pr_hm_scores      : ', pr_hm_scores.shape)
 
         ## Process detections
         results = []
@@ -510,11 +513,11 @@ class MaskRCNN(ModelBase):
 
             final_rois, final_class_ids, final_scores, final_det_ind,  molded_rois, \
             pr_mod_hm_scores, pr_scores_by_image, pr_scores_by_class = self.unmold_detections(detections[i], 
-                                                                            pr_hm_scores[i],
-                                                                            image.shape, 
-                                                                            windows[i],
-                                                                            sequence_column,
-                                                                            verbose = verbose)    
+                                                                                              pr_hm_scores[i],
+                                                                                              image.shape, 
+                                                                                              windows[i],
+                                                                                              sequence_column,
+                                                                                              verbose = verbose)    
                                                            
             ## 28-01-2019 Moved to unmold_detections----------------------------------
             # reshape pr_scores from pre_class to per_image
@@ -623,7 +626,7 @@ class MaskRCNN(ModelBase):
         results = []
         for i, image in enumerate(images):
 
-            final_rois, final_class_ids, final_scores, final_det_ind,  molded_rois, \
+            final_rois, final_class_ids, final_scores, final_det_ind,  final_molded_rois, \
             pr_mod_hm_scores, pr_scores_by_image, pr_scores_by_class = self.unmold_detections(detections[i], 
                                                                             pr_hm_scores[i],
                                                                             image.shape, 
@@ -632,11 +635,11 @@ class MaskRCNN(ModelBase):
                                                                             verbose = verbose)    
             
             if verbose:
-                print(' molded_rois:', molded_rois.shape)
-                print(' final_rois:', final_rois.shape)
-                print(' pr_mod_hm_scores   shape:', pr_mod_hm_scores.shape)
-                print(' pr_scores_by_class shape:', pr_scores_by_class.shape)
-                print(' pr_scores_by_image shape:', pr_scores_by_image.shape)
+                print(' rois               :', final_rois.shape)
+                print(' molded_rois        :', final_molded_rois.shape)
+                print(' pr_mod_hm_scores   :', pr_mod_hm_scores.shape)
+                print(' pr_scores_by_class :', pr_scores_by_class.shape)
+                print(' pr_scores_by_image :', pr_scores_by_image.shape)
             
             results.append({
                 "image"                 : images[i],
@@ -646,7 +649,7 @@ class MaskRCNN(ModelBase):
                 "gt_bboxes"             : gt_bboxes[i],
                 
                 "rois"                  : final_rois,
-                "molded_rois"           : molded_rois,
+                "molded_rois"           : final_molded_rois,
                 "class_ids"             : final_class_ids,
                 "scores"                : final_scores,
                 "detection_ind"         : final_det_ind,
@@ -762,11 +765,13 @@ class MaskRCNN(ModelBase):
         N = zero_ix[0] if zero_ix.shape[0] > 0 else detections.shape[0]
         
         if verbose:
-            print(' np.where(detections[:,4] == 0): \n', np.where(detections[:, 4] == 0)[0])
-            print(' zero_ix: Number of boxes that are zero (zero_ix.shape): ', zero_ix.shape)
-            print(' N: Number of non-zero boxes (zero_ix[0])', N)
+            print()
+            print('   ===> unmold_detections()')
+            print('        zero_ix - Number of detections with class_id = 0  (zero_ix.shape)      : ', zero_ix.shape)
+            print('        zero_ix[:10]                                                           : ', zero_ix[:10]) 
+            print('        N       - Number of non-zero boxes (zero_ix[0]) if zero_ix.shape[0]> 0 : ', N)
             for i in range(N):
-                print(detections[i,:4], (detections[i, 2] - detections[i, 0]) * (detections[i, 3] - detections[i, 1]))
+                print(' '*16, detections[i,:4], (detections[i, 2] - detections[i, 0]) * (detections[i, 3] - detections[i, 1]))
         
 
         ##-----------------------------------------------------------------------------------------
@@ -783,18 +788,25 @@ class MaskRCNN(ModelBase):
         ## pr_hm_scores is by image/class  
 
         
-        #-----------------------------------------------------------------------------------------
-        # Compute scale and shift to translate coordinates to image domain.
-        # Translate bounding boxes to image domain
-        #-----------------------------------------------------------------------------------------
+        ##-----------------------------------------------------------------------------------------
+        ## Compute scale and shift to translate coordinates to image domain.
+        ## Translate bounding boxes to image domain
+        ##-----------------------------------------------------------------------------------------
         h_scale  = image_shape[0] / (window[2] - window[0])
         w_scale  = image_shape[1] / (window[3] - window[1])
         scale    = min(h_scale, w_scale)
         shift    = window[:2]  # y, x
         scales   = np.array([scale, scale, scale, scale])
         shifts   = np.array([shift[0], shift[1], shift[0], shift[1]])
+        
         boxes    = np.multiply(boxes - shifts, scales).astype(np.int32)
         
+        if verbose:
+            print('        Scale: ', scale,' Shift: ',  shift)
+            print('        Non Zero Detections:')
+            for i in range(N):
+                print(' '*12,'Class:', class_ids[i], ' Score: ', round(scores[i],4), 'bbox: ',  boxes[i,:4], \
+                      '  Area: ', (boxes[i, 2] - boxes[i, 0]) * (boxes[i, 3] - boxes[i, 1]))
         
         ##-----------------------------------------------------------------------------------------
         ## Filter out detections with zero area. Often only happens in early
@@ -803,13 +815,6 @@ class MaskRCNN(ModelBase):
         exclude_ix = np.where(
             (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]) <= 0)[0]
             
-        if verbose:
-            print(scale, shift)
-            print(' Exclude_ix (detections with zero area:  \n', exclude_ix)
-            for i in range(N):
-                print(boxes[i,:4], (boxes[i, 2] - boxes[i, 0]) * (boxes[i, 3] - boxes[i, 1]))
-            # print(' zero_ix: Number of boxes that are zero (zero_ix.shape): ', zero_ix.shape)
-            # print(' N: Number of non-zero boxes (zero_ix[0])', N)
         
         if exclude_ix.shape[0] > 0:
             boxes         = np.delete(boxes, exclude_ix, axis=0)
@@ -819,7 +824,12 @@ class MaskRCNN(ModelBase):
             detection_ind = np.delete(detection_ind, exclude_ix, axis=0)
             N             = class_ids.shape[0]
 
-            
+        if verbose:
+            print('        Exclude_ix (# detections with zero area) :', exclude_ix.shape)
+            print('        Detections After deletion of zero area boxes:')
+            for i in range(N):
+                print(' '*12,'Class:', class_ids[i],  boxes[i,:4],'  Area: ', (boxes[i, 2] - boxes[i, 0]) * (boxes[i, 3] - boxes[i, 1]))
+                
         ##-----------------------------------------------------------------------------------------
         ## Filter out detections with zero area from pr_scores
         ## - Convert pr_hm_scores bboxes from NN coordinates to image coordinates
@@ -827,9 +837,9 @@ class MaskRCNN(ModelBase):
         pr_boxes = np.multiply(pr_hm_scores[:,:,:4] - shifts, scales).astype(np.int32)
         pr_scores_by_class= np.dstack((pr_boxes, pr_hm_scores[:,:,4:]))
         
-        pr_boxes_area = (pr_boxes[:,:, 2] - pr_boxes[:,:, 0]) * (pr_boxes[:,:, 3] - pr_boxes[:,:, 1])
-        zero_ix       = np.where(pr_boxes_area <= 0)
-        non_zero_ix   = np.where(pr_boxes_area > 0)
+        pr_boxes_area      = (pr_boxes[:,:, 2] - pr_boxes[:,:, 0]) * (pr_boxes[:,:, 3] - pr_boxes[:,:, 1])
+        zero_ix            = np.where(pr_boxes_area <= 0)
+        non_zero_ix        = np.where(pr_boxes_area > 0)
         pr_scores_by_image = pr_scores_by_class[non_zero_ix[0], non_zero_ix[1], :]
         
         pr_scores_by_class[zero_ix[0], zero_ix[1], :seq_col] = 0 
@@ -837,9 +847,14 @@ class MaskRCNN(ModelBase):
         
         pr_hm_scores[zero_ix[0], zero_ix[1], :seq_col] = 0 
         pr_hm_scores[zero_ix[0], zero_ix[1], seq_col+1:] = 0 
-        
+
+        if verbose:
+            print('        pr_hm_scores      :', pr_hm_scores.shape)
+            print('        pr_scores_by_image:', pr_scores_by_image.shape)
+            print('        pr_scores_by_class:', pr_scores_by_class.shape)
+            print('   ===> return from unmold_detections()')        
         return boxes, class_ids, scores, detection_ind, molded_boxes, \
-               pr_hm_scores, pr_scores_by_image, pr_scores_by_class   
+               pr_hm_scores, pr_scores_by_image,  pr_scores_by_class   
         
         
     ##-------------------------------------------------------------------------------------

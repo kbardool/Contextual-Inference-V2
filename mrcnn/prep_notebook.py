@@ -1273,38 +1273,39 @@ def run_fcn_detection(fcn_model, mrcnn_model, dataset, image_ids = None, verbose
     
     if verbose:
         for image_id in image_ids :
-            print("Image Id  : {}     External Id: {}.{}     Image Reference: {}".format( image_id, 
-                dataset.image_info[image_id]["source"], dataset.image_info[image_id]["id"], dataset.image_reference(image_id)))
-
+            print("Image Id  : {}     External Id: {}.{}     Image Reference: ".format( image_id, 
+                   dataset.image_info[image_id]["source"], dataset.image_info[image_id]["id"]))
+            pp.pprint( dataset.image_reference(image_id))
+            
+            
     # Run object detection
-
     fcn_results = fcn_model.detect_from_images(mrcnn_model, images, verbose= verbose)
 
     # add GT information 
-    
-    if verbose:
-        print('===> Return from fcn_model.detect_from_images() : ', type(fcn_results), len(fcn_results), len(image_ids))
-
     for image_id, result in zip(image_ids, fcn_results):
         _, image_meta, gt_class_id, gt_bbox =\
             load_image_gt(dataset, mrcnn_model.config, image_id, use_mini_mask=False)
-        if verbose:
-            print('Image meta: ', image_meta[:10])    
         
         result['orig_image_meta'] = image_meta
         result['image_meta']      = image_meta
         result['gt_bboxes']       = gt_bbox
         result['gt_class_ids']    = gt_class_id
+        if verbose:
+            print('Image meta     : ', result['image_meta'][:10])    
+            print('Orig Image meta: ', result['orig_image_meta'][:10])    
 
     # Display results
     if verbose:
+        print('===> Return from fcn_model.detect_from_images() - len(fcn_results): ', len(fcn_results),  ' len(image_ids): ', len(image_ids))
         np.set_printoptions(linewidth=180,precision=4,threshold=10000, suppress = True)
-        print(' Length of results from MRCNN detect: ', len(fcn_results))
+        print()
+        print('Length of results from FCN detection: ', len(fcn_results))
         r = fcn_results[0]
+        print()
         print('fcn_results keys: ')
         print('--------------------')
         for i in sorted(r.keys()):
-            print('   {:.<25s}  {}'.format(i , r[i].shape))        
+            print('{:.<25s}  {}'.format(i , r[i].shape))        
         print()
  
     return fcn_results

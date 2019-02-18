@@ -14,8 +14,8 @@ import colorsys
 import numpy as np
 import IPython.display
 
-import tensorflow as tf
-import keras.backend as KB
+# import tensorflow as tf
+# import keras.backend as KB
 import matplotlib.pyplot as plt
 from   mpl_toolkits.mplot3d import Axes3D
 import matplotlib.patches as patches
@@ -483,6 +483,21 @@ def display_instances_from_prscores(image, pr_scores, class_names,
     return
     
     
+    
+##----------------------------------------------------------------------
+## display_gt_bboxes
+##----------------------------------------------------------------------    
+    
+def display_gt_bboxes(dataset, config, image_id=0, only = None):
+
+    p_original_image, p_image_meta, p_gt_class_ids, p_gt_bboxes =  \
+                load_image_gt(dataset, config, image_id, augment=False, use_mini_mask=True)
+    ttl = "Ground Truth Boxes for image "+str(image_id)
+    display_instances(p_original_image, p_gt_bboxes, p_gt_class_ids, dataset.class_names,
+                      only_classes = only, title=ttl, size = 12)
+                      
+    return
+
     
 ##----------------------------------------------------------------------
 ## display_instances
@@ -1156,26 +1171,6 @@ def display_weight_histograms(model, width= 15, height=4, bins =50, filename = '
     # plt.subplots_adjust(top=0.97, bottom=0.02, left=0.02, right=0.98, hspace=0.0, wspace=0.20)      
     plt.subplots_adjust(top=0.97) 
     return fig
-
-    
-##----------------------------------------------------------------------
-## display_gt_bboxes
-##----------------------------------------------------------------------    
-    
-def display_gt_bboxes(model_info, input_image_meta, image_idx=0):
-
-    dataset_train = model_info[2]
-    config = model_info[1]
-    image_idx = 0
-    image_id = input_image_meta[image_idx,0]
-    print('Image id: ',image_id)
-    p_original_image, p_image_meta, p_gt_class_id, p_gt_bbox, p_gt_mask =  \
-                load_image_gt(dataset_train, config, image_id, augment=False, use_mini_mask=True)
-    # print(p_gt_class_id.shape, p_gt_bbox.shape, p_gt_mask.shape)
-    print(p_gt_bbox[0:3,:])
-    print(p_gt_class_id)
-    draw_boxes(p_original_image, p_gt_bbox[0:3])    
-    return
 
 
 ##----------------------------------------------------------------------

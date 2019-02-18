@@ -1,1 +1,0 @@
-python coco.py evaluate --dataset E:\MLDatasets\coco2014 --model mask_rcnn_coco.h5 --limit 10

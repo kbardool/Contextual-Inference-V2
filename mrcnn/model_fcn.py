@@ -378,6 +378,8 @@ class FCN(ModelBase):
         
         
         '''
+        if verbose:
+            print('===>   fcn.detect_from_images() ')
         
         # print('call fcn.detect_from_images()')
         results = mrcnn_model.detect(images, verbose = verbose)
@@ -391,12 +393,13 @@ class FCN(ModelBase):
         
         ## prep results from mrcnn detections to pass to fcn detection
         # for result in results:
-        fcn_input_hm = np.stack([r['pr_hm'] for r in results] )
-        fcn_input_hm_scores = np.stack([r['pr_hm_scores'] for r in results] )
+        fcn_input_hm          = np.stack([r['pr_hm'] for r in results] )
+        fcn_input_hm_scores   = np.stack([r['pr_hm_scores'] for r in results] )
         fcn_input_image_metas = np.stack([r['image_meta'] for r in results] )
 
         # print('===> fcn.detect_from_images() :call fcn.detect()')        
         # fcn_hm, fcn_sm, fcn_hm_scores = self.keras_model.predict([fcn_input_hm, fnc_input_hm_scores], verbose = 1)
+        
         fcn_results = self.detect([fcn_input_hm, fcn_input_hm_scores, fcn_input_image_metas], verbose = verbose)
 
         if verbose:
@@ -425,7 +428,7 @@ class FCN(ModelBase):
         
         
     ##-------------------------------------------------------------------------------------
-    ##  detect_from_images
+    ##  evaluate
     ##-------------------------------------------------------------------------------------                
     def evaluate(self, mrcnn_model, evaluate_batch, verbose=0):
         '''
@@ -936,9 +939,7 @@ class FCN(ModelBase):
             'epochs': epochs,
             'steps': steps_per_epoch,
             'verbose': 1 ,
-            'do_validation': True,
-            'metrics': callback_metrics
-        })
+            'do_validation': True})
         
         
         
@@ -1130,12 +1131,12 @@ class FCN(ModelBase):
         ## Setup for stateful_metric_indices Validation process 
         ##--------------------------------------------------------------------------------
         stateful_metric_indices = []
-        if hasattr(self, 'metrics'):
-            for m in self.stateful_metric_functions:
+        if hasattr(self.keras_model, 'metrics'):
+            for m in self.keras_model.stateful_metric_functions:
                 m.reset_states()
             stateful_metric_indices = [
-                i for i, name in enumerate(self.metrics_names)
-                if str(name) in self.stateful_metric_names]
+                i for i, name in enumerate(self.keras_model.metrics_names)
+                if str(name) in self.keras_model.stateful_metric_names]
         else:
             stateful_metric_indices = []
             
@@ -1453,7 +1454,7 @@ class FCN(ModelBase):
                 val_averages = []
                 for i in range(len(outs2)):
                     if i not in stateful_metric_indices:
-                        tt = [out[i] for out in val_outs_per_batch]
+                        # tt = [out[i] for out in val_outs_per_batch]
                         # print(' tt type: ',type(tt), tt)
                         # print('val_batch_sizes.shape' , type(val_batch_sizes), len(val_batch_sizes))
                         val_averages.append(

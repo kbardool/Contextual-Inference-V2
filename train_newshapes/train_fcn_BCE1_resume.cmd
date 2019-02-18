@@ -4,10 +4,10 @@ source activate TFG
 python ../mrcnn/train_nshapes_fcn.py \
     --mrcnn_logs_dir    train_mrcnn_newshapes   \
     --fcn_logs_dir      train_fcn8L2_BCE        \
-    --epochs               100       \
+    --epochs               400       \
     --steps_in_epoch       128       \
     --val_steps             16       \
-    --last_epoch             0       \
+    --last_epoch           100       \
     --batch_size             8       \
     --lr                0.0001       \
     --fcn_arch          fcn8l2       \
@@ -15,7 +15,7 @@ python ../mrcnn/train_nshapes_fcn.py \
     --fcn_bce_loss_method    1       \
     --fcn_layers           all       \
     --mrcnn_model         last       \
-    --fcn_model           init       \
+    --fcn_model           last       \
     --opt                 adam       \
     --scale_factor           1       \
     --sysout               all       \
@@ -27,11 +27,11 @@ source deactivate
 ##--------------------------------------------------------------------------------------------------------------
 ## Train FCN8L2 - All layers - w/ fcn_BCE_loss: Training on coco subset with loadAnns = 'active_only'
 ## With new Contextual Layer that assigns negative examples to individual classes (instead of moving then to class 0-BG)
-##                EPOCH                              STOP
+##                EPOCH                              STOP                                    LAST  
 ## DATE        START  #EPCHS    LR      END REASON                  EPOCH        ERROR      WGHT FILE    
 ##--------------------------------------------------------------------------------------------------------------
-## 02-08-2019     0    1000   0.0001  
-## 
+## 02-08-2019     0    100   0.0001    job complete                100       0.0145164      0080
+## 02-09-2019   100    400   0.0001    machine shutdown            225       0.0134495      0181
 ## 
 ## 
 ##--------------------------------------------------------------------------------------------------------------
