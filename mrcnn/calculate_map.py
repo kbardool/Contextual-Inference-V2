@@ -544,8 +544,8 @@ def fix_update_map_dictionaries(results, gt_dict, pr_dict, class_dict, verbose =
         print('-----------------------------------------------------------')
     else:
         N = r['gt_class_ids'].shape[0]
-    print('zero_ix:', zero_ix.shape, 'N :', N)  
-    
+#    print('zero_ix:', zero_ix.shape, 'N :', N)  
+        
     gt_dict[keyname] = {"boxes"     : r['gt_bboxes'][:N,:].tolist(),
                         "class_ids" : r['gt_class_ids'][:N].tolist()}
       

@@ -146,7 +146,7 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
         title += " H x W={}x{}".format(image.shape[0], image.shape[1])
         plt.subplot(rows, cols, i)
         plt.title(title, fontsize=9)
-        plt.axis('off')
+#        plt.axis('off')
         plt.imshow(image.astype(np.uint8), cmap=cmap,
                    norm=norm, interpolation=interpolation)
         i += 1

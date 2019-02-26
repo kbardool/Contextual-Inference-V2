@@ -166,23 +166,23 @@ for FILE_IDX in range(len(files)):
     pr_dict = {}
 
     for a,b in zip(dataset_test.class_ids, dataset_test.class_names):
-        class_dict.append({'id'   : int(a),
-                           'name' : b,
-                           'scores': [],
-                           'bboxes': [],
+        class_dict.append({'id'                  : int(a),
+                           'name'                : b,
+                           'scores'              : [],
+                           'bboxes'              : [],
                            'mrcnn_score_orig'    : [],
                            'mrcnn_score_norm'    : [], 
                            'mrcnn_score_0'       : [],
                            'mrcnn_score_1'       : [],
                            'mrcnn_score_2'       : [],
                            'mrcnn_score_1_norm'  : [],
-                           'mrcnn_score_2_norm'  : [],                            
+                           'mrcnn_score_2_norm'  : [],
                            'fcn_score_0'         : [],
                            'fcn_score_1'         : [],
-                           'fcn_score_2'         : [],  
+                           'fcn_score_2'         : [],                      
                            'fcn_score_1_norm'    : [],
-                           'fcn_score_2_norm'    : []                                                
-                          })
+                           'fcn_score_2_norm'    : []
+                          }) 
 
     # Compute VOC-Style mAP @ IoU=0.5
     # Running on 10 images. Increase for better accuracy. 

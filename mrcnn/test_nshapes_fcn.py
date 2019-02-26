@@ -191,7 +191,7 @@ for FILE_IDX in range(len(files)):
                            'fcn_score_1'         : [],
                            'fcn_score_2'         : [],                      
                            'fcn_score_1_norm'    : [],
-                           'fcn_score_2_norm'    : [],
+                           'fcn_score_2_norm'    : []
                           }) 
 
     # Compute VOC-Style mAP @ IoU=0.5
