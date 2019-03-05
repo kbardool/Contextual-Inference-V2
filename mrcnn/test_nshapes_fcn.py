@@ -13,16 +13,12 @@ import keras
 import keras.backend as KB
 sys.path.append('../')
 
-import mrcnn.model_mrcnn as mrcnn_modellib
-import mrcnn.model_fcn   as fcn_modellib
-import mrcnn.visualize   as visualize
-import mrcnn.utils       as utils 
+import mrcnn.visualize   as     visualize
+import mrcnn.utils       as     utils 
 from datetime            import datetime   
-from mrcnn.datagen       import data_generator, load_image_gt
 from mrcnn.newshapes     import prep_newshape_dataset
 from mrcnn.utils         import command_line_parser, display_input_parms, Paths
 from mrcnn.prep_notebook import build_newshapes_config, build_fcn_inference_pipeline_newshapes, run_fcn_detection
-# from mrcnn.utils         import trim_zeros, compute_overlaps
 from mrcnn.calculate_map import fix_update_map_dictionaries
 
 pp = pprint.PrettyPrinter(indent=2, width=100)

@@ -12,7 +12,7 @@ from mrcnn.visualize import draw_boxes
 from mrcnn.config    import Config
 from mrcnn.dataset   import Dataset
 from mrcnn.utils     import non_max_suppression, mask_string
-from mrcnn.Image     import Image, draw_object
+from mrcnn.Image     import Image, draw_object, order_shapes_by_bottom_edge, display_shapes
 from importlib       import reload
 # import mrcnn.utils as utils
 import pprint
@@ -106,29 +106,96 @@ class NewImagesDataset(Dataset):
         self.config.HEIGHT = config.IMAGE_SHAPE[0]
         self.config.WIDTH  = config.IMAGE_SHAPE[1]
 #        self.config.min_shapes_per_image = config.MIN_SHAPES_PER_IMAGE
-#        self.config.max_shapes_per_image = config.MAX_SHAPES_PER_IMAGE
-                                                          
-#        self.config.skycolors = [ (colors.to_rgba_array(i)*255)[0,:3] for i in [colors.CSS4_COLORS['lightblue'],
-#                                                           colors.CSS4_COLORS['deepskyblue'],  
-#                                                           colors.CSS4_COLORS['skyblue'],  
-#                                                           colors.CSS4_COLORS['lightskyblue'],  
-#                                                           colors.CSS4_COLORS['steelblue'],  
-#                                                           colors.CSS4_COLORS['aliceblue']]]
+#        self.config.max_shapes_per_image = config.MAX_SHAPES_PER_IMAGE                                                  
         
-        self.add_class("shapes", 1, "person")
-        self.add_class("shapes", 2, "car")
-        self.add_class("shapes", 3, "sun")
-        self.add_class("shapes", 4, "building")
-        self.add_class("shapes", 5, "tree")
-        self.add_class("shapes", 6, "cloud")
-        self.active_ext_class_ids=[1,2,3,4,5,6]
+        buffer = self.config.IMAGE_BUFFER  
+        height = self.config.HEIGHT        
+        width  = self.config.WIDTH  
 
-        buffer = self.config.IMAGE_BUFFER
-        height = self.config.HEIGHT
-        width  = self.config.WIDTH
+        self.add_class("newshapes", 1, "person")
+        self.add_class("newshapes", 2, "car")
+        self.add_class("newshapes", 3, "sun")
+        self.add_class("newshapes", 4, "building")
+        self.add_class("newshapes", 5, "tree")
+        self.add_class("newshapes", 6, "cloud")
+        self.add_class("newshapes", 7, "airplane")
+        self.add_class("newshapes", 8, "truck")
+        self.active_ext_class_ids=[1,2,3,4,5,6,7,8]
+        self.draw_priority_list = ['sun', 'cloud', 'airplane']
+
+        self.config.max_dim = {}
+        self.config.min_dim = {}
+        self.config.Min_Y   = {}
+        self.config.Max_Y   = {}
+        self.config.Min_X   = {}
+        self.config.Max_X   = {}
+        self.config.Min_X['_default'] =  buffer
+        self.config.Max_X['_default'] =  height - buffer - 1
+        self.config.Min_Y['_default'] =  buffer
+        self.config.Max_Y['_default'] =  height - buffer - 1
+
+        self.config.min_dim['building'] =  15
+        self.config.max_dim['building'] =  25
+        self.config.Max_X  ['building'] =  width - buffer
+        self.config.Min_Y  ['building'] =  height //3 
+        self.config.Min_X  ['building'] =  buffer
+        self.config.Max_Y  ['building'] =  2 * height //3   ##* min_range_y
+
+        self.config.min_dim['person'] =  8     ## 10
+        self.config.max_dim['person'] =  16    ## 20
+        self.config.Min_Y  ['person'] =  height //2 
+        self.config.Max_Y  ['person'] =  height - buffer - 1
+        self.config.Min_X  ['person'] =  0
+        self.config.Max_X  ['person'] =  height - buffer - 1
+
+        self.config.min_dim['car' ]   =  6
+        self.config.max_dim['car' ]   =  13
+        self.config.Min_X  ['car' ]   =  buffer
+        self.config.Max_X  ['car' ]   =  height - buffer - 1
+        self.config.Min_Y  ['car' ]   =  height //2
+        self.config.Max_Y  ['car' ]   =  height - buffer - 1
+        
+        self.config.min_dim['sun']    =  4
+        self.config.max_dim['sun']    =  10
+        self.config.Min_X  ['sun']    =  buffer //3                
+        self.config.Max_X  ['sun']    =  width - (buffer//3) - 1  
+        self.config.Min_Y  ['sun']    =  buffer //3
+        self.config.Max_Y  ['sun']    =  height //5    ##* min_range_y
+        
+        self.config.max_dim['tree']   =  30    ## 36
+        self.config.min_dim['tree']   =  9     ## 9
+        self.config.Min_X  ['tree']   =  buffer
+        self.config.Max_X  ['tree']   =  height - buffer - 1
+        self.config.Min_Y  ['tree']   =  height // 3
+        self.config.Max_Y  ['tree']   =  width - (buffer) - 1    ##* min_range_y
+
+        self.config.min_dim['cloud']  =  3
+        self.config.max_dim['cloud']  =  13
+        self.config.Min_X  ['cloud']  =  buffer//2                 
+        self.config.Max_X  ['cloud']  =  width - (buffer//2) - 1    
+        self.config.Min_Y  ['cloud']  =  buffer
+        self.config.Max_Y  ['cloud']  =  height //4
+        
+        self.config.min_dim['airplane']  =  5   ## 4
+        self.config.max_dim['airplane']  =  11   ## 10
+        self.config.Min_X  ['airplane']  =  buffer//2                 
+        self.config.Max_X  ['airplane']  =  width - (buffer//2) - 1    
+        self.config.Min_Y  ['airplane']  =  buffer
+        self.config.Max_Y  ['airplane']  =  height //4
+
+        self.config.min_dim['truck']  =  7
+        self.config.max_dim['truck']  =  14
+        self.config.Min_X  ['truck']  =  buffer//2                 
+        self.config.Max_X  ['truck']  =  width - (buffer//2) - 1    
+        self.config.Min_Y  ['truck']  =  buffer //4
+        self.config.Max_Y  ['truck']  =  height - height //4
+
+        # buffer = self.config.IMAGE_BUFFER
+        # height = self.config.HEIGHT
+        # width  = self.config.WIDTH
 
         ## Types of objects in this Dataset.....                          
-        person = ObjectClass(self, 'person', buffer, height - buffer, height//2, height - buffer)
+        # person = ObjectClass(self, 'person', buffer, height - buffer, height//2, height - buffer)
         
         print('Active Class Info in ', self.config.NAME)
         print('------------------------------------')
@@ -145,81 +212,16 @@ class NewImagesDataset(Dataset):
         height, width: the size of the generated images.
         '''
         
-        # Add classes
-        # self.add_class("shapes", 1, "circle")  # used to be class 2
-        # self.add_class("shapes", 2, "square")  # used to be class 1
-        # self.add_class("shapes", 3, "triangle")
-        # self.add_class("shapes", 4, "rectangle")
-        
         self.config.object_choices = [ cls_inf['name'] for cls_inf in self.class_info if cls_inf['id'] > 0]
         if verbose:
             print('Class Object Choices')
             print('--------------------')
             print(self.config.object_choices)
-        
-        buffer = self.config.IMAGE_BUFFER  
-        height = self.config.HEIGHT        
-        width  = self.config.WIDTH         
-
-        self.config.max_dim = {}
-        self.config.min_dim = {}
-        self.config.Min_Y   = {}
-        self.config.Max_Y   = {}
-        self.config.Min_X   = {}
-        self.config.Max_X   = {}
-        self.config.Min_X['_default'] =  buffer
-        self.config.Max_X['_default'] =  height - buffer - 1
-        self.config.Min_Y['_default'] =  buffer
-        self.config.Max_Y['_default'] =  height - buffer - 1
-
-        self.config.min_dim['person'] =  10
-        self.config.max_dim['person'] =  20
-        self.config.Min_Y['person']   =  height //2 
-        self.config.Max_Y['person']   =  height - buffer - 1
-        self.config.Min_X['person']   =  0
-        self.config.Max_X['person']   =  height - buffer - 1
-
-        self.config.min_dim['car' ]   =  7
-        self.config.max_dim['car' ]   =  15
-        self.config.Min_X['car'   ]   =  buffer
-        self.config.Max_X['car'   ]   =  height - buffer - 1
-        self.config.Min_Y['car'   ]   =  height //2
-        self.config.Max_Y['car'   ]   =  height - buffer - 1
-        
-        self.config.min_dim['building'] = 20
-        self.config.max_dim['building'] = 30
-        self.config.Min_X['building']   =  buffer
-        self.config.Max_X['building']   =  width - buffer
-        self.config.Min_Y['building']   =  height //3 
-        self.config.Max_Y['building']   =  2 * height //3   ##* min_range_y
-        
-        self.config.min_dim['sun']    =  4
-        self.config.max_dim['sun']    =  10
-        self.config.Min_X['sun']      =  buffer //3                
-        self.config.Max_X['sun']      =  width - (buffer//3) - 1  
-        self.config.Min_Y['sun']      =  buffer //3
-        self.config.Max_Y['sun']      =  height //5    ##* min_range_y
+       
 
 
-        # self.config.max_dim['tree']   =  36
-        # self.config.min_dim['tree']   =  9
-        self.config.max_dim['tree']   =  30
-        self.config.min_dim['tree']   =  9
-        self.config.Min_X['tree']     =  buffer
-        self.config.Max_X['tree']     =  height - buffer - 1
-        self.config.Min_Y['tree']     =  height // 3
-        self.config.Max_Y['tree']     =  width - (buffer) - 1    ##* min_range_y
 
-        # self.config.min_dim['cloud']  =  15
-        # self.config.max_dim['cloud']  =  40
-        self.config.min_dim['cloud']  =  3
-        self.config.max_dim['cloud']  =  13
-        self.config.Min_X['cloud']    =  buffer//2                 
-        self.config.Max_X['cloud']    =  width - (buffer//2) - 1    
-        self.config.Min_Y['cloud' ]   =  buffer
-        self.config.Max_Y['cloud' ]   =  height //4
-        
-        # pp.pprint(self.config.Min_X)
+
         # Add images
         # Generate random specifications of images (i.e. color and
         # list of shapes sizes and locations). This is more compact than
@@ -243,7 +245,19 @@ class NewImagesDataset(Dataset):
     ##---------------------------------------------------------------------------------------------
     ## build_image
     ##---------------------------------------------------------------------------------------------
-#    def add_image(self, image_id):
+    def display_image(self, image_ids = None, display = False):
+        '''
+        retrieves images for  a list of image ids, that can be passed to model detect() functions
+        '''
+        images = []
+        if not isinstance(image_ids, list):
+            image_ids = [image_ids]
+
+        for image_id in image_ids:
+            images.append(self.load_image(image_id))
+
+        display_images(images, titles = ['id: '+str(i)+' ' for i in image_ids], cols = 5, width = 25)
+        return 
 
 
     ##---------------------------------------------------------------------------------------------
@@ -305,23 +319,27 @@ class NewImagesDataset(Dataset):
         Typically this function loads the image from a file, but in this case it
         generates the image on the fly from the specs in image_info.
         '''
-        print(' ===> Loading image * image_id : ',image_id)
+        if verbose:
+            print(' ===> Loading image * image_id : ',image_id)
+
         info = self.image_info[image_id]
-#        pp.pprint(info)
-        bg_color = np.array(info['bg_color']).reshape([1, 1, 3])
+        # pp.pprint(info)
+        # bg_color = np.array(info['bg_color']).reshape([1, 1, 3])
         
         horizon_color = np.array(info['horizon'][2]).reshape([1, 1, 3])
         horizon_line  = info['horizon'][0]
         ground_color  = np.array(info['ground'][2]).reshape([1, 1, 3])
         ground_line   = info['ground'][0]
-        image = np.zeros([info['height'], info['width'], 3], dtype=np.uint8)
+        image         = np.zeros([info['height'], info['width'], 3], dtype=np.uint8)
 
         image[:horizon_line,:,:] =  horizon_color
         image[ground_line:,:,:]  =  ground_color
         # print(' image shape ', image.shape)            
         # print(" Load Image : Shapes ")
         # p4.pprint(info['shapes'])
-
+        
         for shape, color, dims in info['shapes']:
+        # for shape, color, dims in draw_list:
            image = draw_object(image, shape, dims, color, verbose)        
+
         return image

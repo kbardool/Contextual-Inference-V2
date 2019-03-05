@@ -21,16 +21,16 @@ print('--> Execution started at:', start_time)
 # print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
 
 eval_method = '2'
-file_prefix = 'test'
-#file_prefix = 'eval'+eval_method 
+# file_prefix = 'test'
+file_prefix = 'eval'+eval_method 
 
 syst = platform.system()
 if syst == 'Windows':
 #    MAP_PATH = "E:/git_projs/MRCNN3/train_newshapes/BCE3_eval_method"+eval_method+"_results"
     MAP_PATH = "E:/git_projs/MRCNN3/train_newshapes/BCE3_test_results"
 elif syst == 'Linux':
-#    MAP_PATH = "/home/kbardool/mrcnn3/train_newshapes/BCE3_eval_method"+eval_method+"_results"
-    MAP_PATH = "/home/kbardool/mrcnn3/train_newshapes/BCE3_test_results"
+   MAP_PATH = "/home/kbardool/mrcnn3/train_newshapes/BCE3_eval_method"+eval_method+"_results"
+    # MAP_PATH = "/home/kbardool/mrcnn3/train_newshapes/BCE3_test_results"
 else :
     raise Error('unrecognized system ')
 

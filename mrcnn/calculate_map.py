@@ -917,7 +917,7 @@ def plot_mAP_by_IOU(all_data, score , class_ids = None , class_names = None, col
 ##------------------------------------------------------------------------------------------
 ##   Plot PR Curves for multiple calculated scores - for one class
 ##------------------------------------------------------------------------------------------
-def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, scores, iou = None , ax = None ):
+def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, scores, iou = None , ax = None , min_x = 0.0):
     avg_precs = {}
     iou_thrs = {}
     score_keys = []
@@ -951,7 +951,7 @@ def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, sco
     ax.set_xlabel('recall', fontsize= 12)
     ax.set_ylabel('precision', fontsize= 12)
     ax.tick_params(axis='both', labelsize = 10)
-    ax.set_xlim([0.0,1.05])
+    ax.set_xlim([min_x,1.05])
     ax.set_ylim([0.0,1.05])
     leg = plt.legend(loc='lower right',frameon=True, fontsize = 10, markerscale = 6)
     leg.set_title('IoU Thr {:.2f}'.format(iou_key),prop={'size':11})
@@ -965,7 +965,7 @@ def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, sco
 ##------------------------------------------------------------------------------------------
 ##   Plot PR Curves for multiple calculated scores 
 ##------------------------------------------------------------------------------------------
-def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  class_names = None, columns = 2):
+def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  class_names = None, columns = 2, min_x = 0.0):
     
     if class_ids is None:
         disp_classes = all_data.keys()
@@ -993,7 +993,8 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
         subplot = (row * columns) + col +1
         ax= fig.add_subplot(rows, columns, subplot)
         
-        class_precs = plot_pr_curves_by_scores_for_one_class(all_data[class_id], class_id, class_names[class_id], scores = disp_scores, iou = iou, ax = ax)    
+        class_precs = plot_pr_curves_by_scores_for_one_class(all_data[class_id], class_id, class_names[class_id], 
+                                scores = disp_scores, iou = iou, ax = ax, min_x = min_x)    
         all_precs[class_id] = class_precs
         # ax.autoscale_view()
         
