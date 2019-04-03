@@ -105,16 +105,14 @@ class FCN(ModelBase):
         
         # Pre-defined layer regular expressions
         self.layer_regex = {
-            # fcn8 only 
-            "fcn8" : r"(fcn8\_.*)",
             # fcn16+ 
-            "fcn16+" : r"(fcn16\_.*)|(fcn8\_.*)",
+            "fcn16+"  : r"(fcn16\_.*)|(fcn8\_.*)",
             # fcn32+ 
-            "fcn32+" : r"(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
+            "fcn32+"  : r"(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
             # fcn and fc2
-            "fc2+" : r"(fcn\_.*)|(fc2.*)",
+            "fc2+"    : r"(fcn\_.*)|(fc2.*)",
             # fcn, fc2, fc1
-            "fc1+" : r"(fcn\_.*)|(fc2*)|(fc1*)",
+            "fc1+"    : r"(fcn\_.*)|(fc2*)|(fc1*)",
             # block5+
             "block5+" : r"(block5\_.*)|(fcn\_.*)|(fc2*)|(fc1*)|(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
             # block4+
@@ -127,18 +125,20 @@ class FCN(ModelBase):
             "block1+" : r"(block1\_.*)|(block2\_.*)|(block3\_.*)|(block4\_.*)|(block5\_.*)|(fcn32\_.*)|(fcn16\_.*)|(fcn8\_.*)",
 
             # All layers
-            "all": ".*",
+            "all"     : ".*",
 
-            # fcn32 only 
-            "fcn32" : r"(fcn32\_.*)",
-            # fcn16 only 
-            "fcn16" : r"(fcn16\_.*)",
-            # fcn only 
-            "fcn" : r"(fcn\_.*)",
-            # block5
-            "block5" : r"(block5\_.*)",
-            # block4
-            "block4" : r"(block4\_.*)"
+            # fcn32  only 
+            "fcn32"   : r"(fcn32\_.*)",
+            # fcn16  only 
+            "fcn16"   : r"(fcn16\_.*)",
+            # fcn8   only 
+            "fcn8"    : r"(fcn8\_.*)",
+            # fcn    only 
+            "fcn"     : r"(fcn\_.*)",
+            # block5 only
+            "block5"  : r"(block5\_.*)",
+            # block4 only
+            "block4"  : r"(block4\_.*)"
             }
         
         self.keras_model = self.build(mode=mode, config=config  )
@@ -327,6 +327,12 @@ class FCN(ModelBase):
             fcn_scores_by_class = np.dstack((fcn_boxes_adj, fcn_hm_scores[i,:,:,4:]))
             # print('    Length of fcn_hm_scores_by_class: ', len(fcn_scores_by_class), fcn_scores_by_class.shape)
             fcn_scores_by_image = utils.byclass_to_byimage_np(fcn_scores_by_class, sequence_column)
+            
+            ## sort fcn_scores_by_image in score order
+            sort_idxs          = np.argsort(fcn_scores_by_image[:,5])[::-1]
+            fcn_scores_by_image = fcn_scores_by_image[sort_idxs]
+
+            
             if verbose:
                 print(' Process input/results ', i)
                 print(' pr_hm              :', pr_hm[i].shape)

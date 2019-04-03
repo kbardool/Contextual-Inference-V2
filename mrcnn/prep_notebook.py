@@ -17,7 +17,8 @@ import mrcnn.model_mrcnn  as mrcnn_modellib
 import mrcnn.model_fcn    as fcn_modellib
 import mrcnn.visualize    as visualize
 import mrcnn.utils        as utils
-import mrcnn.newshapes as newshapes
+import mrcnn.newshapes    as newshapes
+import mrcnn.newshapes2   as newshapes2
 
 # import mrcnn.new_shapes   as shapes
 from mrcnn.config      import Config
@@ -28,8 +29,6 @@ from mrcnn.coco        import CocoConfig, CocoInferenceConfig, prep_coco_dataset
 from mrcnn.heatmap     import HeatmapDataset
 from mrcnn.datagen_fcn import fcn_data_generator,fcn_data_gen_simulate
 from mrcnn.datagen     import load_image_gt
-
-import mrcnn.newshapes    as newshapes
 
 
 pp = pprint.PrettyPrinter(indent=2, width=100)
@@ -45,9 +44,11 @@ def build_coco_config( model = None, mode = 'training', args = None, verbose = 0
     assert mode  in ['training' , 'trainfcn', 'inference', 'evaluate']
     assert int(args.scale_factor) == 4 , 'Scaling factor is not 4 for coco dataset: {}'.format(args.scale_factor)
     assert args.evaluate_method in [1,2,3],'Invalid evaluate_method : {} '.format(args.evaluate_method)
+    assert args.dataset == 'coco2014', 'shapes must be \'coco2014\''
     
-    paths = Paths(training_folder = 'models_coco',
-                  fcn_training_folder = args.fcn_logs_dir, 
+    paths = Paths(dataset               = args.dataset, 
+                  training_folder       = 'models_coco',
+                  fcn_training_folder   = args.fcn_logs_dir, 
                   mrcnn_training_folder = args.mrcnn_logs_dir)
     
     if verbose:
@@ -77,7 +78,7 @@ def build_coco_config( model = None, mode = 'training', args = None, verbose = 0
     config.VERBOSE                 = verbose
     
     if mode =='evaluate':
-        config.PRED_CLASS_INFO_PATH    = os.path.join(config.DIR_PRETRAINED  , "coco_class_stats_info.pkl")
+        config.PRED_CLASS_INFO_PATH    = os.path.join(config.DIR_PRETRAINED  , args.dataset+"_class_stats_info.pkl")
         # config.PRED_CLASS_INFO_PATH = paths.PRED_CLASS_INFO_PATH
         config.EVALUATE_METHOD      = args.evaluate_method        
 
@@ -143,27 +144,33 @@ def build_coco_config( model = None, mode = 'training', args = None, verbose = 0
 ## Build NEWSHAPES configuration object
 #######################################################################################
 def build_newshapes_config( model = None, mode = 'training', args = None, verbose = 0):
+    
     assert model in ['mrcnn', 'fcn']
     assert mode  in ['training' , 'trainfcn', 'inference', 'evaluate']
     assert int(args.scale_factor) == 1 , 'Scaling factor is not 1 for newshapes dataset: {}'.format(args.scale_factor)
     assert args.evaluate_method in [1,2,3],'Invalid evaluate_method : {} '.format(args.evaluate_method)
+    assert args.dataset          in ['newshapes', 'newshapes2'], 'shapes must be \'newshapes\' or \'newshapes2\''
     
-    paths = Paths(training_folder = 'models_newshapes',
-                  fcn_training_folder = args.fcn_logs_dir, 
+    if args.dataset == 'newshapes':
+        config = newshapes.NewShapesConfig()
+    else:
+        config = newshapes2.NewImagesConfig()
+        
+    paths = Paths(dataset               = args.dataset,
+                  training_folder       = 'models_'+args.dataset, 
+                  fcn_training_folder   = args.fcn_logs_dir, 
                   mrcnn_training_folder = args.mrcnn_logs_dir)
-
-    
     if verbose:
         utils.display_input_parms(args)    
         paths.display()
     
-    config = newshapes.NewShapesConfig()
     config.NAME                    = model
     config.DIR_DATASET             = paths.DIR_DATASET
     config.DIR_TRAINING            = paths.DIR_TRAINING
     config.DIR_PRETRAINED          = paths.DIR_PRETRAINED
+    config.INPUT_DATASET_PATH      = paths.DIR_DATASET
     config.RESNET_MODEL_PATH       = paths.RESNET_MODEL_PATH 
-
+    config.dataset             = args.dataset
     config.HEATMAP_SCALE_FACTOR    = int(args.scale_factor)
     config.BATCH_SIZE              = int(args.batch_size)                  # Batch size is 2 (# GPUs * images/GPU).
     config.IMAGES_PER_GPU          = int(args.batch_size)                  # Must match BATCH_SIZE
@@ -178,8 +185,7 @@ def build_newshapes_config( model = None, mode = 'training', args = None, verbos
     config.VERBOSE                 = verbose
     
     if mode =='evaluate':
-        config.PRED_CLASS_INFO_PATH      = os.path.join(config.DIR_PRETRAINED  , "newshapes_class_stats_info.pkl")
-        # config.PRED_CLASS_INFO_PATH = paths.PRED_CLASS_INFO_PATH
+        config.PRED_CLASS_INFO_PATH      = os.path.join(config.DIR_PRETRAINED  , args.dataset+"_class_stats_info.pkl")
         config.EVALUATE_METHOD      = args.evaluate_method 
         
     if mode in ['training' , 'trainfcn'] :
@@ -245,22 +251,27 @@ def build_newshapes_config( model = None, mode = 'training', args = None, verbos
             config.FCN_BCE_LOSS_METHOD  = args.fcn_bce_loss_method
             config.FCN_BCE_LOSS_CLASS   = args.fcn_bce_loss_class
 
-
     return config
 
-    
     
 ##------------------------------------------------------------------------------------    
 ## NEWSHAPES - MRCNN Training
 ##------------------------------------------------------------------------------------    
-def  build_mrcnn_training_pipeline_newshapes( args = None, mrcnn_config = None,  mode = 'training',verbose = 0):
+def  build_mrcnn_training_pipeline_newshapes( args = None, mrcnn_config = None,  mode = 'training', verbose = 0):
     
+    start_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
+    print()
+    print('--> Execution started at:', start_time)
+    print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,keras.__version__))
+    print('    Build_mrcnn_inference_pipeline_newshapes MODE is :', mode, 'shapes: ',args.dataset)
+    utils.display_input_parms(args)    
+
     if mrcnn_config is None :
         mrcnn_config = build_newshapes_config('mrcnn','training', args, verbose = verbose)
             
     # create the model in training mode
     try :
-        del model
+        del mrcnn_model
         print('delete model is successful')
         gc.collect()
     except: 
@@ -272,21 +283,19 @@ def  build_mrcnn_training_pipeline_newshapes( args = None, mrcnn_config = None, 
     mrcnn_config.display()             
     mrcnn_model.display_layer_info()
     
-    # if args.mrcnn_model == 'coco':
-        # exclude=["mrcnn_class_logits", "mrcnn_bbox_fc"]   #, "mrcnn_bbox", "mrcnn_mask"])
-    # exclude = []
-    # mrcnn_model.load_model_weights(init_with = args.mrcnn_model , exclude = exclude, verbose = verbose)  
     ##------------------------------------------------------------------------------------
     ## Load Mask RCNN Model Weight file
     ##------------------------------------------------------------------------------------
-    # exclude_list = ["mrcnn_class_logits"]
-    if args.mrcnn_model in [ 'coco', 'init']:
-        args.mrcnn_model = 'coco'
+    if args.mrcnn_model == 'init':
+        print(' mrcnn_model = init --> MRCNN Training starting from randomly initialized weights ...')
+    elif args.mrcnn_model ==  'coco':
+        print(' mrcnn_model = coco --> MRCNN Training starting from COCO pre-trained weights ...')
         exclude_list = ["mrcnn_class_logits", "mrcnn_bbox_fc"]
         mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = exclude_list, verbose = 1)
     else:
         exclude_list = []
         mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = exclude_list, verbose = 1)
+
 
     return mrcnn_model
 
@@ -295,7 +304,7 @@ def  build_mrcnn_training_pipeline_newshapes( args = None, mrcnn_config = None, 
 ## NEWSHAPES - MRCNN Inference
 ##------------------------------------------------------------------------------------    
 def build_mrcnn_inference_pipeline_newshapes(args = None, mrcnn_config = None,  mode = 'inference', 
-                                             verbose = 0):
+                                             shapes = 'newshapes', verbose = 0):
     start_time = datetime.now().strftime("%m-%d-%Y @ %H:%M:%S")
     print()
     print('--> Execution started at:', start_time)
@@ -330,7 +339,6 @@ def build_mrcnn_inference_pipeline_newshapes(args = None, mrcnn_config = None,  
     else:
         exclude_list = []
         mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = exclude_list, verbose = 1)
-
 
     return mrcnn_model
 
@@ -377,7 +385,6 @@ def build_fcn_training_pipeline_newshapes( args = None, mrcnn_config = None,  mo
     
     return mrcnn_model, fcn_model
 
-
 ##------------------------------------------------------------------------------------    
 ## NEWSHAPES - FCN Inference
 ##------------------------------------------------------------------------------------    
@@ -418,7 +425,6 @@ def build_fcn_inference_pipeline_newshapes( args = None, mrcnn_config = None,  m
     
     return mrcnn_model, fcn_model
 
-
 ##------------------------------------------------------------------------------------    
 ## NEWSHAPES - FCN Evaluate
 ##------------------------------------------------------------------------------------    
@@ -428,7 +434,6 @@ def build_fcn_evaluate_pipeline_newshapes( args = None, mrcnn_config = None,  mo
     return build_fcn_inference_pipeline_newshapes( args = args, 
                                          mrcnn_config = mrcnn_config, 
                                          mode = mode, verbose = verbose)
-
     
 #######################################################################################    
 ## MRCNN Training pipeline
@@ -501,8 +506,6 @@ def build_mrcnn_inference_pipeline( args = None, mrcnn_config = None , verbose =
     
     return mrcnn_model
     
-
-    
 #######################################################################################    
 ## MRCNN evaluate pipeline
 #######################################################################################
@@ -540,9 +543,6 @@ def build_mrcnn_evaluate_pipeline( args, mrcnn_config = None , verbose = 0):
     mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = None)  
     
     return mrcnn_model
-
-
-
     
 #######################################################################################    
 ## FCN Training pipeline
@@ -742,8 +742,6 @@ def get_image_batch(dataset, image_ids = None, display = False):
         
     return images
     
-
-
 ##------------------------------------------------------------------------------------    
 ## get_training_batch()
 ##------------------------------------------------------------------------------------    
@@ -761,8 +759,7 @@ def get_training_batch(dataset, config, image_ids, display = True, masks = False
         visualize.display_training_batch(dataset, batch_x, masks = masks)
 
     return batch_x
-        
-        
+            
 ##------------------------------------------------------------------------------------    
 ## get_inference_batch() : 
 ##------------------------------------------------------------------------------------    
@@ -808,11 +805,9 @@ def get_inference_batch(dataset, config, image_ids = None, generator = None, dis
         visualize.display_training_batch(dataset, [molded_images, image_metas], masks = True, size = 8)
         
     return [raw_images, molded_images, image_metas]
-
-
-                
+        
 ##------------------------------------------------------------------------------------    
-## get_evaluation_batch()
+## get_evaluate_batch()
 ##------------------------------------------------------------------------------------    
 def get_evaluate_batch(dataset, config, image_ids = None, generator = None, display = True, masks = False):
     '''
@@ -845,8 +840,7 @@ def get_evaluate_batch(dataset, config, image_ids = None, generator = None, disp
         
     #      [images, molded_images, images_metas, gt_class_ids, gt_bboxes]
     return [images, batch_x[0], batch_x[1], batch_x[4], batch_x[5]]
-    
-    
+        
 #######################################################################################    
 ## RUN PIPELINE  routines
 #######################################################################################

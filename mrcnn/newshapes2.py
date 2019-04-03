@@ -4,11 +4,8 @@ import copy
 import numpy as np
 import cv2
 from matplotlib      import colors 
-from mrcnn.visualize import display_images
-from mrcnn.dataset   import Dataset
-# from mrcnn.shapes    import ShapesConfig
 from mrcnn.datagen   import load_image_gt, data_generator
-from mrcnn.visualize import draw_boxes
+from mrcnn.visualize import draw_boxes, display_images
 from mrcnn.config    import Config
 from mrcnn.dataset   import Dataset
 from mrcnn.utils     import non_max_suppression, mask_string
@@ -35,7 +32,7 @@ class ObjectClass(object):
 ##------------------------------------------------------------------------------------
 ## Build  NewShapes Training and Validation datasets
 ##------------------------------------------------------------------------------------
-def prep_newimage_dataset(config, image_count, shuffle = True, augment = False, generator = False):
+def prep_newshapes2_dataset(config, image_count, shuffle = True, augment = False, generator = False):
     '''
     '''
     dataset = NewImagesDataset(config)
@@ -61,7 +58,7 @@ class NewImagesConfig(Config):
     to the toy shapes dataset.
     '''
     # Give the configuration a recognizable name
-    NAME = "newshapes"
+    NAME = "newshapes2"
 
     # Train on 1 GPU and 8 images per GPU. We can put multiple images on each
     # GPU because the images are small. Batch size is 8 (GPUs * images/GPU).
@@ -69,10 +66,10 @@ class NewImagesConfig(Config):
     IMAGES_PER_GPU = 8
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 6  # background + 6 shapes
+    NUM_CLASSES = 1 + 8  # background + 6 shapes
     MAX_SHAPES_PER_IMAGE = 15
-    MIN_SHAPES_PER_IMAGE = 1
-
+    MIN_SHAPES_PER_IMAGE = 2
+    
     # Use small images for faster training. Set the limits of the small side
     # the large side, and that determines the image shape.
     IMAGE_MIN_DIM = 128
@@ -102,6 +99,7 @@ class NewImagesDataset(Dataset):
     '''
     def __init__(self, config ):
         super().__init__()
+        self.source = 'newshapes2'
         self.config = config
         self.config.HEIGHT = config.IMAGE_SHAPE[0]
         self.config.WIDTH  = config.IMAGE_SHAPE[1]
@@ -112,14 +110,14 @@ class NewImagesDataset(Dataset):
         height = self.config.HEIGHT        
         width  = self.config.WIDTH  
 
-        self.add_class("newshapes", 1, "person")
-        self.add_class("newshapes", 2, "car")
-        self.add_class("newshapes", 3, "sun")
-        self.add_class("newshapes", 4, "building")
-        self.add_class("newshapes", 5, "tree")
-        self.add_class("newshapes", 6, "cloud")
-        self.add_class("newshapes", 7, "airplane")
-        self.add_class("newshapes", 8, "truck")
+        self.add_class(self.source, 1, "person")
+        self.add_class(self.source, 2, "car")
+        self.add_class(self.source, 3, "sun")
+        self.add_class(self.source, 4, "building")
+        self.add_class(self.source, 5, "tree")
+        self.add_class(self.source, 6, "cloud")
+        self.add_class(self.source, 7, "airplane")
+        self.add_class(self.source, 8, "truck")
         self.active_ext_class_ids=[1,2,3,4,5,6,7,8]
         self.draw_priority_list = ['sun', 'cloud', 'airplane']
 
@@ -141,8 +139,8 @@ class NewImagesDataset(Dataset):
         self.config.Min_X  ['building'] =  buffer
         self.config.Max_Y  ['building'] =  2 * height //3   ##* min_range_y
 
-        self.config.min_dim['person'] =  8     ## 10
-        self.config.max_dim['person'] =  16    ## 20
+        self.config.min_dim['person'] =  7     ## 10
+        self.config.max_dim['person'] =  14    ## 20
         self.config.Min_Y  ['person'] =  height //2 
         self.config.Max_Y  ['person'] =  height - buffer - 1
         self.config.Min_X  ['person'] =  0
@@ -211,16 +209,12 @@ class NewImagesDataset(Dataset):
         num_new_images: number of images to generate.
         height, width: the size of the generated images.
         '''
-        
         self.config.object_choices = [ cls_inf['name'] for cls_inf in self.class_info if cls_inf['id'] > 0]
         if verbose:
             print('Class Object Choices')
             print('--------------------')
             print(self.config.object_choices)
        
-
-
-
 
         # Add images
         # Generate random specifications of images (i.e. color and
@@ -240,12 +234,12 @@ class NewImagesDataset(Dataset):
                     print('-----------------------------')
                     
             image = Image(image_id, self.config, verbose)    
-            self.add_image("newshapes", image_id = image_id, path = None, **image.image_data)    
+            self.add_image(self.source, image_id = image_id, path = None, **image.image_data)    
 
     ##---------------------------------------------------------------------------------------------
-    ## build_image
+    ## display_image
     ##---------------------------------------------------------------------------------------------
-    def display_image(self, image_ids = None, display = False):
+    def display_image(self, image_ids = None, display = False, grid = True):
         '''
         retrieves images for  a list of image ids, that can be passed to model detect() functions
         '''
@@ -256,7 +250,7 @@ class NewImagesDataset(Dataset):
         for image_id in image_ids:
             images.append(self.load_image(image_id))
 
-        display_images(images, titles = ['id: '+str(i)+' ' for i in image_ids], cols = 5, width = 25)
+        display_images(images, titles = ['id: '+str(i)+' ' for i in image_ids], cols = 5, width = 25, grid = grid)
         return 
 
 
@@ -266,7 +260,7 @@ class NewImagesDataset(Dataset):
     def image_reference(self, image_id):
         """Return the shapes data of the image."""
         info = self.image_info[image_id]
-        if info["source"] == "shapes":
+        if info["source"] == self.source:
             return info["shapes"]
         else:
             super(self.__class__).image_reference(self, image_id)    

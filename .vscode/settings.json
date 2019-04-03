@@ -3,6 +3,7 @@
     "python.linting.pylintEnabled": true,
     "python.linting.enabled": true,
     "editor.mouseWheelZoom": true,
+    "python.linting.pylamaEnabled": false,
 
 
 

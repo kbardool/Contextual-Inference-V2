@@ -36,19 +36,9 @@ print("    Tensorflow Version: {}   Keras Version : {} ".format(tf.__version__,k
 ##------------------------------------------------------------------------------------
 ## Parse command line arguments
 ##------------------------------------------------------------------------------------
-# input_parms +="--fcn_model /home/kbardool/models/train_fcn_adagrad/shapes20180709T1732/fcn_shapes_1167.h5"
-##------------------------------------------------------------------------------------
-## Parse command line arguments
-##------------------------------------------------------------------------------------
 parser = command_line_parser()
-input_parms = " --batch_size 1  "
-input_parms +=" --mrcnn_logs_dir train_mrcnn_newshapes "
-input_parms +=" --mrcnn_model    last "
-input_parms +=" --sysout         screen "
-input_parms +=" --scale_factor   1 "
-input_parms +=" --new_log_folder "
 
-args = parser.parse_args(input_parms.split())
+args = parser.parse_args()
 verbose = 0
 
 ##----------------------------------------------------------------------------------------------
@@ -97,9 +87,12 @@ mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = exclude_l
 ## Build Newshapes test Dataset
 ##----------------------------------------------------------------------------------------------
 # dataset_test , test_generator   = prep_newshape_dataset( mrcnn_model.config,  1000, generator=True)
-# with open('E:\\git_projs\\MRCNN3\\train_newshapes\\newshapes_test_dataset_1000_B.pkl', 'rb') as outfile:
-with open('/home/kbardool/git_projs/mrcnn3/train_newshapes/newshapes_training_dataset_10000_A.pkl', 'rb') as outfile:
+# with open(os.path.join(mrcnn_model.config.DIR_DATASET, 'newshapes_test_dataset_1000_B.pkl', 'rb') as outfile:
+# with open(os.path.join(mrcnn_model.config.DIR_DATASET, 'newshapes_training_dataset_10000_A.pkl', 'rb') as outfile:
+# with open(os.path.join(mrcnn_model.config.DIR_DATASET, 'newshapes2_training_dataset_15000_A.pkl'), 'rb') as outfile:
+with open(os.path.join(mrcnn_model.config.DIR_DATASET, 'newshapes2_test_dataset_2500_A.pkl'), 'rb') as outfile:
     dataset_test = pickle.load(outfile)
+    
 class_names = dataset_test.class_names
 print(len(dataset_test.image_ids), len(dataset_test.image_info))
 dataset_test.display_active_class_info()
@@ -107,21 +100,20 @@ dataset_test.display_active_class_info()
 ##----------------------------------------------------------------------------------------------
 ## setup data strutures for Class statistical info and GT/Prediction BBoxes
 ##----------------------------------------------------------------------------------------------
-predicted_classes = []
-ground_truth_bboxes = {}
-predicted_bboxes    = {}
+predicted_classes   = []
+# ground_truth_bboxes = {}
+# predicted_bboxes    = {}
 
 for a,b in zip(dataset_test.class_ids, dataset_test.class_names):
     predicted_classes.append({'id'    : int(a),
                               'name'  : b,
                               'scores': [],
                               'bboxes': []})
-
                          
 ##----------------------------------------------------------------------------------------------
 ## Run detection process over all images 
 ##----------------------------------------------------------------------------------------------
-num_images = min(len(dataset_test.image_ids), int(sys.argv[1]))
+num_images = len(dataset_test.image_ids)
 
 print('Processing {:d} images ......'.format(num_images))
 
@@ -137,20 +129,7 @@ for image_id in range(num_images):
     results = mrcnn_model.detect([image], verbose= 0)
     r = results[0]    
     
-    # ground_truth_bboxes[keyname] = {'boxes'     : gt_bboxes.tolist(),
-                                    # 'class_ids' : gt_class_ids.tolist()}
-                                    
-    # predicted_bboxes[keyname] =  {'scores'   : [], 
-                                  # 'boxes'    : [], 
-                                  # 'class_ids': []}    
-                                  
-
     for cls, score, bbox in zip(r['class_ids'].tolist(), r['scores'].tolist(), r['molded_rois'].tolist()):
-        
-        # predicted_bboxes[keyname]['class_ids'].append(cls)
-        # predicted_bboxes[keyname]['scores'].append(np.round(score,4))
-        # predicted_bboxes[keyname]['boxes'].append(bbox)
-        
         predicted_classes[cls]['scores'].append(np.round(score,4))
         predicted_classes[cls]['bboxes'].append(bbox)
         
@@ -169,19 +148,12 @@ for cls in predicted_classes:
 ##----------------------------------------------------------------------------------------------
 ## Write gt and prediction info to json files
 ##----------------------------------------------------------------------------------------------
-with open('newshapes_predicted_classes_info.txt', 'w') as outfile:
+filename = args.dataset+'_predicted_classes_info'
+with open(filename+'.txt', 'w') as outfile:
     json.dump(predicted_classes, outfile)
-# with open('newshapes_ground_truth_bboxes.txt', 'w') as outfile:
-    # json.dump(ground_truth_bboxes, outfile)
-# with open('newshapes_predicted_bboxes.txt', 'w') as outfile:
-    # json.dump(predicted_bboxes, outfile)
 
-with open('newshapes_predicted_classes_info.pkl', 'wb') as outfile:
+with open(filename+'.pkl', 'wb') as outfile:
     pickle.dump(predicted_classes, outfile)
-# with open('newshapes_ground_truth_bboxes.pkl', 'wb') as outfile:
-    # pickle.dump(ground_truth_bboxes, outfile)
-# with open('newshapes_predicted_bboxes.pkl', 'wb') as outfile:
-    # pickle.dump(predicted_bboxes, outfile)
     
 ##----------------------------------------------------------------------------------------------
 ## If in debug mode write stdout intercepted IO to output file  

@@ -126,7 +126,7 @@ def display_image_bw(image, title="B/W Display" , cmap=None, norm=None,
 ## display_images
 ##----------------------------------------------------------------------
 def display_images(images, titles=None, cols=4, cmap=None, norm=None,
-                   interpolation=None, width=14):
+                   interpolation=None, width=14, grid = False):
     """
     Display the given set of images, optionally with titles.
     
@@ -146,7 +146,8 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
         title += " H x W={}x{}".format(image.shape[0], image.shape[1])
         plt.subplot(rows, cols, i)
         plt.title(title, fontsize=9)
-        # plt.axis('off')
+        # if not grid:
+        plt.grid(grid)
         plt.imshow(image.astype(np.uint8), cmap=cmap,
                    norm=norm, interpolation=interpolation)
         i += 1
@@ -2119,7 +2120,7 @@ def plot_2d_heatmap( Z, boxes, image_idx, class_ids = None,
             # vmin = np.amin(YY[:,:,cls])
             # vmax = np.amax(YY[:,:,cls])
             
-        surf = plt.matshow(YY[:,:, cls], fignum = 0, cmap = cm.coolwarm,vmin = vmin, vmax = vmax )
+        surf = plt.matshow(YY[:,:, cls], fignum = 0, cmap = cm.jet,vmin = vmin, vmax = vmax )
         
         for bbox in range(num_bboxes):
             if boxes[cls, bbox, 7 ] == 0:
@@ -2266,11 +2267,11 @@ def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = 2,
         ax.set_ylabel(' Y axis', fontsize=8)
         ax.invert_yaxis()
         # ax.view_init( azim=-116,elev=40)            
-        surf = ax.plot_surface(X, Y, YY[:,:,cls],rstride = 1, cstride = 1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+        surf = ax.plot_surface(X, Y, YY[:,:,cls],rstride = 1, cstride = 1, cmap=cm.jet, linewidth=0, antialiased=False)
         
         # Add a color bar which maps values to colors.
         # plt.subplots_adjust(top=0.97, bottom=0.02, left=0.02, right=0.98, hspace=0.15, wspace=0.15)                
-        # cbar = fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.10)
+        cbar = fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.10)
         # cbar.ax.tick_params(labelsize=9) 
 
     # fig.tight_layout(rect=[0, 0.02, 1, 0.97])
@@ -2806,15 +2807,16 @@ def inference_heatmaps_display( input, image_id, hm = 'fcn_hm' ,  heatmaps = Non
         unmolded_heatmap = utils.unresize_heatmap(Z1[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
         # print(' unmolded_heatmap: shape:', unmolded_heatmap.shape, unmolded_heatmap.dtype, np.amin(unmolded_heatmap), np.amax(unmolded_heatmap))
         ax.imshow(image_bw , cmap=plt.cm.gray)        
-        surf = ax.imshow(unmolded_heatmap, alpha = 0.6, cmap=cm.YlOrRd, vmin = vmin, vmax = vmax )              
 
         for bbox in range(num_bboxes):
-        # print(ttl,x1[cls,bbox], y1[cls,bbox],x2[cls,bbox],y2[cls,bbox])
+            # print(ttl,x1[cls,bbox], y1[cls,bbox],x2[cls,bbox],y2[cls,bbox])
             p = patches.Rectangle( (x1[cls,bbox],y1[cls,bbox]), box_w[cls,bbox], box_h[cls,bbox], 
                                linewidth=1, alpha=alpha, linestyle=style, edgecolor=color, facecolor='none')
             ax.add_patch(p)
-        plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, hspace=0.10, wspace=0.10)                
+        surf = ax.imshow(unmolded_heatmap, alpha = 0.6, cmap=cm.jet, vmin = vmin, vmax = vmax )              
         fig.colorbar(surf, shrink=0.7, aspect=30, fraction=0.05)
+        plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, hspace=0.10, wspace=0.10)                
+    
     fig.tight_layout(rect=[0, 0.02, 1, 0.97])
     fig.suptitle(title, fontsize = 13) ## , ha ='center' )
     plt.show()
@@ -3033,7 +3035,6 @@ def inference_heatmaps_compare(input, image_id = 0, hm = 'hm' ,
         # print(' Title: ', ttl)
         unmolded_heatmap = utils.unresize_heatmap(Z2[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
         # print(' unmolded_heatmap: shape:', unmolded_heatmap.shape, unmolded_heatmap.dtype, np.amin(unmolded_heatmap), np.amax(unmolded_heatmap))
-        surf = ax.imshow(unmolded_heatmap, alpha = 0.6, cmap=cm.YlOrRd, vmin = vmin, vmax = vmax )              
         
         for bbox in range(num_bboxes):
             p = patches.Rectangle( (x1[cls,bbox],y1[cls,bbox]), box_w[cls,bbox], box_h[cls,bbox], 
@@ -3043,6 +3044,7 @@ def inference_heatmaps_compare(input, image_id = 0, hm = 'hm' ,
 
         ## adjustments and colorbar
         ##-------------------------
+        surf = ax.imshow(unmolded_heatmap, alpha = 0.6, cmap=cm.jet, vmin = vmin, vmax = vmax )              
 
         # plt.subplots_adjust(top=0.94, bottom=0.02, left=0.02, right=0.98,  wspace=0.15)      
         fig.colorbar(surf, shrink=0.7, aspect=30, fraction=0.05)
@@ -3355,17 +3357,17 @@ def plot_2d_heatmap_no_bboxes( Z, image_idx, class_ids = None,
     return    
 """
     
-'''
+"""
 similar to draw_roi_proposals
         
 ##----------------------------------------------------------------------
 ## draw_output_rois
 ##----------------------------------------------------------------------
 def draw_output_rois(image, rois, class_ids, class_names, limit=10):
-    """
+    '''
     rois :     [n, (y1, x1, y2, x2)] list bounding boxes in NN image format (resized and padded).
     proposals: [n, 4] the same anchors but refined to fit objects better.
-    """
+    '''
     masked_image = image.copy()
 
     # Pick random anchors in case there are too many.
@@ -3411,7 +3413,7 @@ def draw_output_rois(image, rois, class_ids, class_names, limit=10):
     print("Positive ROIs: ", class_ids[class_ids > 0].shape[0])
     print("Negative ROIs: ", class_ids[class_ids == 0].shape[0])
     print("Positive Ratio: {:.2f}".format(class_ids[class_ids > 0].shape[0] / class_ids.shape[0]))
-'''
+"""
 
 ##----------------------------------------------------------------------
 ## plot one gaussian distribution heatmap - 2D

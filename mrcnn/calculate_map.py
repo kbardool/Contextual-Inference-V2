@@ -438,9 +438,9 @@ def build_mAP_data_structure_by_class(gt_boxes_class, pr_boxes_class, class_ids,
     return mAP_data
 
     
-    
+"""    
 ##------------------------------------------------------------------------------------------
-##  Update mAP Dictionaries
+##  Update mAP Dictionaries - OLD - Obsolete
 ##------------------------------------------------------------------------------------------    
 def update_map_dictionaries(results, gt_dict, pr_dict, class_dict):
     orig_score = 5
@@ -505,12 +505,12 @@ def update_map_dictionaries(results, gt_dict, pr_dict, class_dict):
         class_dict[cls]["fcn_score_2"     ].append(fcn_score[alt_scr_2])
 
     return gt_dict, pr_dict, class_dict    
-    
+""" 
 
 ##------------------------------------------------------------------------------------------
 ##  Update mAP Dictionaries
 ##------------------------------------------------------------------------------------------    
-def fix_update_map_dictionaries(results, gt_dict, pr_dict, class_dict, verbose = 0):
+def update_map_dictionaries(results, gt_dict, pr_dict, class_dict, verbose = 0):
     
     CLASS_COLUMN        = 4
     ORIG_SCORE_COLUMN   = 5
@@ -537,11 +537,11 @@ def fix_update_map_dictionaries(results, gt_dict, pr_dict, class_dict, verbose =
       
     if zero_ix.shape[0] > 0 :
         N = zero_ix[0] 
-        print('-----------------------------------------------------------')
-        print(' There are non zero items in the gt_class_id nparray  :', zero_ix.shape)
-        for i in zero_ix:
-            print(r['gt_bboxes'][i] , r['gt_class_ids'][i])
-        print('-----------------------------------------------------------')
+        # print('-----------------------------------------------------------')
+        # print(' There are ' ,N, ' non zero items in the gt_class_id nparray  :', zero_ix.shape)
+        # for i in range(N+2):
+            # print(i, '... ' , r['gt_bboxes'][i] , r['gt_class_ids'][i])
+        # print('-----------------------------------------------------------')
     else:
         N = r['gt_class_ids'].shape[0]
 #    print('zero_ix:', zero_ix.shape, 'N :', N)  
@@ -706,7 +706,7 @@ def filter_by_class(gt_boxes, pr_boxes, class_ids):
     output_pr_boxes = {}
     
     for class_id in class_ids:
-        print(' Processing class : ', class_id)
+        print(' filter_by_class(): Processing class : ', class_id)
         pr_boxes_class = {}
         gt_boxes_class = {}
         for key in gt_boxes.keys():
@@ -1010,7 +1010,7 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
     for cls in disp_classes:
         if cls == 0:
             continue
-        scores = ''.join([" {:>17.4f}".format(all_precs[cls][scr])  for scr in disp_scores])
+        scores = ''.join([" {:>17.2%}".format(all_precs[cls][scr])  for scr in disp_scores])
         print('{:2d} - {:17s} {} '.format(cls , class_names[cls], scores ))
 
     ## print average of each score
@@ -1021,7 +1021,7 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
         #         print('scr', scr, 'map:', mAP[scr], np.mean(mAP[scr]))
         # print('{:-^170}'.format(''))  
         print()
-        scores = ''.join([" {:>17.4f}".format(all_mAPs[scr])  for scr in disp_scores])
+        scores = ''.join([" {:>17.2%}".format(all_mAPs[scr])  for scr in disp_scores])
         print('{:22s} {} '.format(' average for score.', scores ))
         print('{:-^150}'.format(''))
     
@@ -1030,7 +1030,9 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
         scores = ''.join([" {:>17.2%}".format(all_precs[0][scr]) for scr in disp_scores])
         print('{:22s} {}'.format( class_names[0], scores))
         print('{:-^150}'.format(''))  
-    
+
+
+        
     plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, hspace=0.35, wspace=0.15)   
     plt.show()         
     
@@ -1141,7 +1143,7 @@ def plot_mAP_vs_IoUs_BarChart(all_data, scores = None, ious=None, class_ids = [0
 ##------------------------------------------------------------------------------------------
 ##  Plot mAPs vs. Class Bar Chart
 ##------------------------------------------------------------------------------------------
-def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = None, class_names = None):
+def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = None, class_names = None, epochs = 0):
     
     if class_ids is None:
         disp_classes = sorted(all_data.keys())
@@ -1214,7 +1216,7 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
     ax.tick_params(axis='both', labelsize = 15)
     ax.set_xlim([0.0 - margin, width])
     ax.set_ylim([0.0,1.0])
-    ax.set_title('mAP for various scores @ IoU {}'.format(iou_key), fontsize=16)
+    ax.set_title('mAP for various scores @ IoU {}  after {} epochs training'.format( iou_key, epochs), fontsize=16)
     leg = plt.legend(loc='lower left', frameon=True, fontsize = 10, markerscale = 0.5, framealpha = 1.0)    
     leg.set_title('Score',prop={'size':10})
     
@@ -1234,7 +1236,7 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
     #-------------------------------------------------------------------------------------
     # Print Summary 
     #-------------------------------------------------------------------------------------
-    ttl = ' AP @ IoU {:.2f} Thresholds for Computed Scores '.format(iou_key)
+    ttl = ' AP @ IoU {:.2f} Thresholds for Computed Scores after {} epochs'.format(iou_key, epochs)
     ttl_scores = ''.join([" {:>17s}".format(scr)  for scr in disp_scores])
     
     print()
@@ -1249,15 +1251,15 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
             continue
         # for scr in disp_scores:
             # print(cls, scr, len(all_mAPs[scr]))
-        scores = ''.join([" {:>17.4f}".format(all_mAPs[scr][cls_idx])  for scr in disp_scores])
+        scores = ''.join([" {:>17.2%}".format(all_mAPs[scr][cls_idx])  for scr in disp_scores])
         print('{:2d} - {:17s} {} '.format(cls , class_names[cls], scores ))
 
     ## print average of each score
     if len(disp_classes) > 1:
         avg_mAP   = {}        
         for scr in disp_scores:
-            avg_mAP[scr] = np.mean(all_mAPs[scr][1:])
-#             print('scr', scr, 'map:',avg_mAP[scr])
+            avg_mAP[scr] = np.mean(all_mAPs[scr])
+            # print('scr', scr, '   ', all_mAPs[scr], '  map:',avg_mAP[scr])
         # print('{:-^170}'.format(''))  
         print()
         scores = ''.join([" {:>17.2%}".format(avg_mAP[scr])  for scr in disp_scores])

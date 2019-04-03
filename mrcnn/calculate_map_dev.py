@@ -742,20 +742,20 @@ def filter_by_class(gt_boxes, pr_boxes, class_ids):
 def build_mAP_data_structure_combined(gt_boxes, pr_boxes, scores, iou_thresholds = None):
     '''
     build AP info at different thresholds (ALL CLASSES COMBINED)
-
+    
     mAP_data                 : a dictionary keyed by the score name, e.g.  'mrcnn_score_orig', 'mrcnn_score_alt', etc....
-
+    
     Each SCORE DICTIONARY    : (mAP_data['score_name']) is a dict keyed by iou threshold. e.g. 0.5, 0.55,...,0.95
 
-    Each SCORE-IOU DICTIONARY: (mAP_data['score_name'][iou_threshold]) is a dict to Precision/Recall information for that
-                               Score and given threshold and has the following keys:
+    Each SCORE-IOU DICTIONARY: (mAP_data['score_name'][iou_threshold]) is a dict to Precision/Recall information for that 
+                               Score and given threshold and has the following keys: 
                                {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
-
+    
     iou :         indicates the iOU threshold of the dictionary entry
     model_thrs:   score thresholds
     recalls   :   recall at threshold
     precision :   precision at threshold
-
+    
     mAP_data[1]:  {'score1': { 0.50: {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
                                0.55: {'iou', 'model_thrs', 'recalls', 'precisions', 'avg_prec'}
                                ...
@@ -768,12 +768,12 @@ def build_mAP_data_structure_combined(gt_boxes, pr_boxes, scores, iou_thresholds
                   }
 
     '''
-    assert scores is not None
-
+    assert scores is not None 
+    
     print('Build mAP (all classes combined) ', '\n For scores: ', scores)
     mAP_data = {}
-    class_id = 0
-
+    class_id = 0 
+    
     if iou_thresholds is None :
         iou_thresholds = np.arange(0.20, 0.95, 0.05)
 
@@ -791,7 +791,7 @@ def build_mAP_data_structure_combined(gt_boxes, pr_boxes, scores, iou_thresholds
 
     return mAP_data
 
-
+    
 
 ##------------------------------------------------------------------------------------------
 ##   Plot PR Curves for multiple IoU thresholds - for one class

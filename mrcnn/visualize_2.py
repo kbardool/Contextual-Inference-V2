@@ -80,17 +80,13 @@ def display_gt_bboxes(dataset, config, image_id=0, only = None, size = 12):
     return
 
 
-##-----------------------------------------------------------------------------------------------------------    
-##
-##-----------------------------------------------------------------------------------------------------------    
-def display_mrcnn_scores(r, class_names, only = None, display = True, size = 8):
-    return display_pr_scores(r, class_names, only = only, display = display, size = size)
 
 ##-----------------------------------------------------------------------------------------------------------    
 ##
 ##-----------------------------------------------------------------------------------------------------------    
 def display_pr_scores(f_input, class_names, only = None, display = True, size = 12):
     '''
+    f_input  :    results from detection process (run_mrcnn_detection)
     pr_scores:    pr_scores returned from detection or evaluation process results['pr_scores']
     cn:   class names
     
@@ -111,23 +107,25 @@ def display_pr_scores(f_input, class_names, only = None, display = True, size = 
     seq_start = pr_scores.shape[1]
     print('PR_SCORES from fcn/mrcnn_results:')
     print('-'*175)
-    print('                          |   |                |        MRCNN score 0       |          MRCNN score 1             |           MRCNN score 2            |                         ')
-    print('        class             |TP/| mrcnn  normlzd |  gaussian   bbox   nrm.scr*|  ga.sum    mask     score   norm   |  ga.sum    mask     score   norm   |                         ')
-    print('seq  id name              | FP| score   score  |    sum      area   gau.sum |  in mask   sum              score  |  in mask   sum              score  |  Y1  X1  Y2  X2   AREA  ')
+    print('                              |   |                |        MRCNN score 0       |          MRCNN score 1             |           MRCNN score 2            |                         ')
+    print('          class               |TP/| mrcnn  normlzd |  gaussian   bbox   nrm.scr*|  ga.sum    mask     score   norm   |  ga.sum    mask     score   norm   |                         ')
+    print('    seq  id name              | FP| score   score  |    sum      area   gau.sum |  in mask   sum              score  |  in mask   sum              score  |  Y1  X1  Y2  X2   AREA  ')
     print('-'*175)
 
-    for pre in pr_scores:
+    for idx, pre in enumerate(pr_scores):
         cx = pre[1] + (pre[3]-pre[1])/2
         cy = pre[0] + (pre[2]-pre[0])/2
         area = (pre[3]-pre[1]) * (pre[2]-pre[0])
         int_cls = int(pre[CLASS_COLUMN])
         if  int_cls in only:
-            print('{:3.0f} {:2d} {:18s} |{:2.0f} | {:.4f}  {:.4f} |'\
+            print('{:3.0f} {:3.0f} {:2d} {:18s} |{:2.0f} | {:.4f}  {:.4f} |'\
                   '{:9.4f}  {:6.1f} {:9.4f} |'\
                   '{:9.4f}  {:6.1f} {:9.4f}  {:6.4f} |'\
                   '{:9.4f}  {:6.1f} {:9.4f}  {:6.4f} |'\
                   ' {:3.0f} {:3.0f} {:3.0f} {:3.0f} {:7.2f}'.          
-              format(pre[SEQUENCE_COLUMN], int_cls, class_names[int_cls], pre[DT_TYPE_COLUMN], pre[ORIG_SCORE_COLUMN], pre[NORM_SCORE_COLUMN], 
+              format(idx,    
+                     pre[SEQUENCE_COLUMN],
+                     int_cls, class_names[int_cls], pre[DT_TYPE_COLUMN], pre[ORIG_SCORE_COLUMN], pre[NORM_SCORE_COLUMN], 
                      pre[SCORE_0_SUM_COLUMN], pre[SCORE_0_AREA_COLUMN], pre[SCORE_0_COLUMN], 
                      pre[SCORE_1_SUM_COLUMN], pre[SCORE_1_AREA_COLUMN], pre[SCORE_1_COLUMN], pre[SCORE_1_NORM_COLUMN], 
                      pre[SCORE_2_SUM_COLUMN], pre[SCORE_2_AREA_COLUMN], pre[SCORE_2_COLUMN], pre[SCORE_2_NORM_COLUMN], 
@@ -138,7 +136,8 @@ def display_pr_scores(f_input, class_names, only = None, display = True, size = 
         visualize.display_instances(f_input['image'] , pr_scores[:,:CLASS_COLUMN], pr_scores[:,CLASS_COLUMN].astype(np.int32), 
                                     class_names, pr_scores[:,ORIG_SCORE_COLUMN], only_classes= only, size =size,
                                     title = 'MRCNN predictions for image id'+img_id)
-
+                                    
+                                    
 ##-----------------------------------------------------------------------------------------------------------    
 ##
 ##-----------------------------------------------------------------------------------------------------------    
@@ -159,26 +158,29 @@ def display_fcn_scores(f_input, class_names, only = None, display = True, size =
         
     if only is None:
         only = np.unique(fcn_scores[:,4]).astype(np.int)
+        
     seq_start = fcn_scores.shape[1]
     print('\nFCN_SCORES:')
     print('-'*175)
-    print('                          |   |                |         FCN score 0        |            FCN score 1             |            FCN score 2             |                         ')
-    print('        class             |TP/| mrcnn  normlzd |  gaussian   bbox   nrm.scr*|  ga.sum    mask     score   norm   |  ga.sum    mask     score   norm   |                         ')
-    print('seq  id name              | FP| score   score  |    sum      area   gau.sum |  in mask   sum              score  |  in mask   sum              score  |  Y1  X1  Y2  X2   AREA  ')
+    print('                              |   |                |         FCN score 0        |            FCN score 1             |            FCN score 2             |                         ')
+    print('          class               |TP/| mrcnn  normlzd |  gaussian   bbox   nrm.scr*|  ga.sum    mask     score   norm   |  ga.sum    mask     score   norm   |                         ')
+    print('    seq  id name              | FP| score   score  |    sum      area   gau.sum |  in mask   sum              score  |  in mask   sum              score  |  Y1  X1  Y2  X2   AREA  ')
     print('-'*175)
 
-    for pre in fcn_scores:
+    for idx, pre in enumerate(fcn_scores):
         cx = pre[1] + (pre[3]-pre[1])/2
         cy = pre[0] + (pre[2]-pre[0])/2
         area = (pre[3]-pre[1]) * (pre[2]-pre[0])
         int_cls = int(pre[CLASS_COLUMN])
         if int_cls in only:
-            print('{:3.0f} {:2d} {:18s} |{:2.0f} | {:.4f}  {:.4f} |'\
+            print('{:3.0f} {:3.0f} {:2d} {:18s} |{:2.0f} | {:.4f}  {:.4f} |'\
                   '{:9.4f}  {:6.1f} {:9.4f} |'\
                   '{:9.4f}  {:6.1f} {:9.4f}  {:6.4f} |'\
                   '{:9.4f}  {:6.1f} {:9.4f}  {:6.4f} |'\
                   ' {:3.0f} {:3.0f} {:3.0f} {:3.0f} {:7.2f}'.          
-                format(pre[SEQUENCE_COLUMN], int_cls, class_names[int_cls], pre[DT_TYPE_COLUMN], pre[ORIG_SCORE_COLUMN], pre[NORM_SCORE_COLUMN], 
+                format(idx,
+                     pre[SEQUENCE_COLUMN], 
+                     int_cls, class_names[int_cls], pre[DT_TYPE_COLUMN], pre[ORIG_SCORE_COLUMN], pre[NORM_SCORE_COLUMN], 
                      pre[SCORE_0_SUM_COLUMN], pre[SCORE_0_AREA_COLUMN], pre[SCORE_0_COLUMN], 
                      pre[SCORE_1_SUM_COLUMN], pre[SCORE_1_AREA_COLUMN], pre[SCORE_1_COLUMN], pre[SCORE_1_NORM_COLUMN], 
                      pre[SCORE_2_SUM_COLUMN], pre[SCORE_2_AREA_COLUMN], pre[SCORE_2_COLUMN], pre[SCORE_2_NORM_COLUMN],                   
@@ -190,6 +192,194 @@ def display_fcn_scores(f_input, class_names, only = None, display = True, size =
         visualize.display_instances(f_input['image'] , fcn_scores[:,:CLASS_COLUMN ], fcn_scores[:,CLASS_COLUMN].astype(np.int32), 
                                     class_names, fcn_scores[:,SCORE_1_COLUMN], only_classes= only, size =size,
                                     title = 'FCN predictions for image id '+img_id)
+
+#### detections as returned from the model's `detect()` functon
+def display_pr_fcn_style1(f, class_names,lmt =18):
+    lmt =18
+    # f = fcn_results[0]
+    names  = " ".join([ '{:>10s}'.format(class_names[i][-10:]) for i in f['pr_scores'][:lmt, 4].astype(np.int32)])
+
+    print('         bbox seq id :', f['pr_scores'][:lmt,7].astype(int))
+    print('  f[class_ids] class :', f['class_ids'][:lmt])
+    print('   f[pr_score] class :', f['pr_scores'][:lmt,4].astype(np.int))
+    print('  f[fcn_score] class :', f['fcn_scores'][:lmt,4].astype(np.int))
+    print('                       ', names)
+    print('           TP/FP Ind :', f['pr_scores'][:lmt,6].astype(np.int))
+    print('      pr  orig score :', f['pr_scores'][:lmt,5])
+    print('      fcn orig score :', f['fcn_scores'][:lmt,5])
+    print('      cls norm score :', f['pr_scores'][:lmt,8])
+    print('           bbox area :', f['pr_scores'][:lmt,10])
+    print('           clip area :', f['pr_scores'][:lmt,13])
+    print()
+    print('-'*185)
+    print('     pr_score_0 [11] :', f['pr_scores'][:lmt,11])
+    print('    fcn_score_0 [11] :', f['fcn_scores'][:lmt,11])
+    print()
+    print('     pr_score_1 [14] :', f['pr_scores'][:lmt,14])
+    print('    fcn_score_1 [14] :', f['fcn_scores'][:lmt,14])
+    print()
+    print('     pr_score_2 [20] :', f['pr_scores'][:lmt,20])
+    print('    fcn_score_2 [20] :', f['fcn_scores'][:lmt,20])
+    print()
+    print('norm pr_score_1 [17] :', f['pr_scores'][:lmt,17])
+    print('norm fcn_score  [17] :', f['fcn_scores'][:lmt,17])
+    print()
+    print('norm pr_score_2 [23] :', f['pr_scores'][:lmt,23])
+    print('norm fcn_score  [23] :', f['fcn_scores'][:lmt,23])
+
+
+
+def display_pr_fcn_style2(f, class_names,lmt =18):
+    # f = fcn_results[0]
+    for i, [molded_bbox, cls, scr, pr_scr, fcn_scr] in enumerate(zip(f['molded_rois'].astype(np.int), f['class_ids'],  f['scores'], f['pr_scores'], f['fcn_scores'])):
+        
+        print('{} {} {:2d}  {:.<18s}  {:5.4f} {}  '.format(i, molded_bbox, cls, class_names[cls], scr, fcn_scr[[4,5,6,7,8]]))
+        print('{:>86s} {}'.format(' mrcnn old style scores:  ',  pr_scr[[9,10,11]]))
+        print('{:>86s} {}'.format('   fcn old style scores:  ', fcn_scr[[9,10,11]]))
+        print()
+        print('{:>86s} {}'.format('      mrcnn alt scores1:  ', pr_scr[[12,13,14,15,16,17]]))
+        print('{:>86s} {}'.format('        fcn alt scores1:  ', fcn_scr[[12,13,14,15,16,17]]))
+        print()
+        print('{:>86s} {}'.format('          mrcnn_scores2:  ', pr_scr[[18,19,20,21,22,23]]))
+        print('{:>86s} {}'.format('            fcn_scores2:  ', fcn_scr[[18,19,20,21,22,23]]))
+        print()    
+        
+        
+def display_pr_fcn_style3(f, class_names,lmt =18):
+    # r = results[0]
+    print(f['detections'].shape)
+    print('  alt_score  0: (gauss. sum over large bbox / bbox area/ gauss_sum * normlzd_score))')
+    print('  alt_scores 1: (gauss. sum over small mask / mask area/ gauss_sum / mask_area):  ')
+    sort_by_class_order = np.argsort(f['class_ids'])
+
+
+    # for i in range(len( f['class_ids'])):
+    for i in sort_by_class_order:
+    #     print(i , f['rois'][i].astype(np.float), f['scores'][i], f['class_ids'][i], class_names[f['class_ids'][i]])
+    #     print(i , f['detections'][i], f['class_ids'][i], class_names[f['class_ids'][i]])
+        det_type = '       --> ADDED FP ' if f['pr_scores'][i,6] == -1 else '      Original detection'
+        print(i , f['rois'][i])
+        print(i , f['pr_scores'][i,:9], f['pr_scores'][i,4], class_names[ f['pr_scores'][i,4].astype(np.int)], det_type) 
+        print()
+        print(i , 'pr: alt_scores 0 [9,10,11]:  '.rjust(90), f['pr_scores'][i,9:12])    
+        print(i , '  alt_scores 1 [12 - 17]:  '.rjust(90), f['pr_scores'][i,12:18])    
+        print(i , '  alt_scores 2 [18 - 23]:  '.rjust(90), f['pr_scores'][i,18:24])    
+        print(i)
+    #     print(i , f['fcn_scores'][i,:8], f['fcn_scores'][i,4], class_names[ f['fcn_scores'][i,4].astype(np.int)])    
+        print(i , 'fcn: alt_score 0 [9,10,11]:  '.rjust(90), f['fcn_scores'][i,9:12])    
+        print(i ,  '  alt_scores 1 [12 - 17]:  '.rjust(90), f['fcn_scores'][i,12:18])    
+        print(i ,  '  alt_scores 2 [18 - 23]:  '.rjust(90), f['fcn_scores'][i,18:24])    
+        print()
+        print(i , 'alt score 0 [11]:  '.rjust(90), ' from mrcnn:{:10.4f}  from FCN: {:10.4f} '.format(f['pr_scores'][i,11],f['fcn_scores'][i,11]))
+        print(i , 'alt score 1 [14]:  '.rjust(90), ' from mrcnn:{:10.4f}  from FCN: {:10.4f} '.format(f['pr_scores'][i,14],f['fcn_scores'][i,14]))
+        print(i , 'alt score 2 [20]:  '.rjust(90), ' from mrcnn:{:10.4f}  from FCN: {:10.4f} '.format(f['pr_scores'][i,20],f['fcn_scores'][i,20]))
+        print()        
+        
+        
+        
+##-----------------------------------------------------------------------------------------------------------    
+##
+##-----------------------------------------------------------------------------------------------------------    
+def display_mrcnn_scores(r, class_names, only = None, display = True, size = 8):
+    return display_pr_scores(r, class_names, only = only, display = display, size = size)
+
+##-----------------------------------------------------------------------------------------------------------    
+##
+##-----------------------------------------------------------------------------------------------------------        
+def display_pr_hm_scores(pr_hm_scores, class_names, only = None):
+    '''
+    pr_hm_scores:   pr_hm_scores or pr_hm_scores_by_class ( [class, bbox, score info] ) results from mrcnn detect
+    class_names :   class names
+    
+    '''
+    print(pr_hm_scores.shape)
+    np_format = {}
+    float_formatter = lambda x: "%10.4f" % x
+    int_formatter   = lambda x: "%10d" % x
+    np_format['float'] = float_formatter
+    np_format['int']   = int_formatter
+    np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
+    
+    if only is None:
+        only = range(pr_hm_scores.shape[0])
+#     seq_start = r['pr_hm_scores'].shape[1]
+    # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
+    print('  classes     : ', only)
+    print('-'*182)
+    print('                         |  |                 |           alt score 0      |              alt score 1              |                alt score 2            |')
+    print('        class            |  | mrcnn   normlzd |  gauss     bbox   nrm.scr* |  ga.sum     mask    score      norm   |   ga.sum     mask     score   norm    |')
+    print('seq  id     name         |  | score   score   |  sum       area   gau.sum  |  in mask    sum                score  |   in mask    sum              score   |    CX      CY      AREA')
+    print('-'*182)
+    
+    for cls in range(pr_hm_scores.shape[0]):
+        if cls in only:
+            for pre in pr_hm_scores[cls]:
+                width = pre[3]-pre[1]
+                height = pre[2]-pre[0]
+                if width == height == 0:
+                    continue
+                cx = pre[1] + width/2
+                cy = pre[0] + height/2
+                area = (pre[3]-pre[1])* (pre[2]-pre[0])
+                print('{:3.0f} {:3.0f} {:15s}  |{:2.0f}| {:.4f}   {:.4f} |'\
+                      ' {:6.4f}  {:9.4f}  {:7.4f} |'\
+                      ' {:8.4f}  {:8.4f}  {:7.4f}   {:7.4f} |'\
+                      ' {:8.4f}  {:8.4f}  {:7.4f}   {:7.4f} |'\
+                      ' {:6.2f}  {:6.2f}  {:9.4f}'.          
+                format(pre[SEQUENCE_COLUMN], pre[CLASS_COLUMN], class_names[cls], pre[DT_TYPE_COLUMN], pre[ORIG_SCORE_COLUMN], pre[NORM_SCORE_COLUMN], 
+                       pre[SCORE_0_SUM_COLUMN], pre[SCORE_0_AREA_COLUMN], pre[SCORE_0_COLUMN], 
+                       pre[SCORE_1_SUM_COLUMN], pre[SCORE_1_AREA_COLUMN], pre[SCORE_1_COLUMN], pre[SCORE_1_NORM_COLUMN], 
+                       pre[SCORE_2_SUM_COLUMN], pre[SCORE_2_AREA_COLUMN], pre[SCORE_2_COLUMN], pre[SCORE_2_NORM_COLUMN], 
+                     cx, cy , area))     #,  pre[4],pre[5],pre[6],roi))
+            # print('-'*170)
+    return 
+    
+##-----------------------------------------------------------------------------------------------------------    
+##
+##-----------------------------------------------------------------------------------------------------------        
+def display_pr_hm_scores_box_info(r, class_names, only = None):
+    '''
+    r:    results from mrcnn detect
+    cn:   class names
+    
+    '''
+    np_format = {}
+    float_formatter = lambda x: "%10.4f" % x
+    int_formatter   = lambda x: "%10d" % x
+    np_format['float'] = float_formatter
+    np_format['int']   = int_formatter
+    np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
+    
+    if only is None:
+        only = range(r.shape[0])
+#     seq_start = r['pr_hm_scores'].shape[1]
+    # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
+    print('  classes     : ', only)
+    print('-'*175)
+    print('                          ')
+    print('        class             mrcnn   normlzd    gauss       bbox   nrm.scr*     ga.sum     mask    score    norm         ga.sum    mask   score   norm     ')
+    print('seq  id     name              X1/Y1                  X2/Y2               CX / CY        WIDTH   HEIGHT      AREA                         CV_X   CV_Y')
+    print('-'*175)
+    for cls in range(r.shape[0]):
+        if cls in only:
+            for pre in r[cls]:
+        #     print(' {:4d}      {:12s}   {:.4f}   {:.4f}     {:.4f}  {:7.4f}  {:.4f}      {:.4f}   {}'.
+                width = pre[3]-pre[1]
+                height = pre[2]-pre[0]
+                cx = pre[1] + width/2
+                cy = pre[0] + height/2
+                covar_x = width * 0.5
+                covar_y = height * 0.5
+                area = (pre[3]-pre[1])* (pre[2]-pre[0])
+
+                print('{:3.0f} {:3.0f} {:15s}   ({:7.2f}, {:7.2f})   ({:7.2f}, {:7.2f})   {:7.2f}/{:7.2f}   {:7.2f}   {:7.2f}   {:8.2f}  {:8.2f}  A{:8.4f}   {:8.4f}   {:8.4f}'\
+                  ' '.format(pre[6], pre[4],  class_names[cls], 
+                         pre[1], pre[0],  pre[3], pre[2], 
+                         cx    ,     cy,  width,  height, area, 
+                         pre[5], pre[8], covar_x, covar_y))    
+            print('-'*170)
+    return
+    
 
 
 
@@ -213,7 +403,7 @@ def display_fcn_scores_box_info(fcn_scores, fcn_hm = None, class_names = None, o
     seq_start = fcn_scores.shape[1]
 #     seq_start = r['pr_hm_scores'].shape[1]
     # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
-    print('  FCN BBox Information - classes     : ', only)
+    print('  FCN BBox Information - classes   --  : ', only)
     print('-'*175)
     print('                                                         |                                                 |    (COVAR)    |               CLIP REGION   ')
     print('BOX     class                                            |                   Width   Height                |      SQRT     |      FROM/TO               FROM/TO ')
@@ -251,14 +441,15 @@ def display_fcn_scores_box_info(fcn_scores, fcn_hm = None, class_names = None, o
               ' {:6.2f}/{:6.2f}  {:7.2f}~{:7.2f}  {:7.2f} {:7.2f} |'\
               ' {:6.2f} {:6.2f} |'\
               ' {:3d} {:3d} {:3d} {:3d} {:3d} |'\
-              ' {:3.0f} {:3.0f} {:3.0f} {:3.0f} {:3.0f}'.format(pre[7], pre[4],  class_names[cls], 
+              ' {:3.0f} {:3.0f} {:3.0f} {:3.0f} {:3.0f}'.
+              format(pre[7], pre[4],  class_names[cls], 
                      pre[0], pre[1],  pre[2], pre[3], 
                      cx, cy,  width,  height, area, pre[13],
                      sq_covar_x, sq_covar_y, 
                      from_x, to_x, from_y, to_y , clip_area,
                      from_x_r, to_x_r, from_y_r, to_y_r, clip_area_r
                   ))    
-            print('              {:6.4f}'.format(pre[5]))
+            print(' {:2s}   mrcnn_scr: {:6.4f}'.format('TP' if pre[6] == 1 else 'FP', pre[5]))
             for i in range(1,fcn_hm.shape[-1]):
                 print('  '*10, 'cls: {:3d}-{:10s}' \
                       '  cx/cy: {:8.3f}   cx/cy+-1: {:8.3f}   cx/cy+-3: {:8.3f}' \
@@ -370,108 +561,6 @@ def display_fcn_scores_box_info2(fcn_scores, class_names, fcn_hm = None, only = 
         print()
     print('-'*175)
     return
-
-
-
-
-        
-##-----------------------------------------------------------------------------------------------------------    
-##
-##-----------------------------------------------------------------------------------------------------------        
-def display_pr_hm_scores(pr_hm_scores, class_names, only = None):
-    '''
-    r:    results from mrcnn detect
-    cn:   class names
-    
-    '''
-    np_format = {}
-    float_formatter = lambda x: "%10.4f" % x
-    int_formatter   = lambda x: "%10d" % x
-    np_format['float'] = float_formatter
-    np_format['int']   = int_formatter
-    np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
-    
-    if only is None:
-        only = range(pr_hm_scores.shape[0])
-#     seq_start = r['pr_hm_scores'].shape[1]
-    # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
-    print('  classes     : ', only)
-    print('-'*175)
-    print('                                          |           alt score 0      |              alt score 1              |                alt score 2            |')
-    print('        class             mrcnn   normlzd |  gauss     bbox   nrm.scr* |  ga.sum     mask    score      norm   |   ga.sum     mask     score   norm    |')
-    print('seq  id     name          score   score   |  sum       area   gau.sum  |  in mask    sum                score  |   in mask    sum              score   |')
-    print('-'*175)
-    
-    for cls in range(pr_hm_scores.shape[0]):
-        if cls in only:
-            for pre in pr_hm_scores[cls]:
-        #     print(' {:4d}      {:12s}   {:.4f}   {:.4f}     {:.4f}  {:7.4f}  {:.4f}      {:.4f}   {}'.
-                width = pre[3]-pre[1]
-                height = pre[2]-pre[0]
-                if width == height == 0:
-                    continue
-                cx = pre[1] + width/2
-                cy = pre[0] + height/2
-                area = (pre[3]-pre[1])* (pre[2]-pre[0])
-                print('{:3.0f} {:3.0f} {:15s}   {:.4f}   {:.4f} |'\
-                      ' {:6.4f}  {:9.4f}  {:7.4f} |'\
-                      ' {:8.4f}  {:8.4f}  {:7.4f}   {:7.4f} |'\
-                      ' {:8.4f}  {:8.4f}  {:7.4f}   {:7.4f} |'\
-                      ' {:6.2f}  {:6.2f}  {:9.4f}'.          
-                  format(pre[6], pre[4], class_names[cls], pre[5], pre[7], 
-                     pre[8], pre[9], pre[10], 
-                     pre[11], pre[12], pre[13], pre[14], 
-                     pre[17], pre[18], pre[19], pre[22],
-                     cx, cy , area))     #,  pre[4],pre[5],pre[6],roi))
-            print('-'*170)
-    return 
-    
-    
-##-----------------------------------------------------------------------------------------------------------    
-##
-##-----------------------------------------------------------------------------------------------------------        
-def display_pr_hm_scores_box_info(r, class_names, only = None):
-    '''
-    r:    results from mrcnn detect
-    cn:   class names
-    
-    '''
-    np_format = {}
-    float_formatter = lambda x: "%10.4f" % x
-    int_formatter   = lambda x: "%10d" % x
-    np_format['float'] = float_formatter
-    np_format['int']   = int_formatter
-    np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
-    
-    if only is None:
-        only = range(r.shape[0])
-#     seq_start = r['pr_hm_scores'].shape[1]
-    # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
-    print('  classes     : ', only)
-    print('-'*175)
-    print('                          ')
-    print('        class             mrcnn   normlzd    gauss       bbox   nrm.scr*     ga.sum     mask    score    norm         ga.sum    mask   score   norm     ')
-    print('seq  id     name              X1/Y1                  X2/Y2               CX / CY        WIDTH   HEIGHT      AREA                         CV_X   CV_Y')
-    print('-'*175)
-    for cls in range(r.shape[0]):
-        if cls in only:
-            for pre in r[cls]:
-        #     print(' {:4d}      {:12s}   {:.4f}   {:.4f}     {:.4f}  {:7.4f}  {:.4f}      {:.4f}   {}'.
-                width = pre[3]-pre[1]
-                height = pre[2]-pre[0]
-                cx = pre[1] + width/2
-                cy = pre[0] + height/2
-                covar_x = width * 0.5
-                covar_y = height * 0.5
-                area = (pre[3]-pre[1])* (pre[2]-pre[0])
-                print('{:3.0f} {:3.0f} {:15s}   ({:7.2f}, {:7.2f})   ({:7.2f}, {:7.2f})   {:7.2f}/{:7.2f}   {:7.2f}   {:7.2f}   {:8.2f}  {:8.2f}  A{:8.4f}   {:8.4f}   {:8.4f}'\
-                  ' '.format(pre[6], pre[4],  class_names[cls], 
-                         pre[1], pre[0],  pre[3], pre[2], 
-                         cx    ,     cy,  width,  height, area, 
-                         pre[5], pre[8], covar_x, covar_y))    
-            print('-'*170)
-    return
-    
 
 ##-----------------------------------------------------------------------------------------------------------    
 ##

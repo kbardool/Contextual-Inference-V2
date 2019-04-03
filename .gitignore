@@ -1,6 +1,8 @@
+.gitignore
+.vscode
 .ipynb_checkpoints/
 __pycache__/
-mask_rcnn_coco.h5
+mrcnn/ArchivedCode/
 *.h5
 logs/
 assets/
@@ -8,3 +10,4 @@ images/
 train_*/average_heatmaps
 train_*/*_results*/
 .idea/
+.vscode

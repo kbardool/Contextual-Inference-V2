@@ -840,8 +840,12 @@ class MaskRCNN(ModelBase):
         pr_boxes_area      = (pr_boxes[:,:, 2] - pr_boxes[:,:, 0]) * (pr_boxes[:,:, 3] - pr_boxes[:,:, 1])
         zero_ix            = np.where(pr_boxes_area <= 0)
         non_zero_ix        = np.where(pr_boxes_area > 0)
-        pr_scores_by_image = pr_scores_by_class[non_zero_ix[0], non_zero_ix[1], :]
         
+        ## sort pr_hm_scores_by_image in score order
+        pr_scores_by_image = pr_scores_by_class[non_zero_ix[0], non_zero_ix[1], :]
+        sort_idxs          = np.argsort(pr_scores_by_image[:,5])[::-1]
+        
+        pr_scores_by_image = pr_scores_by_image[sort_idxs]
         pr_scores_by_class[zero_ix[0], zero_ix[1], :seq_col] = 0 
         pr_scores_by_class[zero_ix[0], zero_ix[1], seq_col+1:] = 0 
         
@@ -987,7 +991,7 @@ class MaskRCNN(ModelBase):
         ##----------------------------------------------------------------------------------------------
         ## If in debug mode write stdout intercepted IO to output file  - moved to train_xxxx
         ##----------------------------------------------------------------------------------------------            
-        if self.config.SYSOUT in [ 'FILE', 'HEADER']:
+        if self.config.SYSOUT in ['HEADER']:
             sysout_path = self.log_dir
             f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
             content = sys.stdout.getvalue()   #.encode('utf_8')

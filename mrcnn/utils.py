@@ -781,7 +781,7 @@ def compute_overlaps(boxes1, boxes2):
 ##------------------------------------------------------------------------------------------
 def compute_ap(gt_boxes, gt_class_ids,
                pred_boxes, pred_class_ids, pred_scores,
-               iou_threshold=0.5):
+               iou_threshold=0.5, verbose = 0):
     '''
     Compute Average Precision at a set IoU threshold (default 0.5).
 
@@ -813,16 +813,22 @@ def compute_ap(gt_boxes, gt_class_ids,
     for i in range(len(pred_boxes)):
         # Find best matching ground truth box
         sorted_ixs = np.argsort(overlaps[i])[::-1]
+        # print('\n', i, ' sorted overlaps:',overlaps[i, sorted_ixs])
         for j in sorted_ixs:
             # If ground truth box is already matched, go to next one
             if gt_match[j] == 1:
                 continue
             # If we reach IoU smaller than the threshold, end the loop
             iou = overlaps[i, j]
+            # print('overlaps[',i,',',j,'] :', overlaps[i,j])
             if iou < iou_threshold:
+                if verbose:
+                    print(' i:', i, ' pred_box[i]:', pred_boxes[i], 'class[i]:', pred_class_ids[i],' gt_bx j',j, gt_boxes[j], 'class: ', gt_class_ids[j], ', iou:', round(iou,4), 'not meeting IoU threshold')
                 break
             # Do we have a match?
             if pred_class_ids[i] == gt_class_ids[j]:
+                if verbose:
+                    print(' i:', i, ' pred_box[i]:', pred_boxes[i], 'class[i]:', pred_class_ids[i],' gt_bx j:',j, gt_boxes[j], 'class: ', gt_class_ids[j], ', iou:', round(iou,4))
                 match_count  += 1
                 gt_match[j]   = 1
                 pred_match[i] = 1
@@ -831,7 +837,14 @@ def compute_ap(gt_boxes, gt_class_ids,
     # Compute precision and recall at each prediction box step
     precisions = np.cumsum(pred_match) / (np.arange(len(pred_match)) + 1)
     recalls    = np.cumsum(pred_match).astype(np.float32) / len(gt_match)
-
+    if verbose:    
+        print(' Cummulatvie sum precision/recalls')
+        print('   predictions: ', (np.arange(len(pred_match)) + 1))
+        print('   matches(TP): ', np.cumsum(pred_match))
+        print('    precisions: ', precisions)
+        print('       recalls: ', recalls)
+        print('       recalls= predictions /',len(gt_match)) 
+    
     # Pad with start and end values to simplify the math
     precisions = np.concatenate([[0], precisions, [0]])
     recalls    = np.concatenate([[0], recalls, [1]])
@@ -841,12 +854,20 @@ def compute_ap(gt_boxes, gt_class_ids,
     # for all following recall thresholds, as specified by the VOC paper.
     for i in range(len(precisions) - 2, -1, -1):
         precisions[i] = np.maximum(precisions[i], precisions[i + 1])
+    if verbose:
+        print('    precisions: ', precisions)
+        print('       recalls: ', recalls)
 
     # Compute mean AP over recall range
     indices = np.where(recalls[:-1] != recalls[1:])[0] + 1
     mAP     = np.sum((recalls[indices] - recalls[indices - 1]) *
                  precisions[indices])
-
+    if verbose:
+        print('                ', np.where(recalls[:-1] != recalls[1:])[0])
+        print('       indices: ', indices)
+        print('   recall diff: ', (recalls[indices] - recalls[indices - 1]))
+        print('        * PREC: ', (recalls[indices] - recalls[indices - 1])*precisions[indices])
+        print('           mAP: ', mAP)
     return mAP, precisions, recalls, overlaps
 
 
@@ -1757,9 +1778,10 @@ class Paths(object):
     that need to be changed.
     """
     
-    def __init__(self, training_folder       = "models",
-                       fcn_training_folder   = "train_fcn_coco", 
-                       mrcnn_training_folder = "train_mrcnn_coco"):
+    def __init__(self, dataset               , 
+                       training_folder       , 
+                       fcn_training_folder   ,  
+                       mrcnn_training_folder ):
         print(">>> Initialize Paths")
         syst = platform.system()
         if syst == 'Windows':
@@ -1768,14 +1790,14 @@ class Paths(object):
             # WINDOWS MACHINE ------------------------------------------------------------------
             self.DIR_ROOT          = "F:\\"
             self.DIR_TRAINING   = os.path.join(self.DIR_ROOT, training_folder)
-            self.DIR_DATASET    = os.path.join(self.DIR_ROOT, 'MLDatasets')
+            self.DIR_DATASET    = os.path.join(self.DIR_ROOT, 'MLDatasets', dataset)
             self.DIR_PRETRAINED = os.path.join(self.DIR_ROOT, 'PretrainedModels')
         elif syst == 'Linux':
             print(' Linx ' , syst)
             # LINUX MACHINE ------------------------------------------------------------------
             self.DIR_ROOT       = os.getcwd()
             self.DIR_TRAINING   = os.path.expanduser('~/'+training_folder)
-            self.DIR_DATASET    = os.path.expanduser('~/MLDatasets')
+            self.DIR_DATASET    = os.path.expanduser(os.path.join('~/MLDatasets', dataset))
             self.DIR_PRETRAINED = os.path.expanduser('~/PretrainedModels')
         else :
             raise Error('unrecognized system ')
@@ -1783,7 +1805,7 @@ class Paths(object):
         self.MRCNN_TRAINING_PATH   = os.path.join(self.DIR_TRAINING    , mrcnn_training_folder)
         self.FCN_TRAINING_PATH     = os.path.join(self.DIR_TRAINING    , fcn_training_folder)
         self.COCO_DATASET_PATH     = os.path.join(self.DIR_DATASET     , "coco2014")
-        self.COCO_HEATMAP_PATH     = os.path.join(self.DIR_DATASET     , "coco2014_heatmaps")
+        # self.COCO_HEATMAP_PATH     = os.path.join(self.DIR_DATASET     , "coco2014_heatmaps")
         self.COCO_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED  , "mask_rcnn_coco.h5")
         self.SHAPES_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED  , "mask_rcnn_shapes.h5")
         self.RESNET_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED  , "resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5")
@@ -1851,7 +1873,7 @@ def command_line_parser():
                         choices = [1,2,3],
                         default=1, type = int, 
                         metavar="<evaluation method>",
-                        help="Evaluation method : [1,2,3]")
+                        help="Detection Evaluation method : [1,2,3]")
                         
     parser.add_argument('--fcn_model', required=False,
                         default='last',
@@ -1934,10 +1956,10 @@ def command_line_parser():
                         help="Optimization Method: SGD, RMSPROP, ADAGRAD, ...")
                         
     parser.add_argument('--sysout', required=False,
-                        choices=['SCREEN', 'FILE', 'HEADER', 'ALL'],
+                        choices=['SCREEN', 'HEADER', 'ALL'],
                         default='screen', type=str.upper,
                         metavar="<sysout>",
-                        help="sysout destination: 'screen', 'file', 'header' , 'all' (header == file) ")
+                        help="sysout destination: 'screen', 'header' , 'all' (header == file) ")
 
     parser.add_argument('--new_log_folder', required=False,
                         default=False, action='store_true',
@@ -1949,6 +1971,11 @@ def command_line_parser():
                         metavar="<active coco classes>",
                         help="<identifies active coco classes" )
 
+    parser.add_argument('--dataset', required=False,
+                        choices=['newshapes', 'newshapes2', 'coco2014'],
+                        default='newshapes', type=str, 
+                        metavar="<Toy dataset type>",
+                        help="<identifies toy dataset: newshapes or newshapes2" )
     
     return parser
     

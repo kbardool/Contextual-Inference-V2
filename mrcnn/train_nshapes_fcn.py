@@ -26,14 +26,14 @@ from mrcnn.newshapes      import prep_newshape_dataset
 from mrcnn.prep_notebook  import build_newshapes_config
 
 syst = platform.system()
-if syst == 'Windows':
-    save_path    = "E:/git_projs/MRCNN3/train_newshapes/other"
-    dataset_path = "E:/git_projs/MRCNN3/train_newshapes/" 
-elif syst == 'Linux':
-    save_path    = "/home/kbardool/mrcnn3/train_newshapes/other"
-    dataset_path = "/home/kbardool/mrcnn3/train_newshapes/"
-else :
-    raise Error('unrecognized system ')
+# if syst == 'Windows':
+    # save_path    = "E:/git_projs/MRCNN3/train_newshapes/other"
+    # dataset_path = "E:/git_projs/MRCNN3/train_newshapes/" 
+# elif syst == 'Linux':
+    # save_path    = "/home/kbardool/mrcnn3/train_newshapes/other"
+    # dataset_path = "/home/kbardool/mrcnn3/train_newshapes/"
+# else :
+    # raise Error('unrecognized system ')
 
 
 start_time = datetime.now()
@@ -52,7 +52,8 @@ display_input_parms(args)
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
 ##----------------------------------------------------------------------------------------------            
-if args.sysout in [ 'FILE', 'HEADER', 'ALL'] :
+sysout_name = None
+if args.sysout in [ 'HEADER', 'ALL'] :
     sysout_name = "{:%Y%m%dT%H%M}_sysout.out".format(start_time)
     print('    Output is written to file....', sysout_name)    
     sys.stdout = io.StringIO()
@@ -122,16 +123,14 @@ mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = exclude_l
 if args.fcn_model != 'init':
     fcn_model.load_model_weights(init_with = args.fcn_model, verbose = 1)
 else:
-    print(' FCN Training starting from randomly initialized weights ...')
+    print('  mrcnn_model = init --> FCN Training starting from randomly initialized weights ...')
 
 ##------------------------------------------------------------------------------------
 ## Build & Load Training and Validation datasets
 ##------------------------------------------------------------------------------------
-# dataset_train = prep_newshape_dataset(mrcnn_model.config, 10000)
-# dataset_val   = prep_newshape_dataset(mrcnn_model.config,  2500)
-with open(os.path.join(dataset_path, 'newshapes_training_dataset_10000_A.pkl'), 'rb') as outfile:
+with open(os.path.join(mrcnn_model.config.DIR_DATASET, 'newshapes2_training_dataset_15000_A.pkl'), 'rb') as outfile:
     dataset_train = pickle.load(outfile)
-with open(os.path.join(dataset_path,'newshapes_validation_dataset_2500_A.pkl'), 'rb') as outfile:
+with open(os.path.join(mrcnn_model.config.DIR_DATASET, 'newshapes2_validation_dataset_2500_A.pkl'), 'rb') as outfile:
     dataset_val = pickle.load(outfile)
     
 print(' Training file size: ', len(dataset_train.image_ids), ' Validation file size: ', len(dataset_val.image_ids))    

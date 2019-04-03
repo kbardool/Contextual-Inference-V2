@@ -5,7 +5,7 @@
 ##
 ## 
 ##-------------------------------------------------------------------------------------------
-import os, sys, math, io, time, gc, platform, pprint
+import os, sys, math, io, time, gc, platform, pprint, pickle
 import numpy as np
 import tensorflow as tf
 import keras
@@ -23,8 +23,8 @@ import mrcnn.visualize    as visualize
 from datetime             import datetime   
 from mrcnn.utils          import command_line_parser, display_input_parms, Paths
 from mrcnn.newshapes      import prep_newshape_dataset 
-from mrcnn.prep_notebook  import mrcnn_newshape_train, build_mrcnn_training_pipeline_newshapes
-                                
+from mrcnn.prep_notebook  import build_newshapes_config
+
 start_time = datetime.now()
 start_time_disp = start_time.strftime("%m-%d-%Y @ %H:%M:%S")
 print()
@@ -41,7 +41,8 @@ display_input_parms(args)
 ##----------------------------------------------------------------------------------------------
 ## if debug is true set stdout destination to stringIO
 ##----------------------------------------------------------------------------------------------            
-if args.sysout in [ 'FILE', 'HEADER', 'ALL'] :
+sysout_name = None
+if args.sysout in [ 'HEADER', 'ALL'] :
     sysout_name = "{:%Y%m%dT%H%M}_sysout.out".format(start_time)
     print('    Output is written to file....', sysout_name)    
     sys.stdout = io.StringIO()
@@ -65,7 +66,7 @@ KB.clear_session()
 mrcnn_model = mrcnn_modellib.MaskRCNN(mode='training', config=mrcnn_config)
 
 if args.sysout in ['ALL']:
-   sysout_path = fcn_model.log_dir
+   sysout_path = mrcnn_model.log_dir
    f_obj = open(os.path.join(sysout_path , sysout_name),'w' , buffering = 1 )
    content = sys.stdout.getvalue()   #.encode('utf_8')
    f_obj.write(content)
@@ -82,8 +83,10 @@ mrcnn_model.display_layer_info()
 ## Load Mask RCNN Model Weight file
 ##------------------------------------------------------------------------------------
 # exclude_list = ["mrcnn_class_logits"]
-if args.mrcnn_model in [ 'coco', 'init']:
-    args.mrcnn_model = 'coco'
+if args.mrcnn_model == 'init':
+    print(' mrcnn_model = init --> MRCNN Training starting from randomly initialized weights ...')
+elif args.mrcnn_model ==  'coco':
+    print(' mrcnn_model = coco --> MRCNN Training starting from COCO pre-trained weights ...')
     exclude_list = ["mrcnn_class_logits", "mrcnn_bbox_fc"]
     mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = exclude_list, verbose = 1)
 else:
@@ -93,8 +96,14 @@ else:
 ##------------------------------------------------------------------------------------
 ## Build & Load Training and Validation datasets
 ##------------------------------------------------------------------------------------
-dataset_train = prep_newshape_dataset(mrcnn_model.config, 10000)
-dataset_val   = prep_newshape_dataset(mrcnn_model.config,  2500)
+with open(os.path.join(mrcnn_model.config.DIR_DATASET, 'newshapes2_training_dataset_15000_A.pkl'), 'rb') as outfile:
+    dataset_train = pickle.load(outfile)
+with open(os.path.join(mrcnn_model.config.DIR_DATASET, 'newshapes2_validation_dataset_2500_A.pkl'), 'rb') as outfile:
+    dataset_val = pickle.load(outfile)
+    
+print(' Training file size: ', len(dataset_train.image_ids), ' Validation file size: ', len(dataset_val.image_ids))    
+dataset_train.display_active_class_info()
+dataset_val.display_active_class_info()
 
 
 ##----------------------------------------------------------------------------------------------
