@@ -389,7 +389,9 @@ def dev_get_avg_precision_at_iou(gt_boxes, pr_boxes, iou_thr=0.5, score_key = 's
             # print('Start Idx is ', start_idx)
             if verbose:
                 print('   img_results         : ', img_results[img_id])
-
+            if img_results[img_id]['false_pos'] > 0:
+                print(" ==> False positive in Image : ", img_id, pred_boxes_pruned[img_id]['scores'], "  with score threshold: ", model_score_thr)
+                
         prec, rec, true_pos, false_pos, false_neg  = dev_calc_precision_recall(img_results)
         if verbose:
             print()
@@ -924,7 +926,7 @@ def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, sco
     iou_key = np.round(iou,2)
 
     if ax is None:
-        plt.figure(figsize=(10,10))
+        plt.figure(figsize=(12,12))
         ax = plt.gca()
 
     # scores is always passed ffom plot_mAP_by_scores, so it's nver None
@@ -963,28 +965,28 @@ def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, sco
 
 
 ##------------------------------------------------------------------------------------------
-##   Plot PR Curves for multiple calculated scores
+##   Plot PR Curves for multiple calculated scores 
 ##------------------------------------------------------------------------------------------
 def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  class_names = None, columns = 2, min_x = 0.0, min_y = 0.0):
-
+    
     if class_ids is None:
         disp_classes = all_data.keys()
     else:
         disp_classes = class_ids
-
+        
     if scores is None:
         disp_scores  = [ 'mrcnn_score_orig' , 'mrcnn_score_norm', 'mrcnn_score_0', 'mrcnn_score_1', 'mrcnn_score_2', 'fcn_score_0', 'fcn_score_1', 'fcn_score_2']
     else:
         disp_scores   = scores
-
+        
     all_precs = {}
     all_mAPs  = {}
-
+    
     num_disp_classes = len(disp_classes)
     columns = min(columns, num_disp_classes)
     rows    = math.ceil(num_disp_classes/columns)
     print('col/rows: ', columns, rows)
-    fig = plt.figure(figsize=(8 *columns,6* rows))
+    fig = plt.figure(figsize=(10 *columns,6* rows))
 
 
     for idx, class_id in enumerate(disp_classes):
@@ -992,13 +994,13 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
         col = idx  % columns
         subplot = (row * columns) + col +1
         ax= fig.add_subplot(rows, columns, subplot)
-
+        
         class_precs = plot_pr_curves_by_scores_for_one_class(all_data[class_id], class_id, class_names[class_id], 
-                                                             scores = disp_scores, iou = iou, ax = ax, min_x = min_x, min_y = min_y)
+                                scores = disp_scores, iou = iou, ax = ax, min_x = min_x, min_y = min_y)    
         all_precs[class_id] = class_precs
         # ax.autoscale_view()
-
-    ## Print Summary
+        
+    ## Print Summary 
     ttl = ' AP @ IoU {:.2f} Thresholds for Computed Scores '.format(iou)
     ttl_scores = ''.join([" {:>17s}".format(scr)  for scr in disp_scores])
     print()
@@ -1010,7 +1012,7 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
     for cls in disp_classes:
         if cls == 0:
             continue
-        scores = ''.join([" {:>17.4f}".format(all_precs[cls][scr])  for scr in disp_scores])
+        scores = ''.join([" {:>17.2%}".format(all_precs[cls][scr])  for scr in disp_scores])
         print('{:2d} - {:17s} {} '.format(cls , class_names[cls], scores ))
 
     ## print average of each score
@@ -1019,21 +1021,21 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
             all_mAPs[scr] = np.mean([float('{:6.4f}'.format(all_precs[cls][scr])) for cls in all_precs if cls != 0])
 
         #         print('scr', scr, 'map:', mAP[scr], np.mean(mAP[scr]))
-        # print('{:-^170}'.format(''))
+        # print('{:-^170}'.format(''))  
         print()
-        scores = ''.join([" {:>17.4f}".format(all_mAPs[scr])  for scr in disp_scores])
+        scores = ''.join([" {:>17.2%}".format(all_mAPs[scr])  for scr in disp_scores])
         print('{:22s} {} '.format(' average for score.', scores ))
         print('{:-^150}'.format(''))
-
+    
     ## print mAP calculated across all detections
     if 0 in all_precs:
         scores = ''.join([" {:>17.2%}".format(all_precs[0][scr]) for scr in disp_scores])
         print('{:22s} {}'.format( class_names[0], scores))
-        print('{:-^150}'.format(''))
-
-    plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, hspace=0.35, wspace=0.15)
-    plt.show()
-
+        print('{:-^150}'.format(''))  
+        
+    plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, hspace=0.35, wspace=0.15)   
+    plt.show()         
+    
 
 ##------------------------------------------------------------------------------------------
 ##  Plot mAPs vs.IOUs Bar Chart

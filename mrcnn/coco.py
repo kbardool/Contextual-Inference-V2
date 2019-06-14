@@ -51,7 +51,7 @@ from   mrcnn.datagen  import data_generator
 ##------------------------------------------------------------------------------------
 ## Build Training and Validation datasets
 ##------------------------------------------------------------------------------------
-def prep_coco_dataset(type, config, load_coco_classes = None, class_ids = None, loadAnns = 'all_classes',
+def prep_coco_dataset(type, config, load_coco_classes = None, class_ids = None, loadAnns = 'active_only',
                       generator = False, shuffle = True, augment = False, return_coco = False):
     # dataset_train, train_generator = coco_dataset(["train",  "val35k"], mrcnn_config)
 
@@ -115,7 +115,7 @@ class CocoInferenceConfig(CocoConfig):
 class CocoDataset(dataset.Dataset):
     
     def load_coco(self, dataset_dir, subset, load_coco_classes=None,
-                  class_ids=None, class_map=None, return_coco=False, loadAnns = 'all_classes'):
+                  class_ids=None, class_map=None, return_coco=False, loadAnns = None):
         """Load a subset of the COCO dataset.
         dataset_dir:    The root directory of the COCO dataset.
         subset:         What to load (train, val, minival, val35k)
@@ -126,13 +126,15 @@ class CocoDataset(dataset.Dataset):
         """
         assert loadAnns in ['all_classes', 'active_only'], "loadAnns must be 'all_classes' or 'active_only' "
         if loadAnns == 'active_only':
-            print('===================================================')
-            print('!!! Loading annotations for ACTIVE CLASSES ONLY !!!')
-            print('===================================================')
+            print('=====================================================================')
+            print('          !!! Loading annotations for ACTIVE CLASSES ONLY !!!')
+            print(' Dataset dir : ', dataset_dir, ' subset: ', subset)
+            print('=====================================================================')
         else:
-            print('===================================================')
-            print('   Loading annotations for all Coco classes ...    ')
-            print('===================================================')
+            print('=====================================================================')
+            print('             Loading annotations for ALL Coco classes ...    ')
+            print(' Dataset dir : ', dataset_dir, ' subset: ', subset)
+            print('=====================================================================')
 
         # Path
         image_dir = os.path.join(dataset_dir, "train2014" if subset == "train" else "val2014")
@@ -281,7 +283,6 @@ class CocoDataset(dataset.Dataset):
             for annotation in annotations:
                 class_id = self.map_source_class_id( "coco.{}".format(annotation['category_id']))
                 print("ext.id: {} --> {} - {} ".format(annotation['category_id'],class_id, self.class_names[class_id]))
-
                 
     def image_reference(self, image_id):
         """Return a link to the image in the COCO Website."""

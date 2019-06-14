@@ -107,6 +107,7 @@ class Config(object):
 
     # Percent of positive ROIs used to train classifier/mask heads
     ROI_POSITIVE_RATIO = 0.33
+    
     # Minimum IoU threshold required between Proposal and GT for selection as a 
     # postiive candidate (Positive ROI) - Default value was 0.5
     ## 12-22-2018 changed this to 0.3 to avoid images with no RoIs. 

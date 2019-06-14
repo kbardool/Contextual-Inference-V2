@@ -7,7 +7,7 @@ import keras.engine as KE
 import mrcnn.utils as utils
 
 from mrcnn.utils   import  logt
-from mrcnn.chm_layer import build_hm_score_v2, build_hm_score_v3, normalize_scores
+from mrcnn.chm_layer import build_hm_score_v2, build_hm_score_v3, normalize_scores, normalize_heatmaps
 
    
 ##-------------------------------------------------------------------------------------------------------
@@ -104,7 +104,7 @@ def fcn_scoring_graph(input, config, mode):
     logt('pt2_heatmaps',  pt2_heatmaps, verbose = verbose)
     
     pt2_heatmaps = tf.gather_nd(pt2_heatmaps, hm_indices )
-    logt('pt2_heatmaps',  pt2_heatmaps, verbose = verbose)
+    logt('pt2_heatmaps gatherd by hm_indices',  pt2_heatmaps, verbose = verbose)
 
     ##--------------------------------------------------------------------------------------------
     ## (0) Generate scores using prob_grid and pt2_dense
@@ -142,15 +142,20 @@ def fcn_scoring_graph(input, config, mode):
     ## Normalize input heatmap normalization (per class) to calculate alt_score_2
     ##--------------------------------------------------------------------------------------------
     logt('Normalize heatmap within each class !-------------------------------------', verbose = verbose)         
+    logt(' in_heatmap ', in_heatmap , verbose = verbose)
+       
+    ## using new normalization routine to normalize heatmap
+    ## in_heatmap_norm = normalize_heatmaps(in_heatmap)
+    ## logt('normalized heatmap  ', in_heatmap_norm, verbose = verbose)
+    ## in_heatmap_norm = tf.transpose(in_heatmap, [0,3,1,2])
+    ## logt('transposed normalized heatmap  ', in_heatmap_norm, verbose = verbose)
+    
     in_heatmap_norm = tf.transpose(in_heatmap, [0,3,1,2])
-
     logt('in_heatmap_norm  ', in_heatmap_norm, verbose = verbose)
     ## normalize in class
     normalizer = tf.reduce_max(in_heatmap_norm, axis=[-2,-1], keepdims = True)
     normalizer = tf.where(normalizer < 1.0e-15,  tf.ones_like(normalizer), normalizer)
     in_heatmap_norm = in_heatmap_norm / normalizer
-    
-    # gauss_heatmap_sum_normalized = gauss_heatmap_sum / normalizer
     logt('normalizer shape ', normalizer, verbose = verbose)   
     logt('normalized heatmap  ', in_heatmap_norm, verbose = verbose)
 
@@ -159,11 +164,12 @@ def fcn_scoring_graph(input, config, mode):
     ##  build alternative scores#  based on normalized/sclaked clipped heatmap
     ##---------------------------------------------------------------------------------------------
     hm_indices = tf.cast(pt2_ind[:, :2],dtype=tf.int32)    
-    pt2_heatmaps = tf.gather_nd(in_heatmap_norm, hm_indices)
-    alt_scores_2 = tf.map_fn(build_hm_score_v3, [pt2_heatmaps, cy, cx,covar], dtype=tf.float32)    
-    
-    logt('hm_indices shape',  hm_indices, verbose = verbose)
-    logt('pt2_heatmaps',  pt2_heatmaps, verbose = verbose)
+    logt('hm_indices shape ',  hm_indices, verbose = verbose)
+
+    pt2_heatmaps_norm = tf.gather_nd(in_heatmap_norm, hm_indices)
+    logt('pt2_heatmaps_norm',  pt2_heatmaps_norm, verbose = verbose)
+
+    alt_scores_2 = tf.map_fn(build_hm_score_v3, [pt2_heatmaps_norm, cy, cx,covar], dtype=tf.float32)        
     logt('alt_scores_2',alt_scores_2, verbose = verbose)
     
     alt_scores_2_norm = tf.scatter_nd(pt2_ind, alt_scores_2, 

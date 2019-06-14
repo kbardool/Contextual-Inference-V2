@@ -287,14 +287,14 @@ class Image():
     draw_priority_list   = ['sun', 'cloud', 'airplane']
     BUILD_MAX_TRIES      = 7
     MAX_OCCLUSION_RATIO  = 0.75
-    person_car_gap       = 10   # fixed spread between car and person
+    PERSON_CAR_DISTANCE       = 10   # fixed spread between car and person
     sin_60               = math.sin(math.radians(60))
 
     print(' Init Image Class - Possible Object Choices: ', possible_choices)
     print(' Init Image Class - Custom Color Keys      : ', custom_colors_keys)
     print(' Init Image Class - Object Priority List   : ', object_priority_list)
     print(' Init Image Class - BUILD_MAX_TRIES        : ', BUILD_MAX_TRIES)
-    print(' Init Image Class - person_car_gap         : ', person_car_gap)
+    print(' Init Image Class - PERSON_CAR_DISTANCE    : ', PERSON_CAR_DISTANCE)
 
     def __init__(self, image_id,  datasetConfig ,verbose = False):
 
@@ -371,7 +371,6 @@ class Image():
                     break
                 else:
                     object = self.object_list.pop(pos)
-                    # print('Found ', object ' in position : ',pos,'  remaining list: ', object_list)
                     self.build_test_add_object(object, verbose = False)
         
         ## Build remaining objects in object list
@@ -635,8 +634,12 @@ class Image():
             print(' Build ',shape)            
             self.display_layout_info()
 
-        color = self.get_random_color(shape)  
+        color = self.get_random_color(shape) 
 
+        
+        ##-----------------------------------------------------------------------------------------
+        ## Class 1 - Person
+        ##-----------------------------------------------------------------------------------------
         if shape == "person":
             ## 1 - get CX, CY between allowable limits
             dflt_min_range_y = self.horizon[0] - (min_y_dim //2)
@@ -650,7 +653,7 @@ class Image():
                 if verbose:
                     print('car: @ CX/CY: ', car_cx, car_cy, 'Person next to it? ', person_placed)
                 if not person_placed:
-                    cx =  max(car_cx - car_sx - Image.person_car_gap ,0)
+                    cx =  max(car_cx - car_sx - Image.PERSON_CAR_DISTANCE ,0)
                     cy =  car_cy
                     self.vehicles[i][4] = True
                     found_coordiantes = True
@@ -696,6 +699,68 @@ class Image():
                 print('   interpolation range X: [',dflt_min_range_y,  dflt_max_range_y,' ] Min / Max Dim: [ ' , min_y_dim//5, max_y_dim//5, '] Cx:', cx, 'SY: ', sx)
                 print('   Final (cx,cy,sx,sy): ', cx,cy,sx,sy)
 
+        ##-----------------------------------------------------------------------------------------
+        ## Class 2 - Car
+        ##-----------------------------------------------------------------------------------------
+        elif shape == "car":
+
+            ## 1 - get CX, CY between allowable limits
+            dflt_min_range_y = self.horizon[0] - (min_y_dim //2)
+            dflt_max_range_y = self.height     - (max_y_dim //2)
+            # dflt_min_range_x = min_y_dim * 2.0 + self.PERSON_CAR_DISTANCE + 5   # min_x_dim == min_y_dim*2  self.config.Min_X[shape]
+            # dflt_min_range_x = min_y_dim * 2.4      
+            # dflt_max_range_x = self.width      
+            
+            min_range_y = min(self.lowest_building + min_y_dim//2 , self.height) 
+            # min_range_y = min(self.lowest_tree + min_y_dim//2 , self.height) 
+            max_range_y = max(self.height - max_y_dim//2          , min_range_y)
+            cy = random.randint(min_range_y, max_range_y)
+
+            if verbose:
+                print('   Build between Y: [', min_range_y ,max_range_y, ']   X: [', min_range_x, max_range_x, ']' )
+
+            ## 3 - interpolate SX, SY based on loaction of CY
+            # scale width based on location on the image. Images closer to the bottom will be larger
+            xy_ratio = 2
+            sy = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim   , max_y_dim]  ))
+            sx = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim * xy_ratio , max_y_dim * xy_ratio] ))
+            
+            ## 4 - determine range of possible locations for CX based on interpolated SX, and pick a CX
+            min_range_x = sx + Image.PERSON_CAR_DISTANCE
+            max_range_x = self.width
+            cx = random.randint(min_range_x, max_range_x)
+
+            self.leftmost_vehicle  = min( cx-sx, self.leftmost_vehicle)
+            self.rightmost_vehicle = max( cx+sx, self.rightmost_vehicle)
+            self.highest_vehicle   = min( cy-sy, self.highest_vehicle)
+            self.lowest_vehicle    = max( cy+sy, self.lowest_vehicle)
+            self.vehicles.append([cx,cy,sx,sy,False])
+
+            if verbose:
+                print('   interpolation range Y: [',dflt_min_range_y,  dflt_max_range_y,' ] Min / Max Dim: [ ' ,
+                          min_y_dim, max_y_dim    , '] CY:', cy, 'SY: ', sy)
+                print('   interpolation range X: [',dflt_min_range_y,  dflt_max_range_y,' ] Min / Max Dim: [ ' ,
+                          min_y_dim * xy_ratio, max_y_dim * xy_ratio, '] CX:', cx, 'SX: ', sx)
+                print('   cy:', cy, ' sy: ', sy, '  lowest car  :',   self.lowest_vehicle, ' highest car   :',   self.highest_vehicle)
+                print('   cx:', cx, ' sx: ', sx, '  leftmost car:', self.leftmost_vehicle, ' rightmost car :', self.rightmost_vehicle)            
+                print('   Final (cx,cy,sx,sy): ', cx,cy,sx,sy)
+
+        ##-----------------------------------------------------------------------------------------
+        ## Class 3 - Sun
+        ##-----------------------------------------------------------------------------------------
+        elif shape == "sun":
+            if verbose:
+                print(' Build Sun')
+                print('  Sun Colors is :', color, type(color), color.dtype)
+            cx = random.randint(min_range_x, max_range_x)
+            cy = random.randint(min_range_y, max_range_y)
+
+            sy = int(np.interp([cy],[min_range_y, max_range_y], [min_y_dim, max_y_dim]))
+            sx = sy
+
+        ##-----------------------------------------------------------------------------------------
+        ## Class 4 - Building
+        ##-----------------------------------------------------------------------------------------
         elif shape == "building":
 
             sy = random.randint(min_y_dim  , max_y_dim)
@@ -721,87 +786,9 @@ class Image():
                 print('   cy:', cy, ' sy: ', sy, '  lowest   :', self.lowest_building  , ' highest   :', self.highest_building)
                 print('   cx:', cx, ' sx: ', sx, '  leftmost :', self.leftmost_building, ' rightmost :', self.rightmost_building)            
 
-        elif shape == "car":
-
-            ## 1 - get CX, CY between allowable limits
-            dflt_min_range_y = self.horizon[0] - (min_y_dim //2)
-            dflt_max_range_y = self.height     - (max_y_dim //2)
-            # dflt_min_range_x = min_y_dim *2 + self.person_car_gap + 5   # min_x_dim == min_y_dim*2  self.config.Min_X[shape]
-            # dflt_min_range_x = min_y_dim * 2.4      
-            # dflt_max_range_x = self.width      #    self.config.Max_X[shape]
-            
-            min_range_y = min(self.lowest_building + min_y_dim//2 , self.height) 
-            # min_range_y = min(self.lowest_tree + min_y_dim//2 , self.height) 
-            max_range_y = max(self.height - max_y_dim//2          , min_range_y)
-            cy = random.randint(min_range_y, max_range_y)
-
-            if verbose:
-                print('   Build between Y: [', min_range_y ,max_range_y, ']   X: [', min_range_x, max_range_x, ']' )
-
-            ## 3 - interpolate SX, SY based on loaction of CY
-            # scale width based on location on the image. Images closer to the bottom will be larger
-            xy_ratio = 2
-            sy = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim   , max_y_dim]  ))
-            sx = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim * xy_ratio , max_y_dim * xy_ratio] ))
-            
-            ## 4 - determine range of possible locations for CX based on interpolated SX, and pick a CX
-            min_range_x = sx + Image.person_car_gap
-            max_range_x = self.width
-            cx = random.randint(min_range_x, max_range_x)
-
-            self.leftmost_vehicle  = min( cx-sx, self.leftmost_vehicle)
-            self.rightmost_vehicle = max( cx+sx, self.rightmost_vehicle)
-            self.highest_vehicle   = min( cy-sy, self.highest_vehicle)
-            self.lowest_vehicle    = max( cy+sy, self.lowest_vehicle)
-            self.vehicles.append([cx,cy,sx,sy,False])
-
-            if verbose:
-                print('   interpolation range Y: [',dflt_min_range_y,  dflt_max_range_y,' ] Min / Max Dim: [ ' ,
-                          min_y_dim, max_y_dim    , '] CY:', cy, 'SY: ', sy)
-                print('   interpolation range X: [',dflt_min_range_y,  dflt_max_range_y,' ] Min / Max Dim: [ ' ,
-                          min_y_dim * xy_ratio, max_y_dim * xy_ratio, '] CX:', cx, 'SX: ', sx)
-                print('   cy:', cy, ' sy: ', sy, '  lowest car  :',   self.lowest_vehicle, ' highest car   :',   self.highest_vehicle)
-                print('   cx:', cx, ' sx: ', sx, '  leftmost car:', self.leftmost_vehicle, ' rightmost car :', self.rightmost_vehicle)            
-                print('   Final (cx,cy,sx,sy): ', cx,cy,sx,sy)
-
-        elif shape == 'truck' :
-
-            max_y_dim        = self.config.max_dim[shape]
-            min_y_dim        = self.config.min_dim[shape]
-            xy_ratio = random.randint(3,4)
-            
-            ## 2 - get CX, CY between allowable limits
-            dflt_min_range_y = self.horizon[0] - (min_y_dim //2)
-            dflt_max_range_y = self.height     - (max_y_dim //2)
-            # dflt_min_range_x = 0
-            # dflt_max_range_x = self.width      #    self.config.Max_X[shape]
-
-            min_range_y = dflt_min_range_y
-            max_range_y = dflt_max_range_y
-            cy = random.randint(min_range_y, max_range_y)
-
-            ## 3 - interpolate SY based on loaction of CY
-            # scale width based on location on the image. Images closer to the bottom will be larger
-            sy = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim, max_y_dim]))
-            sx = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim*xy_ratio , max_y_dim*xy_ratio] ))
-            # sx = sy * xy_ratio
-
-            ## 4 - determine range of possible locations for CX based on interpolated SX, and pick a CX
-            min_range_x = sx + Image.person_car_gap
-            max_range_x = self.width
-            # max_range_x = self.width - sx
-            cx = random.randint(min_range_x, max_range_x)
-
-            # self.leftmost_vehicle  = min( cx-sx, self.leftmost_vehicle)
-            # self.rightmost_vehicle = max( cx+sx, self.rightmost_vehicle)
-            # self.highest_vehicle   = min( cy-sy, self.highest_vehicle)
-            # self.lowest_vehicle    = max( cy+sy, self.lowest_vehicle)
-            # self.vehicles.append([cx,cy,sx,sy,False])
-
-            if verbose:
-                print('   Build between Y: [', min_range_y ,max_range_y, ']   X: [', min_range_x, max_range_x, ']' )
-                print('   CY: ', cy, '   SY: ', sy,'   CX: ', cx,'   SX: ', sx, )
-
+        ##-----------------------------------------------------------------------------------------
+        ## Class 5 - Tree
+        ##-----------------------------------------------------------------------------------------
         elif shape == "tree":
             # ver_save = verbose
             # verbose = True
@@ -809,7 +796,6 @@ class Image():
                 print(' Build Tree')
                 self.display_layout_info()
 
-            # color = random.choice(Image.treecolors)    
             group_range_y = 25
             group_range_x = 25
 
@@ -846,7 +832,7 @@ class Image():
             ## 3 - interpolate SX, SY based on loaction of CY
             sy = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim   , max_y_dim]   ))
             sx = int( ((2 * sy)//5)  / Image.sin_60)
-            # sx = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim//4, max_y_dim//4]))
+
             if verbose:
                 print('   After Interpolation SX: ', sx, 'SY: ', sy)
             if self.built_counts[shape] == 0 :
@@ -858,38 +844,13 @@ class Image():
             self.highest_tree   = min( cy-sy, self.highest_tree)
             self.lowest_tree    = max( cy+sy, self.lowest_tree)
 
-        elif shape == "airplane":
-         
-            dflt_min_range_y = min_y_dim
-            dflt_max_range_y = self.horizon[0] - 10 
-            # dflt_min_range_x = 0      
-            # dflt_max_range_x = self.width   
-            #     cx = 64
-            cy = random.randint(min_range_y, max_range_y)
-            cx = random.randint(min_range_x, max_range_x)
-            sy = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim   , max_y_dim]  ))
-            sx = sy * 8//3
-            step_sz = sy / 4
-            if verbose:            
-                print('   Build between Y      : [',      min_range_y,     max_range_y, ']               X: [ ', min_range_x, max_range_x, ']' )
-                print('   interpolation range Y: [', dflt_min_range_y, dflt_max_range_y,']   Min / Max Dim: [ ' , min_y_dim, max_y_dim, ']  CY:', cy, 'SY: ', sy)
-                print('   Step Size            : ', step_sz, '    sy: ', sy , '  sx:', sx)
-                print('   Final (cx,cy,sx,sy)  : ', cx,cy,sx,sy)
-
-        elif shape == "sun":
-            if verbose:
-                print(' Build Sun')
-                print('  Sun Colors is :', color, type(color), color.dtype)
-            cx = random.randint(min_range_x, max_range_x)
-            cy = random.randint(min_range_y, max_range_y)
-
-            sy = int(np.interp([cy],[min_range_y, max_range_y], [min_y_dim, max_y_dim]))
-            sx = sy
-
+        ##-----------------------------------------------------------------------------------------
+        ## Class 6 - Cloud
+        ##-----------------------------------------------------------------------------------------
         elif shape == "cloud":
             ## 2 - get CX, CY between allowable limits
             dflt_min_range_y = (max_y_dim //2)
-            dflt_max_range_y = self.config.Max_Y[shape] - (min_y_dim //2)
+            dflt_max_range_y = max_range_y - (min_y_dim //2)
             # dflt_min_range_x = 0   # self.config.Min_X[shape]
             # dflt_max_range_x = self.width  #    self.config.Max_X[shape]
 
@@ -899,6 +860,7 @@ class Image():
             max_range_y = dflt_max_range_y
             # min_range_y = min(self.lowest_building + min_y_dim//2 , self.height) 
             # max_range_y = max(self.height - max_y_dim//2          , min_range_y)
+            
             cx = random.randint(min_range_x, max_range_x)
             cy = random.randint(min_range_y, max_range_y)
             if verbose:
@@ -912,76 +874,58 @@ class Image():
                 print('   interpolation range Y: [',dflt_min_range_y,  dflt_max_range_y,' ] Min / Max Dim: [ ' , min_y_dim, max_y_dim    , '] CY:', cy, 'SY: ', sy)
                 print('   interpolation range X: [',dflt_min_range_y,  dflt_max_range_y,' ] Min / Max Dim: [ ' , min_y_dim * xy_ratio, max_y_dim * xy_ratio, '] CX:', cx, 'SX: ', sx)
 
-        # elif shape == "old cloud":
-        #     print(' Build Cloud')
-        #     color = random.choice(Image.cloudcolors)            
-        #     cx = random.randint(min_range_x, max_range_x)
-        #     cy = random.randint(min_range_y, max_range_y)
+        ##-----------------------------------------------------------------------------------------
+        ## Class 7 - Airplane
+        ##-----------------------------------------------------------------------------------------
+        elif shape == "airplane":
+         
+            dflt_min_range_y = min_y_dim
+            dflt_max_range_y = self.horizon[0] - 10 
 
-        #     sx = int(np.interp([cy],[min_range_y, max_range_y], [min_y_dim, max_y_dim]))
-        # #     min_height ,max_height = 10, 20
-        # #     sy = random.randint(min_height, max_height)
-        #     sx = sy *  random.randint(3, 5)
+            cy = random.randint(min_range_y, max_range_y)
+            cx = random.randint(min_range_x, max_range_x)
+            sy = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim   , max_y_dim]  ))
+            sx = sy * 8//3
+            step_sz = sy / 4
+            if verbose:            
+                print('   Build between Y      : [',      min_range_y,     max_range_y, ']               X: [ ', min_range_x, max_range_x, ']' )
+                print('   interpolation range Y: [', dflt_min_range_y, dflt_max_range_y,']   Min / Max Dim: [ ' , min_y_dim, max_y_dim, ']  CY:', cy, 'SY: ', sy)
+                print('   Step Size            : ', step_sz, '    sy: ', sy , '  sx:', sx)
+                print('   Final (cx,cy,sx,sy)  : ', cx,cy,sx,sy)
 
-        # elif shape == "new building":
-        #     if verbose:
-        #         print(' Build Building :')
-        #         print('   Horizion         : ', self.horizon[0], ' Color: ', self.horizon[2])
-        #         print('   lowest building  :', self.lowest_building  , ' highest building  :', self.highest_building)
-        #         print('   leftmost building:', self.leftmost_building, ' rightmost building :', self.rightmost_building)            
-        #     color = self.get_random_color(shape)
-            
-        #     ## 1 - Get a random Building size (SX,SY) between limits. 
-        #     max_y_dim        = self.config.max_dim[shape]
-        #     min_y_dim        = self.config.min_dim[shape]
-        #     ratio = random.choice([0.5, 0.75, 1.25, 1.5, 1.75, 2])
-        #     dim1 = np.array([random.randint(min_y_dim  , max_y_dim), min_y_dim, max_y_dim, 1], dtype = np.float)
-        #     dim2 = np.array([dim1[0] * ratio, min_y_dim * ratio, max_y_dim * ratio, ratio], dtype = np.float)
-        #     dims = np.vstack([dim1, dim2])
-        #     np.random.shuffle(dims)
-        #     print(' Ratio: ', ratio,' Randomized SX :', dims[0], ' SY: ', dims[1])
-        #     sx, min_x_dim, max_x_dim = dims[0,:3]
-        #     sy, min_y_dim, max_y_dim = dims[1,:3]
+        ##-----------------------------------------------------------------------------------------
+        ## Class 8 - Truck
+        ##-----------------------------------------------------------------------------------------
+        elif shape == 'truck' :
 
-        #     ## 2 - get CX, CY between allowable limits
-        #     dflt_min_range_y = self.horizon[0] - (min_y_dim //2)
-        #     dflt_max_range_y = self.height     - (max_y_dim //2)
-        #     min_range_y = dflt_min_range_y 
-        #     max_range_y = dflt_max_range_y
-        #     cy = random.randint(min_range_y, max_range_y)
-        #     sy = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim , max_y_dim] ))
-        #     sx = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_x_dim , max_x_dim] ))
-            
-        #     ## 4 - determine range of possible locations for CX based on interpolated SX, and pick a CX
-        #     # dflt_min_range_x = max_x_dim
-        #     # dflt_max_range_x = self.width - max_x_dim     #    self.config.Max_X[shape]
-        #     min_range_x = sx
-        #     max_range_x = self.width - sx
-        #     cx = random.randint(min_range_x, max_range_x)
+            dflt_min_range_y = self.horizon[0] - (min_y_dim //2)
+            dflt_max_range_y = self.height     - (max_y_dim //2)
 
+            min_range_y = dflt_min_range_y
+            max_range_y = dflt_max_range_y
+            cy = random.randint(min_range_y, max_range_y)
 
-        #     # min_range_y = min(self.lowest_building + min_y_dim//2 , self.height) 
-        #     # max_range_y = max(self.height - max_y_dim//2          , min_range_y)
-        #     cx = random.randint(min_range_x, max_range_x)
+            ##  interpolate SY based on loaction of CY
+            # scale width based on location on the image. Images closer to the bottom will be larger
+            xy_ratio = random.randint(3,4)
+            sy = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim, max_y_dim]))
+            sx = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim*xy_ratio , max_y_dim*xy_ratio] ))
+            # sx = sy * xy_ratio
 
-        #     self.leftmost_building  = min( cx-sx, self.leftmost_building )
-        #     self.rightmost_building = max( cx+sx, self.rightmost_building)
-        #     self.highest_building   = min( cy-sy, self.highest_building)
-        #     self.lowest_building    = max( cy+sy, self.lowest_building)
+            ##  determine range of possible locations for CX based on interpolated SX, and pick a CX
+            min_range_x = sx + Image.PERSON_CAR_DISTANCE
+            max_range_x = self.width
+            # max_range_x = self.width - sx
+            cx = random.randint(min_range_x, max_range_x)
 
-        #     if verbose:
-        #         print('   Build between Y: [', min_range_y ,max_range_y, ']   X: [', min_range_x, max_range_x, ']' )
-        #         print('   CX: ', cx, 'CY: ', cy)
-        #         print('   After Interpolation SX: ', sx, 'SY: ', sy)
-        #         print('   interpolation range Y: [',dflt_min_range_y,  dflt_max_range_y,' ] Min / Max Dim: [ ' , min_y_dim, max_y_dim, '] CY:', cy, 'SY: ', sy)
-        #         print('   interpolation range X: [',dflt_min_range_x,  dflt_max_range_x,' ] Min / Max Dim: [ ' , min_x_dim, max_x_dim, '] Cx:', cx, 'SY: ', sx)
-        #         print('   cy:', cy, ' sy: ', sy, '  lowest   bldg :', self.lowest_building  , ' highest   bldg:', self.highest_building)
-        #         print('   cx:', cx, ' sx: ', sx, '  leftmost bldg :', self.leftmost_building, ' rightmost bldg:', self.rightmost_building)            
-        #         print('                             lowest car    :', self.lowest_car       , ' highest car   :', self.highest_car)
-        #         print('                             leftmost car  :', self.leftmost_car     , ' rightmost car :', self.rightmost_car)            
-        #         print('   Final (cx,cy,sx,sy): ', cx,cy,sx,sy)
+            if verbose:
+                print('   Build between Y: [', min_range_y ,max_range_y, ']   X: [', min_range_x, max_range_x, ']' )
+                print('   CY: ', cy, '   SY: ', sy,'   CX: ', cx,'   SX: ', sx, )
 
 
+        ##-----------------------------------------------------------------------------------------
+        ## Catchall
+        ##-----------------------------------------------------------------------------------------
         else :
             print(' Build miscellaneous object')
             min_y_dim   = buffer
@@ -1002,6 +946,76 @@ class Image():
 
 
         return (shape, color, (cx, cy, sx,sy))
+
+# elif shape == "old cloud":
+#     print(' Build Cloud')
+#     color = random.choice(Image.cloudcolors)            
+#     cx = random.randint(min_range_x, max_range_x)
+#     cy = random.randint(min_range_y, max_range_y)
+
+#     sx = int(np.interp([cy],[min_range_y, max_range_y], [min_y_dim, max_y_dim]))
+# #     min_height ,max_height = 10, 20
+# #     sy = random.randint(min_height, max_height)
+#     sx = sy *  random.randint(3, 5)
+
+# elif shape == "new building":
+#     if verbose:
+#         print(' Build Building :')
+#         print('   Horizion         : ', self.horizon[0], ' Color: ', self.horizon[2])
+#         print('   lowest building  :', self.lowest_building  , ' highest building  :', self.highest_building)
+#         print('   leftmost building:', self.leftmost_building, ' rightmost building :', self.rightmost_building)            
+#     color = self.get_random_color(shape)
+    
+#     ## 1 - Get a random Building size (SX,SY) between limits. 
+#     max_y_dim        = self.config.max_dim[shape]
+#     min_y_dim        = self.config.min_dim[shape]
+#     ratio = random.choice([0.5, 0.75, 1.25, 1.5, 1.75, 2])
+#     dim1 = np.array([random.randint(min_y_dim  , max_y_dim), min_y_dim, max_y_dim, 1], dtype = np.float)
+#     dim2 = np.array([dim1[0] * ratio, min_y_dim * ratio, max_y_dim * ratio, ratio], dtype = np.float)
+#     dims = np.vstack([dim1, dim2])
+#     np.random.shuffle(dims)
+#     print(' Ratio: ', ratio,' Randomized SX :', dims[0], ' SY: ', dims[1])
+#     sx, min_x_dim, max_x_dim = dims[0,:3]
+#     sy, min_y_dim, max_y_dim = dims[1,:3]
+
+#     ## 2 - get CX, CY between allowable limits
+#     dflt_min_range_y = self.horizon[0] - (min_y_dim //2)
+#     dflt_max_range_y = self.height     - (max_y_dim //2)
+#     min_range_y = dflt_min_range_y 
+#     max_range_y = dflt_max_range_y
+#     cy = random.randint(min_range_y, max_range_y)
+#     sy = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_y_dim , max_y_dim] ))
+#     sx = int(np.interp([cy],[dflt_min_range_y, dflt_max_range_y], [min_x_dim , max_x_dim] ))
+    
+#     ## 4 - determine range of possible locations for CX based on interpolated SX, and pick a CX
+#     # dflt_min_range_x = max_x_dim
+#     # dflt_max_range_x = self.width - max_x_dim     #    self.config.Max_X[shape]
+#     min_range_x = sx
+#     max_range_x = self.width - sx
+#     cx = random.randint(min_range_x, max_range_x)
+
+
+#     # min_range_y = min(self.lowest_building + min_y_dim//2 , self.height) 
+#     # max_range_y = max(self.height - max_y_dim//2          , min_range_y)
+#     cx = random.randint(min_range_x, max_range_x)
+
+#     self.leftmost_building  = min( cx-sx, self.leftmost_building )
+#     self.rightmost_building = max( cx+sx, self.rightmost_building)
+#     self.highest_building   = min( cy-sy, self.highest_building)
+#     self.lowest_building    = max( cy+sy, self.lowest_building)
+
+#     if verbose:
+#         print('   Build between Y: [', min_range_y ,max_range_y, ']   X: [', min_range_x, max_range_x, ']' )
+#         print('   CX: ', cx, 'CY: ', cy)
+#         print('   After Interpolation SX: ', sx, 'SY: ', sy)
+#         print('   interpolation range Y: [',dflt_min_range_y,  dflt_max_range_y,' ] Min / Max Dim: [ ' , min_y_dim, max_y_dim, '] CY:', cy, 'SY: ', sy)
+#         print('   interpolation range X: [',dflt_min_range_x,  dflt_max_range_x,' ] Min / Max Dim: [ ' , min_x_dim, max_x_dim, '] Cx:', cx, 'SY: ', sx)
+#         print('   cy:', cy, ' sy: ', sy, '  lowest   bldg :', self.lowest_building  , ' highest   bldg:', self.highest_building)
+#         print('   cx:', cx, ' sx: ', sx, '  leftmost bldg :', self.leftmost_building, ' rightmost bldg:', self.rightmost_building)            
+#         print('                             lowest car    :', self.lowest_car       , ' highest car   :', self.highest_car)
+#         print('                             leftmost car  :', self.leftmost_car     , ' rightmost car :', self.rightmost_car)            
+#         print('   Final (cx,cy,sx,sy): ', cx,cy,sx,sy)
+
 
     ##---------------------------------------------------------------------------------------------
     ## find_hidden_shapes

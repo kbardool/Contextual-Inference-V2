@@ -1,5 +1,6 @@
 source activate TFG
-python ../mrcnn/test_nshapes_fcn.py \
+python ../mrcnn/build_nshape_fcn_pred_structures.py \
+       --mode                  test                \
        --batch_size            1                   \
        --dataset               newshapes2          \
        --mrcnn_logs_dir        train_mrcnn         \

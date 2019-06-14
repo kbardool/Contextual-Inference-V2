@@ -23,6 +23,7 @@ import os
 import time
 import math
 import pprint 
+import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -70,7 +71,22 @@ SCORE_COLORS = {  'mrcnn_score_orig':  BLUE
                  
 # COLORS   = [ BLUE, LORANGE, ORANGE, GREEN, RED, PURPLE, BROWN, GRAY, GOLD, AQUA]
 
+def load_info_files(path, eval_method, epoch):
+#     FILE_IDX= -1
+    epoch = '{:04d}'.format(epoch)   #s = fcn_files[FILE_IDX].split('_')[1].replace('.h5','')
 
+    map_info_file = eval_method+'_map_info_epoch'+epoch+'.pkl'
+    cls_info_file = eval_method+'_cls_info_epoch'+epoch+'_500.pkl'
+
+    with open(os.path.join(path, map_info_file), 'rb') as infile:
+        all_data = pickle.load(infile)            
+    print(type(all_data))
+    with open(os.path.join(path, cls_info_file), 'rb') as infile:
+        cls_info = pickle.load(infile)                
+    print('loaded :', map_info_file, '   ', cls_info_file)    
+    return all_data, cls_info
+    
+    
 ##------------------------------------------------------------------------------------------
 ##  
 ##------------------------------------------------------------------------------------------        
@@ -568,11 +584,20 @@ def update_map_dictionaries(results, gt_dict, pr_dict, class_dict, verbose = 0):
     
  
         
-    for  pr_score, fcn_score in zip(np.round(r['pr_scores'],4), np.round(r['fcn_scores'],4) ):
-        assert np.all(pr_score[:NORM_SCORE_COLUMN] == fcn_score[:NORM_SCORE_COLUMN]), 'FCN_SCORE[:8] <> PR_SCORE[:8]'
+    for  pr_score, fcn_score, molded_roi in zip(np.round(r['pr_scores'],4), np.round(r['fcn_scores'],4), np.round(r['molded_rois'],4) ):
+        # assert np.all(pr_score[:NORM_SCORE_COLUMN] == fcn_score[:NORM_SCORE_COLUMN]), 'FCN_SCORE[:8] {:f}<> PR_SCORE[:8]{:f}'
+        
+        if not  np.all(pr_score[:NORM_SCORE_COLUMN] == fcn_score[:NORM_SCORE_COLUMN]):
+            print('FCN_SCORE[:8] {:f}<> PR_SCORE[:8]{:f}')
+            print('pr_score  :',pr_score[:NORM_SCORE_COLUMN])
+            print('fcn_score :',fcn_score[:NORM_SCORE_COLUMN])
+        
         pr_cls   = int(pr_score[CLASS_COLUMN])
-        pr_bbox  = pr_score[:4].tolist()
+
+        # pr_bbox  = pr_score[:4].tolist()  <-- produced wronf bbox cooridnaites for COCO datasets
+        pr_bbox  = molded_roi.tolist()
         pr_scr   = pr_score[ORIG_SCORE_COLUMN]
+        
         pr_dict[keyname]['class_ids'].append(pr_cls)
         pr_dict[keyname]['det_ind'].append(np.rint(pr_score[DT_TYPE_COLUMN]))
         
@@ -917,7 +942,10 @@ def plot_mAP_by_IOU(all_data, score , class_ids = None , class_names = None, col
 ##------------------------------------------------------------------------------------------
 ##   Plot PR Curves for multiple calculated scores - for one class
 ##------------------------------------------------------------------------------------------
-def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, scores, iou = None , ax = None , min_x = 0.0):
+def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, scores, iou = None , 
+                                            ax = None , legend = 'upper right', 
+                                            min_x = 0.0, max_x = 1.05, 
+                                            min_y = 0.0, max_y = 1.05):
     avg_precs = {}
     iou_thrs = {}
     score_keys = []
@@ -950,10 +978,10 @@ def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, sco
     ax.set_title(' Class: {:2d} - {} @IoU: {:4.2f} '.format(class_id, class_name, iou), fontsize=14)
     ax.set_xlabel('recall', fontsize= 12)
     ax.set_ylabel('precision', fontsize= 12)
-    ax.tick_params(axis='both', labelsize = 10)
-    ax.set_xlim([min_x,1.05])
-    ax.set_ylim([0.0,1.05])
-    leg = plt.legend(loc='lower right',frameon=True, fontsize = 10, markerscale = 6)
+    ax.tick_params(axis='both', labelsize = 16)
+    ax.set_xlim([min_x,max_x])
+    ax.set_ylim([min_y,max_y])
+    leg = plt.legend(loc=legend,frameon=True, fontsize = 12, markerscale = 6)
     leg.set_title('IoU Thr {:.2f}'.format(iou_key),prop={'size':11})
                   
     for xval in np.linspace(0.0, 1.0, 11):
@@ -965,7 +993,11 @@ def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, sco
 ##------------------------------------------------------------------------------------------
 ##   Plot PR Curves for multiple calculated scores 
 ##------------------------------------------------------------------------------------------
-def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  class_names = None, columns = 2, min_x = 0.0):
+def plot_mAP_by_scores(all_data, scores = None, class_ids = None,  class_names = None, 
+                        columns=   2 , iou = 0.5, legend = 'upper right', 
+                        min_x  = 0.0 , max_x = 1.05, 
+                        min_y  = 0.0 , max_y = 1.05,
+                        size_x =   8 , size_y = 6):
     
     if class_ids is None:
         disp_classes = all_data.keys()
@@ -984,7 +1016,7 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
     columns = min(columns, num_disp_classes)
     rows    = math.ceil(num_disp_classes/columns)
     print('col/rows: ', columns, rows)
-    fig = plt.figure(figsize=(8 *columns,6* rows))
+    fig = plt.figure(figsize=(size_x *columns, size_y * rows))
 
 
     for idx, class_id in enumerate(disp_classes):
@@ -994,7 +1026,9 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None , iou = 0.5,  c
         ax= fig.add_subplot(rows, columns, subplot)
         
         class_precs = plot_pr_curves_by_scores_for_one_class(all_data[class_id], class_id, class_names[class_id], 
-                                scores = disp_scores, iou = iou, ax = ax, min_x = min_x)    
+                                scores = disp_scores, iou = iou, ax = ax, legend = legend,
+                                min_x = min_x, max_x = max_x, 
+                                min_y = min_y, max_y = max_y )    
         all_precs[class_id] = class_precs
         # ax.autoscale_view()
         
@@ -1143,7 +1177,8 @@ def plot_mAP_vs_IoUs_BarChart(all_data, scores = None, ious=None, class_ids = [0
 ##------------------------------------------------------------------------------------------
 ##  Plot mAPs vs. Class Bar Chart
 ##------------------------------------------------------------------------------------------
-def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = None, class_names = None, epochs = 0):
+def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = None, 
+                               class_names = None, epochs = 0, loc = 'lower left'):
     
     if class_ids is None:
         disp_classes = sorted(all_data.keys())
@@ -1217,7 +1252,7 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
     ax.set_xlim([0.0 - margin, width])
     ax.set_ylim([0.0,1.0])
     ax.set_title('mAP for various scores @ IoU {}  after {} epochs training'.format( iou_key, epochs), fontsize=16)
-    leg = plt.legend(loc='lower left', frameon=True, fontsize = 10, markerscale = 0.5, framealpha = 1.0)    
+    leg = plt.legend(loc=loc, frameon=True, fontsize = 10, markerscale = 0.5, framealpha = 1.0)    
     leg.set_title('Score',prop={'size':10})
     
     for yval in np.linspace(0.0, 1.0, 11):

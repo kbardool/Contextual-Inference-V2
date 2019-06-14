@@ -56,7 +56,7 @@ class Dataset(object):
             "source": source,
             "id"    : class_id,
             "name"  : class_name,
-            "category" : category,
+            "category" : category if category is not None else '',
             "img_count": img_count
         })
 
@@ -174,20 +174,25 @@ class Dataset(object):
         return 
         
     def display_active_class_info(self):
-
+        print(' Active Class Information ')
+        print('--------------------------')
         print(self.active_class_ids)
         for cls in self.active_class_ids:
             # class_id = self.map_source_class_id( "coco.{}".format(ext_cls))
             ext_cls = self.int_to_ext_id[cls]
-            print( 'internal_class: ', cls,'ext_cls:',ext_cls, 'name:', self.class_info[cls]['category'],'-',self.class_info[cls]['name'])        
-        return
+            print( 'internal_class: ', cls,'ext_cls:',ext_cls, 'category-name:', self.class_info[cls]['category'],'-',self.class_info[cls]['name'])        
 
     def display_class_info(self):
         print(' Class Information ')
         print('-------------------')
         for cls_info in self.class_info:
-            print('{:25s}  source: {:10s}   ext_id: {:3d}   internal_id: {:3d}  category: {:20}  img_count: {:6d}' .format(
-                    cls_info['name'], cls_info['source'], cls_info['id'], cls_info['internal_id'] , cls_info['category'], cls_info["img_count"]))
+            print('{:25s}  source: {:10s}   ext_id: {:3d}   internal_id: {:3d}  category: {:20s}  img_count: {:6d}' .format(
+                    cls_info['name'], 
+                    cls_info['source'], 
+                    cls_info['id'], 
+                    cls_info['internal_id'] , 
+                    cls_info['category'] if cls_info['category'] is not None else 'n/a', 
+                    cls_info["img_count"]))
 
 
                 
@@ -258,3 +263,4 @@ class Dataset(object):
         mask = np.empty([0, 0, 0])
         class_ids = np.empty([0], np.int32)
         return mask, class_ids
+    

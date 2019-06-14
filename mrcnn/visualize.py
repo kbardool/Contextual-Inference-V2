@@ -144,8 +144,9 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
     i = 1
     for image, title in zip(images, titles):
         title += " H x W={}x{}".format(image.shape[0], image.shape[1])
-        plt.subplot(rows, cols, i)
-        plt.title(title, fontsize=9)
+        ax = plt.subplot(rows, cols, i)
+        ax.tick_params(axis='both', bottom = True, left = True, labelsize = 6, width = 1.0, length = 2)
+        ax.set_title(title, fontsize=9)
         # if not grid:
         plt.grid(grid)
         plt.imshow(image.astype(np.uint8), cmap=cmap,
@@ -158,7 +159,7 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
 ##------------------------------------------------------------------------------------    
 ## display_image_gt()
 ##------------------------------------------------------------------------------------    
-def display_image_gt(dataset, config, image_ids, masks= False, only_classes = None, size=12):
+def display_image_gt(dataset, config, image_ids, masks= False, only_classes = None, size=12, verbose = True):
     ''' 
     display images in a mrcnn train_batch 
     '''
@@ -173,15 +174,17 @@ def display_image_gt(dataset, config, image_ids, masks= False, only_classes = No
         mask, class_ids = dataset.load_mask(image_id)
         bbox            = utils.extract_bboxes(mask)
         class_names     = [str(dataset.class_names[class_id]) for class_id in class_ids]
-        print(' Image_id    : ', image_id, ' Reference: ', dataset.image_reference(image_id) , 'Coco Id:', dataset.image_info[image_id]['id'])
-        print(' Image meta  : ', image_meta[:10])
-        print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
-        print(' Class Names : ', class_names)  
+        title = 'Image Id :'+str(image_id)
+        if verbose:
+            print(' Image_id    : ', image_id, ' Reference: ', dataset.image_reference(image_id) , 'Coco Id:', dataset.image_info[image_id]['id'])
+            print(' Image meta  : ', image_meta[:10])
+            print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
+            print(' Class Names : ', class_names)  
         # display_top_masks(image, mask, class_ids, dataset.class_names)
         if masks:
             display_instances_with_mask(image, bbox, mask, class_ids, dataset.class_names, size =size) 
         else:
-            display_instances(image, bbox, class_ids, dataset.class_names, only_classes = only_classes, size=size)
+            display_instances(image, bbox, class_ids, dataset.class_names, only_classes = only_classes, title = title, size=size)
     return    
     
 
@@ -253,7 +256,10 @@ def display_instances(image, boxes, class_ids, class_names,
     ax.set_ylim(height + 10, -10)
     ax.set_xlim(-10, width + 10)
     # ax.axis('off')
-    ax.set_title(title)
+    # ax.set_xlabel(' X axis', fontsize = 12)
+    # ax.set_ylabel(' Y axis', fontsize = 12)
+    ax.tick_params(axis='both', labelsize = 10)
+    ax.set_title(title, fontsize= 14)
  
     masked_image = image.astype(np.uint32).copy()
     for i in range(N):
@@ -3058,6 +3064,53 @@ def inference_heatmaps_compare(input, image_id = 0, hm = 'hm' ,
     
     return
 
+
+##----------------------------------------------------------------------
+## plot one gaussian distribution heatmap - 2D
+##----------------------------------------------------------------------       
+def plot_2d_gaussian( heatmap, title = 'My figure', size = (10,10), zlim = 1.05 ):
+    columns     = 1
+    rows        = 1 
+    # height      = width 
+    image_height, image_width = heatmap.shape
+    
+    fig = plt.figure(figsize=size)
+    # fig.set_figheight(width-1)
+
+    X = np.arange(0, image_width, 1)
+    Y = np.arange(0, image_height, 1)
+    X, Y = np.meshgrid(X, Y)        
+    pos = np.empty(X.shape+(2,))   # concatinate shape of x to make ( x.rows, x.cols, 2)
+    pos[:,:,0] = X;
+    pos[:,:,1] = Y;
+
+    col = 0    
+    cls = 0
+    # for col  in range(2):
+    subplot = (cls * columns) + col + 1
+    title = 'Heatmap {} '.format(col+1)
+    # plt.subplot(rows, columns, col+1)
+    
+    ax = fig.add_subplot(rows, columns, subplot )
+    ax.set_ylim(0,image_height )
+    ax.set_xlim(0,image_width)
+    ax.set_xlabel(' X axis', fontsize = 12)
+    ax.set_ylabel(' Y axis', fontsize = 12)
+    ax.tick_params(axis='both', bottom = True, left = True, labelsize = 6, width = 1.0, length = 4)
+    ax.grid()
+    ax.invert_yaxis()
+    surf = ax.matshow(heatmap,  cmap=cm.jet)
+    # # Customize the z axis.
+    # plt.plot()
+    # ax.zaxis.set_major_locator(LinearLocator(10))
+    # ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
+
+    # Add a color bar which maps values to colors.
+    fig.suptitle(title, fontsize = 14 )
+    cbar = fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.05)
+    cbar.ax.tick_params(labelsize=10) 
+    
+    plt.show()
     
 """    
 ##----------------------------------------------------------------------
@@ -3414,52 +3467,6 @@ def draw_output_rois(image, rois, class_ids, class_names, limit=10):
     print("Negative ROIs: ", class_ids[class_ids == 0].shape[0])
     print("Positive Ratio: {:.2f}".format(class_ids[class_ids > 0].shape[0] / class_ids.shape[0]))
 """
-
-##----------------------------------------------------------------------
-## plot one gaussian distribution heatmap - 2D
-##----------------------------------------------------------------------       
-def plot_2d_gaussian( heatmap, title = 'My figure', size = (10,10), zlim = 1.05 ):
-    columns     = 1
-    rows        = 1 
-    height      = width 
-    image_height, image_width = heatmap.shape
-    
-    fig = plt.figure(figsize=size)
-    fig.suptitle(title, fontsize = 10 )
-    fig.set_figheight(width-1)
-
-    X = np.arange(0, image_width, 1)
-    Y = np.arange(0, image_height, 1)
-    X, Y = np.meshgrid(X, Y)        
-    pos = np.empty(X.shape+(2,))   # concatinate shape of x to make ( x.rows, x.cols, 2)
-    pos[:,:,0] = X;
-    pos[:,:,1] = Y;
-
-    col = 0    
-    cls = 0
-    # for col  in range(2):
-    subplot = (cls * columns) + col + 1
-    ttl = 'Heatmap {} '.format(col+1)
-    # plt.subplot(rows, columns, col+1)
-    # ax = fig.gca(projection='3d')
-    
-    ax = fig.add_subplot(rows, columns, subplot )
-    ax.set_title(ttl)
-    ax.set_ylim(0,image_height )
-    ax.set_xlim(0,image_width)
-    ax.set_xlabel(' X axis', fontsize = 8)
-    ax.set_ylabel(' Y axis', fontsize = 8)
-    # ax.invert_yaxis()
-    surf = ax.matshow(heatmap,  cmap=cm.coolwarm)
-    # # Customize the z axis.
-    # plt.plot()
-    # ax.zaxis.set_major_locator(LinearLocator(10))
-    # ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
-
-    # Add a color bar which maps values to colors.
-    fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.05)
-    
-    plt.show()
 
  
 ##----------------------------------------------------------------------

@@ -108,7 +108,7 @@ def build_coco_config( model = None, mode = 'training', args = None, verbose = 0
     
     elif model == 'fcn':
         config.TRAINING_PATH      = paths.FCN_TRAINING_PATH
-        config.COCO_HEATMAP_PATH  = paths.COCO_HEATMAP_PATH 
+        # config.COCO_HEATMAP_PATH  = paths.COCO_HEATMAP_PATH 
         config.VGG16_MODEL_PATH   = paths.FCN_VGG16_MODEL_PATH
 
         if mode == 'training':
@@ -696,7 +696,7 @@ def build_fcn_inference_pipeline( args = None, mrcnn_config = None, fcn_config =
     #------------------------------------------------------------------------------------
     # Load MRCNN & FCN  Model weights  
     #------------------------------------------------------------------------------------
-    mrcnn_model.load_model_weights(init_with = 'last', exclude = None, verbose = verbose)  
+    mrcnn_model.load_model_weights(init_with = args.mrcnn_model, exclude = None, verbose = verbose)  
     fcn_model.load_model_weights(init_with = args.fcn_model, verbose = verbose)
     
     print(' *** Keras Training mode after setting:', KB.learning_phase())
@@ -712,8 +712,11 @@ def build_fcn_evaluate_pipeline( args = None, mrcnn_config = None, fcn_config = 
     return build_fcn_inference_pipeline( args = args, 
                                          mrcnn_config = mrcnn_config, 
                                          fcn_config = fcn_config, 
-                                         mode = mode, verbose = verbose)
-
+                                         mode = mode, verbose = verbose)                                         
+                                         
+build_fcn_evaluate_pipeline_coco  = build_fcn_evaluate_pipeline
+build_fcn_inference_pipeline_coco = build_fcn_inference_pipeline
+ 
 #######################################################################################    
 ## GET BATCH routines
 #######################################################################################
@@ -763,7 +766,7 @@ def get_training_batch(dataset, config, image_ids, display = True, masks = False
 ##------------------------------------------------------------------------------------    
 ## get_inference_batch() : 
 ##------------------------------------------------------------------------------------    
-def get_inference_batch(dataset, config, image_ids = None, generator = None, display = False):
+def get_inference_batch(dataset, config, image_ids = None, generator = None, display = False, masks = False):
     '''
     retrieves a list of image ids, that can be passed to model predict() functions
         
@@ -786,60 +789,54 @@ def get_inference_batch(dataset, config, image_ids = None, generator = None, dis
     elif generator is not None:
         batch_x, _ = next(generator)
         images = [dataset.load_image(image_id) for image_id in batch_x[1][:,0]]       
-
-    else:
-        print('ERROR - dataset generator or list of image_ids must be passed to get_evaluate_batch()')
-        return
-    raw_images    = np.array(images).astype(np.float32)
-    molded_images = batch_x[0]
-    image_metas   = batch_x[1]
         
     if display:
-        log("Processing {} images".format(len(images)))
-        for image in images:
-            log("image", image)
-        log("molded_images", molded_images)
-        log("image_metas"  , image_metas)
-        titles = ['id: '+str(i)+' ' for i in image_metas]
-        # visualize.display_images(images, titles = titles)        
-        visualize.display_training_batch(dataset, [molded_images, image_metas], masks = True, size = 8)
-        
-    return [raw_images, molded_images, image_metas]
+        # log("Processing {} images".format(len(images)))
+        # for image in images:
+            # log("image", image)
+        # log("molded_images", batch_x[0])
+        # log("image_metas"  , batch_x[1])
+        # titles = ['id: '+str(i)+' ' for i in batch_x[1]]
+        visualize.display_training_batch(dataset, batch_x, masks = masks, size = 8)
+
+    raw_images    = np.array(images).astype(np.float32)
+    # molded_images = batch_x[0]
+    # image_metas   = batch_x[1]
+
+    #      [raw_images, molded_images, images_metas]
+    return [raw_images, batch_x[0], batch_x[1]]
         
 ##------------------------------------------------------------------------------------    
 ## get_evaluate_batch()
 ##------------------------------------------------------------------------------------    
 def get_evaluate_batch(dataset, config, image_ids = None, generator = None, display = True, masks = False):
     '''
-    retrieves image batch from list of image ids or generator, that can be passed to MRCNN model in evaluate
-    mode. or the run_pipeline() module
+    retrieves image batch from list of image ids or generator, that can be passed to model evaluate()
+    functions mode,. or the run_pipeline() module. In evaluate functions the ground truth annotations
+    exist for the images loaded and are also returned.
     
     returns
     -------
     List of     [images, molded_images, images_metas, gt_class_ids, gt_bboxes]
     '''
-         
-    if generator is not None:
-        batch_x, _ = next(generator)
-        images = [dataset.load_image(image_id) for image_id in batch_x[1][:,0]] 
-        
-    else: 
-        if image_ids is not None:
-            if not isinstance(image_ids, list):
-                image_ids = [image_ids]
-        else:
-            image_ids = list(np.random.choice(dataset.image_ids, config.BATCH_SIZE))
-            print(' Random selection of images: ' , image_ids)
-            
-        images = [dataset.load_image(image_id) for image_id in image_ids]   
+
+    assert generator is not None or image_ids is not None, "  generator or image_ids must be passed to get_evaluate_batch()" 
+    
+    if image_ids is not None:
+        if not isinstance(image_ids, list):
+            image_ids = [image_ids]
+        images = [dataset.load_image(image_id) for image_id in image_ids]       
         batch_x, _ = data_gen_simulate(dataset, config, image_ids)
-        
+    elif generator is not None:
+        batch_x, _ = next(generator)
+        images = [dataset.load_image(image_id) for image_id in batch_x[1][:,0]]       
         
     if display:
         visualize.display_training_batch(dataset, batch_x, masks = masks)
         
+    raw_images    = np.array(images).astype(np.float32)
     #      [images, molded_images, images_metas, gt_class_ids, gt_bboxes]
-    return [images, batch_x[0], batch_x[1], batch_x[4], batch_x[5]]
+    return [raw_images, batch_x[0], batch_x[1], batch_x[4], batch_x[5]]
         
 #######################################################################################    
 ## RUN PIPELINE  routines

@@ -1804,7 +1804,7 @@ class Paths(object):
 
         self.MRCNN_TRAINING_PATH   = os.path.join(self.DIR_TRAINING    , mrcnn_training_folder)
         self.FCN_TRAINING_PATH     = os.path.join(self.DIR_TRAINING    , fcn_training_folder)
-        self.COCO_DATASET_PATH     = os.path.join(self.DIR_DATASET     , "coco2014")
+        self.COCO_DATASET_PATH     = self.DIR_DATASET
         # self.COCO_HEATMAP_PATH     = os.path.join(self.DIR_DATASET     , "coco2014_heatmaps")
         self.COCO_MODEL_PATH       = os.path.join(self.DIR_PRETRAINED  , "mask_rcnn_coco.h5")
         self.SHAPES_MODEL_PATH     = os.path.join(self.DIR_PRETRAINED  , "mask_rcnn_shapes.h5")
@@ -1988,10 +1988,3 @@ def display_input_parms(args):
             print("   {:30} {}".format(a, getattr(args, a)))
     print("\n")
  
-    
-    
-    
-
-    
-    
-    

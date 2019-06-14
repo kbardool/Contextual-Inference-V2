@@ -132,47 +132,47 @@ class NewImagesDataset(Dataset):
         self.config.Min_Y['_default'] =  buffer
         self.config.Max_Y['_default'] =  height - buffer - 1
 
-        self.config.min_dim['building'] =  15
-        self.config.max_dim['building'] =  25
-        self.config.Max_X  ['building'] =  width - buffer
-        self.config.Min_Y  ['building'] =  height //3 
-        self.config.Min_X  ['building'] =  buffer
-        self.config.Max_Y  ['building'] =  2 * height //3   ##* min_range_y
-
-        self.config.min_dim['person'] =  7     ## 10
-        self.config.max_dim['person'] =  14    ## 20
-        self.config.Min_Y  ['person'] =  height //2 
-        self.config.Max_Y  ['person'] =  height - buffer - 1
-        self.config.Min_X  ['person'] =  0
-        self.config.Max_X  ['person'] =  height - buffer - 1
-
-        self.config.min_dim['car' ]   =  6
-        self.config.max_dim['car' ]   =  13
-        self.config.Min_X  ['car' ]   =  buffer
-        self.config.Max_X  ['car' ]   =  height - buffer - 1
-        self.config.Min_Y  ['car' ]   =  height //2
-        self.config.Max_Y  ['car' ]   =  height - buffer - 1
+        self.config.min_dim['person']    =  7     ## 10
+        self.config.max_dim['person']    =  14    ## 20
+        self.config.Min_Y  ['person']    =  height //2 
+        self.config.Max_Y  ['person']    =  height - buffer - 1
+        self.config.Min_X  ['person']    =  0
+        self.config.Max_X  ['person']    =  height - buffer - 1
+                                         
+        self.config.min_dim['car' ]      =  6
+        self.config.max_dim['car' ]      =  13
+        self.config.Min_X  ['car' ]      =  buffer
+        self.config.Max_X  ['car' ]      =  height - buffer - 1
+        self.config.Min_Y  ['car' ]      =  height //2
+        self.config.Max_Y  ['car' ]      =  height - buffer - 1
+                                         
+        self.config.min_dim['sun']       =  4
+        self.config.max_dim['sun']       =  10
+        self.config.Min_X  ['sun']       =  buffer //3                
+        self.config.Max_X  ['sun']       =  width - (buffer//3) - 1  
+        self.config.Min_Y  ['sun']       =  buffer //3
+        self.config.Max_Y  ['sun']       =  height //5    ##* min_range_y
         
-        self.config.min_dim['sun']    =  4
-        self.config.max_dim['sun']    =  10
-        self.config.Min_X  ['sun']    =  buffer //3                
-        self.config.Max_X  ['sun']    =  width - (buffer//3) - 1  
-        self.config.Min_Y  ['sun']    =  buffer //3
-        self.config.Max_Y  ['sun']    =  height //5    ##* min_range_y
-        
-        self.config.max_dim['tree']   =  30    ## 36
-        self.config.min_dim['tree']   =  9     ## 9
-        self.config.Min_X  ['tree']   =  buffer
-        self.config.Max_X  ['tree']   =  height - buffer - 1
-        self.config.Min_Y  ['tree']   =  height // 3
-        self.config.Max_Y  ['tree']   =  width - (buffer) - 1    ##* min_range_y
+        self.config.min_dim['building']  =  15
+        self.config.max_dim['building']  =  25
+        self.config.Min_X  ['building']  =  buffer        
+        self.config.Max_X  ['building']  =  width - buffer
+        self.config.Min_Y  ['building']  =  height //3         
+        self.config.Max_Y  ['building']  =  2 * height //3   ##* min_range_y
 
-        self.config.min_dim['cloud']  =  3
-        self.config.max_dim['cloud']  =  13
-        self.config.Min_X  ['cloud']  =  buffer//2                 
-        self.config.Max_X  ['cloud']  =  width - (buffer//2) - 1    
-        self.config.Min_Y  ['cloud']  =  buffer
-        self.config.Max_Y  ['cloud']  =  height //4
+        self.config.max_dim['tree']      =  30    ## 36
+        self.config.min_dim['tree']      =  9     ## 9
+        self.config.Min_X  ['tree']      =  buffer
+        self.config.Max_X  ['tree']      =  width - buffer - 1
+        self.config.Min_Y  ['tree']      =  height // 3
+        self.config.Max_Y  ['tree']      =  height - (buffer) - 1    ##* min_range_y
+                                         
+        self.config.min_dim['cloud']     =  3
+        self.config.max_dim['cloud']     =  13
+        self.config.Min_X  ['cloud']     =  buffer//2                 
+        self.config.Max_X  ['cloud']     =  width - (buffer//2) - 1    
+        self.config.Min_Y  ['cloud']     =  buffer
+        self.config.Max_Y  ['cloud']     =  height //4
         
         self.config.min_dim['airplane']  =  5   ## 4
         self.config.max_dim['airplane']  =  11   ## 10
@@ -181,12 +181,12 @@ class NewImagesDataset(Dataset):
         self.config.Min_Y  ['airplane']  =  buffer
         self.config.Max_Y  ['airplane']  =  height //4
 
-        self.config.min_dim['truck']  =  7
-        self.config.max_dim['truck']  =  14
-        self.config.Min_X  ['truck']  =  buffer//2                 
-        self.config.Max_X  ['truck']  =  width - (buffer//2) - 1    
-        self.config.Min_Y  ['truck']  =  buffer //4
-        self.config.Max_Y  ['truck']  =  height - height //4
+        self.config.min_dim['truck']     =  7
+        self.config.max_dim['truck']     =  14
+        self.config.Min_X  ['truck']     =  buffer//2                 
+        self.config.Max_X  ['truck']     =  width - (buffer//2) - 1    
+        self.config.Min_Y  ['truck']     =  buffer //4
+        self.config.Max_Y  ['truck']     =  height - height //4
 
         # buffer = self.config.IMAGE_BUFFER
         # height = self.config.HEIGHT

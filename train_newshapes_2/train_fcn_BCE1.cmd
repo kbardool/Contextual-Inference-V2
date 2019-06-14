@@ -5,12 +5,12 @@ python ../mrcnn/train_nshapes_fcn.py \
     --dataset                  newshapes2   \
     --mrcnn_logs_dir           train_mrcnn  \
     --fcn_logs_dir             train_fcn8L2_BCE1 \
-    --last_epoch               100       \
-    --epochs                   200       \
+    --last_epoch               300       \
+    --epochs                   300       \
     --steps_in_epoch           128       \
     --val_steps                 16       \
     --batch_size                 8       \
-    --lr                       0.0001    \
+    --lr                       0.00001    \
     --fcn_arch                 fcn8l2    \
     --fcn_losses               fcn_BCE_loss \
     --fcn_bce_loss_method        1       \
