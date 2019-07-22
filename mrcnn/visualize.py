@@ -1994,7 +1994,7 @@ def display_heatmaps_compare(mrcnn_input_batch, mrcnn_output_batch,  heatmap, im
 ## plot 2d heatmap for one image with bboxes
 ##----------------------------------------------------------------------        
 def plot_2d_heatmap( Z, boxes, image_idx, class_ids = None,  
-                     columns = 2, size = (9,9), num_bboxes = 999,
+                     columns = None, size = (9,9), num_bboxes = 999,
                      title = '2d heatmap w/ bboxes', class_names=None, scale = 1, scaling = 'none'):
 
     '''
@@ -2023,10 +2023,17 @@ def plot_2d_heatmap( Z, boxes, image_idx, class_ids = None,
         num_classes = len(class_ids)
     class_ids.sort()
     
+    if columns is None:
+        columns = num_classes
+
+    
     rows   = math.ceil(num_classes/columns)
     print(' rows  ',rows, ' columns :', columns, 'boxes.shape : ',boxes.shape)
     # Z = Z[image_idx]
     # boxes = boxes[image_idx]
+    width  = size[0] * columns
+    height = size[1] * rows
+    fig = plt.figure(figsize=(width, height))
     
     image_height = Z.shape[0]
     image_width  = Z.shape[1]
@@ -2079,9 +2086,6 @@ def plot_2d_heatmap( Z, boxes, image_idx, class_ids = None,
         print(" ERROR - scaling must be 'all', 'class'/'each', 'clip', or 'none' ")
         return
                 
-    width  = size[0] * columns
-    height = size[1] * rows
-    fig = plt.figure(figsize=(width, height))
 
     colors = random_colors(num_classes)
     style = "dotted"
@@ -2102,11 +2106,12 @@ def plot_2d_heatmap( Z, boxes, image_idx, class_ids = None,
         else:
             ttl = 'Cls: {:2d}/{:s}'.format(cls, class_names[cls])
         
-        ttl += '- min: {:5.4f}  max: {:5.4f} avg: {:5.4f} sum: {:6.3f}'.format(min_z_cls[0,0,cls], max_z_cls[0,0,cls],
-                                                                            avg_z_cls[0,0,cls], sum_z_cls[0,0,cls])
+        # ttl += '- min: {:5.4f}  max: {:5.4f} avg: {:5.4f} sum: {:6.3f}'.format(min_z_cls[0,0,cls], max_z_cls[0,0,cls],
+                                                                            # avg_z_cls[0,0,cls], sum_z_cls[0,0,cls])
         
+        ttl += '- min: {:5.4f}  max: {:5.4f} avg: {:5.4f} '.format(min_z_cls[0,0,cls], max_z_cls[0,0,cls], avg_z_cls[0,0,cls])
         ax = fig.add_subplot(rows, columns, subplot)
-        ax.set_title(ttl, fontsize=13)
+        ax.set_title(ttl, fontsize=15)
         ax.tick_params(axis='both', labelsize = 5)
         ax.set_ylim(0, image_height)
         ax.set_xlim(0, image_width )
@@ -2142,8 +2147,8 @@ def plot_2d_heatmap( Z, boxes, image_idx, class_ids = None,
         
         
     # plt.tight_layout()
-    fig.tight_layout(rect=[0, 0.02, 1, 0.97])
-    fig.suptitle(title, fontsize = 15, ha ='center' )
+    fig.tight_layout(rect=[0, 0.0, 1, 1.0])
+    # fig.suptitle(title, fontsize = 15, ha ='center' )
     plt.show()
     
     return fig 
@@ -2154,9 +2159,9 @@ plot_2d_heatmap_with_bboxes = plot_2d_heatmap
 ##----------------------------------------------------------------------
 ## plot 3D gauss_distribution for one image, for a list of classes
 ##----------------------------------------------------------------------       
-def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = 2,
+def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = None,
                       title = '3d heatmap', 
-                      size = (8,8), class_names=None, zlim = 'all', scaling =  'none'):
+                      size = (10,9), class_names=None, zlim = 'all', scaling =  'none'):
     '''
     
     Z:             Gaussian heatmap [ BatchSize, height, width, Num_classes]
@@ -2177,9 +2182,18 @@ def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = 2,
     else:
         print('Display classes:', class_ids)
         num_classes = len(class_ids)
+
+    if columns is None:
+        columns = num_classes
         
     rows   = math.ceil(num_classes/columns)    
     print('rows  ',rows, ' columns :', columns)
+    
+        
+    width  = size[0] * columns
+    height = size[1] * rows
+    fig = plt.figure(figsize=(width, height))
+            
     # num_classes = len(class_ids)
     # rows        = num_classes 
     # columns     = 1
@@ -2236,11 +2250,7 @@ def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = 2,
         print(" ERROR - scaling must be 'all', 'class'/'each', 'clip', or 'none' ")
         return
         
-        
-    width  = size[0] * columns
-    height = size[1] * rows
-    fig = plt.figure(figsize=(width, height))
-        
+
     for idx,cls in enumerate(class_ids):
         row = idx // columns
         col = idx  % columns
@@ -2260,27 +2270,36 @@ def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = 2,
         if scaling == 'none': 
             zlim_min = min_z_cls[0,0,cls] 
             zlim_max = max_z_cls[0,0,cls]
-            print('1 zlim = each  zlim_min : {:10.8f} zlim_max: {:10.8f} '.format(min_z_cls[0,0,cls], max_z_cls[0,0,cls]))
+            
+        elif scaling == 'class':
+            zlim_min = YY[:,:,cls].min()
+            zlim_max = YY[:,:,cls].max()
 
+        print('class: {}  scaling: {}   zlim_min : {:10.8f} zlim_max: {:10.8f} '.format(cls, scaling, zlim_min, zlim_max))    
+        
         ttl += '  -  min: {:6.5f}  max: {:6.5f}'.format(np.amin(Z[:,:,cls]), np.amax(Z[:,:,cls]))
         
-        ax.set_title(ttl, fontsize = 10, ha= 'center')            
+        ax.set_title(ttl, fontsize = 15, ha= 'center')            
         ax.set_zlim(zlim_min , zlim_max)            
-        ax.tick_params(axis='both', labelsize = 6)
+        ax.tick_params(axis='both', labelsize = 8)
+        ax.zaxis.set_tick_params(labelsize=14)
         ax.set_ylim(0, image_height + image_height //10)
         ax.set_xlim(0, image_width  + image_width  //10)
         ax.set_xlabel(' X axis', fontsize=8)
         ax.set_ylabel(' Y axis', fontsize=8)
+        ax.set_zlabel(' Z axis', fontsize=8)
         ax.invert_yaxis()
         # ax.view_init( azim=-116,elev=40)            
         surf = ax.plot_surface(X, Y, YY[:,:,cls],rstride = 1, cstride = 1, cmap=cm.jet, linewidth=0, antialiased=False)
         
         # Add a color bar which maps values to colors.
         # plt.subplots_adjust(top=0.97, bottom=0.02, left=0.02, right=0.98, hspace=0.15, wspace=0.15)                
-        cbar = fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.10)
-        # cbar.ax.tick_params(labelsize=9) 
+        # cbar = fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.10)
+        cbar = fig.colorbar(surf, shrink=0.7, aspect=30, fraction=0.05)
+        cbar.ax.tick_params(labelsize=14) 
 
     # fig.tight_layout(rect=[0, 0.02, 1, 0.97])
+    fig.tight_layout(rect=[0, 0.02, 1, 0.97])
     fig.suptitle(title, fontsize = 14 )
     plt.show()
     return
@@ -2706,17 +2725,21 @@ def inference_heatmaps_display( input, image_id, hm = 'fcn_hm' ,  heatmaps = Non
     
     image      = results['image']
     image_meta = results['image_meta']
-    
-    boxes =  results['fcn_scores_by_class'] 
 
+    if hm in ['fcn_hm', 'fcn_sm']:
+        boxes =  results['fcn_scores_by_class'] 
+    else:
+        boxes =  results['pr_scores_by_class'] 
+    
+    Z1 = results[hm]
     if hm == 'fcn_hm':
-        Z1    =  results['fcn_hm']
+        # Z1    =  results['fcn_hm']
         title = 'Image: {:2d} - FCN Heatmaps '.format(image_id)         
     elif hm == 'fcn_sm':
-        Z1    =  results['fcn_sm']
+        # Z1    =  results['fcn_sm']
         title = 'Image: {:2d} - FCN Softmax '.format(image_id)
     else :
-        Z1    =  results['pr_hm']
+        # Z1    =  results['pr_hm']
         title = 'Image: {:2d} - MRCNN Heatmaps '.format(image_id)
 
     print(' heatmap shape: ', Z1.shape,' Bounding boxes shape: ', boxes.shape)

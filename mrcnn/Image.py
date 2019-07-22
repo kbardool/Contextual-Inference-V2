@@ -490,7 +490,7 @@ class Image():
     ##---------------------------------------------------------------------------------------------
     def build_horizon(self, verbose = False):
         ## Horizon between 1/3*height and 4/5*height
-        y1 = random.randint(self.height // 3,   2 * self.height//3)
+        y1 = random.randint(self.height // 3,   2 * self.height//3)    ## between 42 and 85
         y2 = y1
         color = random.choice(Image.custom_colors['sky'])
         if verbose:

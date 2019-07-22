@@ -118,12 +118,21 @@ def refine_detections(rois, probs, deltas, window, config):
     pre_nms_scores    = class_scores[keep]
     pre_nms_rois      = refined_rois[keep]
     nms_keep          = []
+
     # print(' apply per class nms')    
+    # print(' keep ixs : ', keep.shape)
+    # print(' pre_nms_rois.shape   :', pre_nms_rois.shape)
+    # print(' pre_nms_scores.shape :', pre_nms_scores.shape)
+
     for class_id in np.unique(pre_nms_class_ids):
         # Pick detections of this class
         ixs = np.where(pre_nms_class_ids == class_id)[0]
-
+        
+        # print()
         # print('class_id : ', class_id)
+        # print('---------------------')
+        # print(' ixs : ', ixs.shape)
+        # pp.pprint(ixs)
         # print('pre_nms_rois.shape:', pre_nms_rois[ixs].shape)
         # pp.pprint(pre_nms_rois[ixs])
         # print('pre_nms_scores.shape :', pre_nms_scores[ixs].shape)
@@ -136,6 +145,13 @@ def refine_detections(rois, probs, deltas, window, config):
         # Map indicies
         class_keep = keep[ixs[class_keep]]
         nms_keep   = np.union1d(nms_keep, class_keep)
+        
+        # print('Class keep: ', class_keep)
+        # print('NMS keep  : ', nms_keep.astype(np.int)) 
+        # print('post_nms_rois.shape  :', refined_rois[class_keep].shape)
+        # pp.pprint(refined_rois[class_keep])
+        # print('post nms_scores.shape for class :', class_scores[class_keep].shape)
+        # pp.pprint(class_scores[class_keep])
     
     keep = np.intersect1d(keep, nms_keep).astype(np.int32)
 

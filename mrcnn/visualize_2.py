@@ -30,6 +30,46 @@ from   matplotlib.ticker import LinearLocator, FormatStrFormatter
 import mrcnn.utils as utils
 import mrcnn.visualize as visualize
 
+BLUE     = '#1f77b4'
+LBLUE    = '#aec7e8'
+ORANGE   = '#ff7f0e'
+LORANGE  = '#ffbb78'
+GREEN    = '#2ca02c'
+LGREEN   = '#98df8a'
+RED      = '#d62728'
+LRED     = '#ff9896'
+PURPLE   = '#9467bd'
+LPURPLE  = '#c5b0d5'
+BROWN    = '#8c564b'
+LBROWN   = '#c49c94'
+PINK     = '#e377c2'
+LPINK    = '#f7b6d2'
+GRAY     = '#7f7f7f'
+LGRAY    = '#c7c7c7'
+GOLD     = '#bcbd22'
+LGOLD    = '#dbdb8d'
+AQUA     = '#17becf'
+LAQUA    = '#9edae5'
+
+SCORE_COLORS = {  'mrcnn_score_orig':  BLUE
+                , 'mrcnn_score_0'   :  LORANGE
+                , 'mrcnn_score_1'   :  LRED
+                , 'mrcnn_score_2'   :  LGREEN
+                
+                , 'fcn_score_0'     :  ORANGE 
+                , 'fcn_score_1'     :  RED
+                , 'fcn_score_2'     :  GREEN
+                , 'fcn_score_1_norm':  BROWN
+                , 'fcn_score_2_norm':  PINK
+               }
+                 
+COLORS      = [ AQUA , RED,   GREEN  , PURPLE , BLUE , ORANGE ,  GOLD  ,  PINK, BROWN ]
+LT_COLORS   = [ LAQUA, LRED,  LGREEN , LPURPLE, LBLUE, LORANGE,  LGOLD , LPINK, LBROWN ]
+
+
+
+
+
 CLASS_COLUMN        = 4
 ORIG_SCORE_COLUMN   = 5
 DT_TYPE_COLUMN      = 6
@@ -136,7 +176,7 @@ def display_pr_scores(f_input, class_names, only = None, display = True, size = 
     
     if only is None:
         only = np.unique(pr_scores[:,4]).astype(np.int)
-
+    print(' Display pr_scores ;', pr_scores.shape)
     seq_start = pr_scores.shape[1]
     print('PR_SCORES from fcn/mrcnn_results:')
     print('-'*175)
@@ -184,7 +224,7 @@ def display_pr_hm_scores(r, class_names, only = None):
     '''
     pr_hm_scores = r['pr_hm_scores']
     
-    print(pr_hm_scores.shape)
+    print(' Display pr_hm_scores :', pr_hm_scores.shape)
     np_format = {}
     float_formatter = lambda x: "%10.4f" % x
     int_formatter   = lambda x: "%10d" % x
@@ -237,7 +277,7 @@ def display_pr_hm_scores_box_info(r, class_names, only = None):
     '''
     pr_hm_scores = r['pr_hm_scores']
     
-    print(pr_hm_scores.shape)
+    print(' Display pr_hm_scores_box_info :', pr_hm_scores.shape)
     
     np_format = {}
     float_formatter = lambda x: "%10.4f" % x
@@ -296,10 +336,10 @@ def display_fcn_scores(f_input, class_names, only = None, display = True, size =
     else:
         fcn_scores = f_input    
         
-        
+    print(' Display fcn_scores :',fcn_scores.shape)         
     if only is None:
         only = np.unique(fcn_scores[:,4]).astype(np.int)
-        
+    
     seq_start = fcn_scores.shape[1]
     print('\nFCN_SCORES:')
     print('-'*175)
@@ -334,19 +374,23 @@ def display_fcn_scores(f_input, class_names, only = None, display = True, size =
                                     class_names, fcn_scores[:,SCORE_1_COLUMN], only_classes= only, size =size,
                                     title = 'FCN predictions for image id '+img_id)
 
-def display_fcn_scores_box_info(fcn_scores, fcn_hm = None, class_names = None, only = None):
+def display_fcn_scores_box_info(r,  class_names = None, fcn_hm = None, only = None):
     '''
     r:    results from mrcnn detect
     cn:   class names
     
     '''
+    fcn_scores = r['fcn_scores']
+    fcn_hm     = r['fcn_hm']
     np_format = {}
     np_format['float'] = lambda x: "%10.4f" % x
     np_format['int']   = lambda x: "%10d" % x
     np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
-    
+ 
+    print(' Display fcn_scores_box_info :',fcn_scores.shape)
     if only is None:
-        only = np.unique(fcn_scores[:,4])
+        only = np.unique(fcn_scores[:,4]).astype(np.int)
+        # only = np.unique(fcn_scores[:,4])
         
     seq_start = fcn_scores.shape[1]
 #     seq_start = r['pr_hm_scores'].shape[1]
@@ -405,6 +449,7 @@ def display_fcn_scores_box_info(fcn_scores, fcn_hm = None, class_names = None, o
                        pre[SCORE_0_COLUMN], 
                        pre[SCORE_1_COLUMN], 
                        pre[SCORE_2_COLUMN]))
+                       
             for i in range(1,fcn_hm.shape[-1]):
                 print('  '*10, 'cls: {:3d}-{:10s}' \
                       '  cx/cy: {:8.3f}   cx/cy+-1: {:8.3f}   cx/cy+-3: {:8.3f}' \
@@ -444,7 +489,7 @@ def display_fcn_scores_box_info2(fcn_scores, fcn_hm , class_names, only = None):
     num_classes = fcn_hm.shape[-1]
     class_list  = np.arange(num_classes) 
     sub_title   = ''.join([ '{:>15s}'.format(i) for i in class_names])
-    
+    print(' Display fcn_scores_box_info2 :',fcn_scores.shape)
 #     seq_start = r['pr_hm_scores'].shape[1]
     # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
     print('  classes     : ', only)
@@ -997,153 +1042,7 @@ def display_fcn_input_2(fcn_hm, cmap = 'gray', columns = 8, size  = 4):
     fig.tight_layout(rect=[0, 0.0, 1, 0.95])   ## [left, bottom, right, top]
     plt.show()
 
-    
-##-----------------------------------------------------------------------------------------------------------    
-##
-##-----------------------------------------------------------------------------------------------------------    
-def display_fcn_agg_heatmaps(fcn_hm, gt_cls_counts,  dt_cls_counts, class_names = None, classes = None, cmap = 'jet', 
-                        columns= 4, title = None, norm = False):
-    '''
-    This routine is used in the display_aggreggate_heatmaps and exp2 notebooks 
-    '''
-    if classes is None :
-        n_features = range(fcn_hm.shape[-1])
-    else:
-        n_features = classes
 
-    rows = math.ceil(len(n_features) / columns )
-    fig = plt.figure(figsize=(8 *columns, 8* rows))
-    vmin = fcn_hm.min()
-    vmax = fcn_hm.max()
-    for idx, feat in enumerate(n_features): 
-        row = idx // columns
-        col = idx  % columns
-        subplot = (row * columns) + col +1    
-        ax= fig.add_subplot(rows, columns, subplot)
-        subttl = '{} - {} - GT:{:4d}  Det:{:4d}'.format(feat, class_names[feat], gt_cls_counts[feat], dt_cls_counts[feat])
-        ax.set_title(subttl, fontsize=20)
-        ax.tick_params(axis='both', labelsize = 13, length = 6, width = 3)      
-        surf = ax.matshow(fcn_hm[:,:,feat], cmap = cmap , interpolation='none', vmin=vmin, vmax = vmax)
-        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
-        cbar.ax.tick_params(labelsize=16) 
-    
-    if title is not None :
-        ttl = title + ' {}'.format(str(fcn_hm.shape))           
-        fig.suptitle(ttl, fontsize = 24, ha ='center' )        
-    plt.subplots_adjust(top=0.9, bottom=0.02, left=0.02, right=0.98, hspace=0.25, wspace=0.15)
-    # plt.tight_layout()
-    plt.show()
-    return fig
-    
-##-----------------------------------------------------------------------------------------------------------    
-## Display score contours for experiment 6
-##-----------------------------------------------------------------------------------------------------------    
-def display_score_contours(scores, gt_cls_counts,  dt_cls_counts, class_names = None, classes = None, cmap = 'jet', 
-                           columns= None, title = None, norm = False):
-    '''
-    This routine is used in the display_aggreggate_heatmaps and exp2 notebooks 
-    '''
-    if classes is None :
-        classes = range(scores.shape[0])
-    
-    n_features = len(classes)
-    
-    if columns is None:
-        columns = n_features
-        
-    rows = math.ceil(n_features / columns )
-    # print( ' Num features: ', n_features , 'Rows / Columns: ', rows, columns)
-    fig = plt.figure(figsize=(8*columns, 8*rows))
-    vmin = scores.min()
-    vmax = scores.max()
-    norm = None
-    for idx, feat in enumerate(classes): 
-        row = idx // columns
-        col = idx  % columns
-        subplot = (row * columns) + col +1    
-        ax= fig.add_subplot(rows, columns, subplot)
-        subttl = '{} - {} - GT:{:4d}  Det:{:4d}'.format(feat, class_names[feat], gt_cls_counts[feat], dt_cls_counts[feat])
-        ax.set_title(subttl, fontsize=20)
-        ax.tick_params(axis='both', labelsize = 13, length = 6, width = 3)      
-        ax.invert_yaxis()
-        surf = ax.contourf(scores[feat],  cmap=cm.jet, norm= norm) 
-        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
-        cbar.ax.tick_params(labelsize=16) 
-    
-    if title is not None :
-        ttl = title             
-        fig.suptitle(ttl, fontsize = 24, ha ='center', va = 'top' )        
-    
-    plt.subplots_adjust(top=0.9, bottom=0.02, left=0.02, right=0.98, hspace=0.25, wspace=0.15)
-    # plt.tight_layout()
-    plt.show()
-    return fig
-
-
-def display_score_contours_compare(pr_scores, fcn_scores, class_names = None, classes = None, cmap = 'jet', 
-                           columns= None, title = None, norm = False):
-    '''
-    This routine is used in experiment 6 to show scores from mrcnn and fcn side by side 
-    '''
-    if classes is None :
-        classes = range(scores.shape[0])
-    
-    n_features = len(classes)
-    
-    rows = n_features
-    columns = 3 
-    
-    # rows = math.ceil(n_features / columns )
-    print( ' Num features: ', n_features , 'Rows / Columns: ', rows, columns)
-    fig = plt.figure(figsize=(4*columns, 4*rows))
-    # vmin = scores.min()
-    # vmax = scores.max()
-    norm = None
-    title_fontsz  = 10
-    subttl_fontsz = 10
-    cbar_fontsz   = 9 
-    label_fontsz  = 9 
-    for idx, feat in enumerate(classes): 
-        row = idx 
-        
-        subplot = (row * columns) + 1    
-        ax= fig.add_subplot(rows, columns, subplot)
-        subttl = '{} - {} -  MRCNN Score'.format(feat, class_names[feat])
-        ax.set_title(subttl, fontsize=subttl_fontsz)
-        ax.tick_params(axis='both', labelsize = label_fontsz, length = 6, width = 3)      
-        ax.invert_yaxis()
-        surf = ax.contourf(pr_scores[0,feat],  cmap=cm.jet, norm= norm) 
-        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
-        cbar.ax.tick_params(labelsize=cbar_fontsz) 
-
-        subplot += 1    
-        ax= fig.add_subplot(rows, columns, subplot)
-        subttl = 'FCN Score 1'
-        ax.set_title(subttl, fontsize=subttl_fontsz)
-        ax.tick_params(axis='both', labelsize = label_fontsz, length = 6, width = 3)      
-        ax.invert_yaxis()
-        surf = ax.contourf(fcn_scores[0,feat],  cmap=cm.jet, norm= norm) 
-        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
-        cbar.ax.tick_params(labelsize=cbar_fontsz) 
-    
-        subplot += 1 
-        ax= fig.add_subplot(rows, columns, subplot)
-        subttl = 'FCN Score 2'
-        ax.set_title(subttl, fontsize=subttl_fontsz)
-        ax.tick_params(axis='both', labelsize = label_fontsz, length = 6, width = 3)      
-        ax.invert_yaxis()
-        surf = ax.contourf(fcn_scores[1,feat],  cmap=cm.jet, norm= norm) 
-        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
-        cbar.ax.tick_params(labelsize=cbar_fontsz) 
-    
-    if title is not None :
-        ttl = title           
-        fig.suptitle(ttl, fontsize = title_fontsz, ha ='center', va = 'top' )        
-    
-    plt.subplots_adjust(top=0.9, bottom=0.02, left=0.02, right=0.98, hspace=0.25, wspace=0.15)
-    # plt.tight_layout()
-    plt.show()
-    return fig
 
 ##-----------------------------------------------------------------------------------------------------------    
 ##
@@ -1335,25 +1234,39 @@ def display_final_activations_2(activations, layers, layer_names, columns = 8, c
 ##-----------------------------------------------------------------------------------------------------------    
 ##
 ##-----------------------------------------------------------------------------------------------------------    
-def display_final_activations(activations, layers, layer_names, class_names, columns = 8, cmap = 'jet'):
+def display_final_activations(activations, layers, layer_names, class_names, classes = None, columns = None, cmap = 'jet'):
     n_layers   = len(layers)
     fig_num = 1
+
+    if classes is None :
+        n_features = list(range(activations[-1].shape[-1]))
+    else:
+        n_features = classes
+    
+    # if columns is None:
+        # columns = len(n_features)
+    # print( ' Num features: ', n_features , 'Rows / Columns: ', rows, columns, 'classes : ' , classes)
     
     for LAYER in layers:
-        n_features = activations[LAYER].shape[-1]
-        rows = math.ceil(n_features / columns )
-        print('Layer:', LAYER, ' - ',layer_names[LAYER], '   Shape: ', activations[LAYER][0,:,:,:].shape, ' # features: ', n_features, columns, rows)
-        fig = plt.figure(fig_num, figsize=(8 *columns, 7* rows))
-
-        for idx in range(n_features): 
-            row = idx // columns
-            col = idx  % columns
-            subplot = (row * columns) + col +1    
-            plt.subplot(rows, columns, subplot)
-            ax = plt.gca()
-            ax.set_title(class_names[idx], fontsize=18)
-            surf = ax.imshow(activations[LAYER][0,:,:,idx], cmap=cmap, interpolation='none', vmin=-1.0, vmax=1.0)
+        if columns  is None:
+            layer_columns = len(n_features)
+        else:
+            layer_columns = columns
             
+        rows = math.ceil(len(n_features) / layer_columns )
+        print('Layer:', LAYER, ' - ',layer_names[LAYER], '   Shape: ', activations[LAYER][0,:,:,:].shape, ' # features: ', n_features, 
+              'columns: ',  columns, 'layer_columns: ', layer_columns, ' rows : ', rows)
+        fig = plt.figure(fig_num, figsize=(8 * layer_columns, 7* rows))
+
+        for idx, cls in enumerate(n_features): 
+            row = idx // layer_columns
+            col = idx  % layer_columns
+            subplot = (row * layer_columns) + col +1    
+            plt.subplot(rows, layer_columns, subplot)
+            ax = plt.gca()
+            ax.set_title(class_names[cls], fontsize=18)
+            # surf = ax.imshow(activations[LAYER][0,:,:,cls], cmap=cmap, interpolation='none', vmin=-1.0, vmax=1.0)
+            surf = ax.imshow(activations[LAYER][0,:,:,cls], cmap=cmap, interpolation='none')
             fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
         title = 'Layer: {:3d} - {:25s} - shape: {}'.format(LAYER, layer_names[LAYER], str(activations[LAYER][0].shape))        
         fig.suptitle(title, fontsize = 24, ha ='center' )            
@@ -1380,7 +1293,7 @@ def display_final_activations_pdf(activations, layers, columns = 8, cmap = 'jet'
     
     fig = plt.figure(  figsize=(8 *columns, 8* n_layers))
     
-    fig_num = 1
+    fig_*num = 1
     for row, layer in enumerate(layers):
         LAYER = layer
         n_features = activations[LAYER].shape[-1]
@@ -1406,6 +1319,60 @@ def display_final_activations_pdf(activations, layers, columns = 8, cmap = 'jet'
     pdf.close()
     plt.show()
 '''    
+
+    
+##-----------------------------------------------------------------------------------------------------------    
+##
+##-----------------------------------------------------------------------------------------------------------    
+def display_fcn_agg_heatmaps(fcn_hm, gt_cls_counts,  dt_cls_counts, class_names = None, classes = None, cmap = 'jet', 
+                        columns= None, title = None, norm = False):
+    '''
+    This routine is used in the display_aggreggate_heatmaps and exp2 notebooks 
+    '''
+    # if classes is None :
+        # classes = range(scores.shape[0])
+    
+    # n_features = len(classes)
+    
+    # if columns is None:
+        # columns = n_features
+    
+    if classes is None :
+        n_features = list(range(fcn_hm.shape[-1]))
+    else:
+        n_features = classes
+    
+    if columns is None:
+        columns = len(n_features)
+    rows = math.ceil(len(n_features) / columns )
+  
+    print( ' Num features: ', n_features , 'Rows / Columns: ', rows, columns, 'classes : ' , classes)
+    
+    suptitle_fontsz = 20
+    fig = plt.figure(figsize=(8 *columns, 8* rows))
+    vmin = fcn_hm.min()
+    vmax = fcn_hm.max()
+    for idx, feat in enumerate(n_features): 
+        row = idx // columns
+        col = idx  % columns
+        subplot = (row * columns) + col +1    
+        ax= fig.add_subplot(rows, columns, subplot)
+        subttl = '{} - {} - GT:{:4d}  Det:{:4d}'.format(feat, class_names[feat], gt_cls_counts[feat], dt_cls_counts[feat])
+        ax.set_title(subttl, fontsize=20)
+        ax.tick_params(axis='both', labelsize = 13, length = 6, width = 3)      
+        surf = ax.matshow(fcn_hm[:,:,feat], cmap = cmap , interpolation='none', vmin=vmin, vmax = vmax)
+        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
+        cbar.ax.tick_params(labelsize=16) 
+    
+    if title is not None :
+        ttl = title + ' {}'.format(str(fcn_hm.shape))           
+        fig.suptitle(ttl, fontsize = suptitle_fontsz , ha ='center' )        
+    plt.subplots_adjust(top=0.9, bottom=0.02, left=0.02, right=0.98, hspace=0.25, wspace=0.15)
+    # plt.tight_layout()
+    plt.show()
+    return fig
+    
+    
 def display_fcn_agg_heatmaps_3d(fcn_hm, gt_cls_counts,  dt_cls_counts, class_names = None, classes = None, cmap = 'jet', 
                         columns= 4, title = None, norm = False):
     '''
@@ -1438,12 +1405,14 @@ def display_fcn_agg_heatmaps_3d(fcn_hm, gt_cls_counts,  dt_cls_counts, class_nam
         ax.set_title(subttl, fontsize=20)
         ax.tick_params(axis='both', labelsize = 13, length = 6, width = 3)      
         ax.invert_yaxis()
-        # ax.view_init( azim=-116,elev=40)            
-        # surf = ax.plot_surface(X, Y, fcn_hm[:,:,feat], rstride = 1, cstride = 1, cmap=cm.jet, linewidth=0, antialiased=False)
-        # surf = ax.plot_surface(X, Y, fcn_hm[:,:,feat], rstride = 20, cstride=20,  cmap=cm.jet, linewidth=0, antialiased=False)
-        tck  = interpolate.bisplrep(X, Y, fcn_hm[:,:,feat], s=0)
-        znew = interpolate.bisplev(xnew[:,0], ynew[0,:], tck)
-        surf = ax.plot_surface(xnew,ynew, znew, cmap='summer', alpha=None)
+        
+        ax.view_init( azim=-116,elev=40)            
+        surf = ax.plot_surface(X, Y, fcn_hm[:,:,feat], rstride = 1, cstride = 1, cmap=cm.jet, linewidth=0, antialiased=False)
+        surf = ax.plot_surface(X, Y, fcn_hm[:,:,feat], rstride = 20, cstride=20,  cmap=cm.jet, linewidth=0, antialiased=False)
+        
+        # tck  = interpolate.bisplrep(X, Y, fcn_hm[:,:,feat], s=0)
+        # znew = interpolate.bisplev(xnew[:,0], ynew[0,:], tck)
+        # surf = ax.plot_surface(xnew,ynew, znew, cmap='summer', alpha=None)
         
         # Add a color bar which maps values to colors.
         # plt.subplots_adjust(top=0.97, bottom=0.02, left=0.02, right=0.98, hspace=0.15, wspace=0.15)                
@@ -1460,7 +1429,137 @@ def display_fcn_agg_heatmaps_3d(fcn_hm, gt_cls_counts,  dt_cls_counts, class_nam
     # plt.tight_layout()
     plt.show()
     return fig
+
+
+
     
+##-----------------------------------------------------------------------------------------------------------    
+## Display score contours for experiment 6
+##-----------------------------------------------------------------------------------------------------------    
+def display_score_contours(scores, gt_cls_counts,  dt_cls_counts, class_names = None, classes = None, cmap = 'jet', 
+                           columns= None, title = None, norm = False):
+    '''
+    This routine is used in the display_aggreggate_heatmaps and exp2 notebooks 
+    '''
+    if classes is None :
+        classes = range(scores.shape[0])
+    
+    n_features = len(classes)
+    
+    if columns is None:
+        columns = n_features
+        
+    rows = math.ceil(n_features / columns )
+    print( ' Num features: ', n_features , 'Rows / Columns: ', rows, columns)
+    fig = plt.figure(figsize=(8*columns, 8*rows))
+    vmin = scores.min()
+    vmax = scores.max()
+    norm = None
+    for idx, feat in enumerate(classes): 
+        row = idx // columns
+        col = idx  % columns
+        subplot = (row * columns) + col +1    
+        ax= fig.add_subplot(rows, columns, subplot)
+        subttl = '{} - {} - GT:{:4d}  Det:{:4d}'.format(feat, class_names[feat], gt_cls_counts[feat], dt_cls_counts[feat])
+        ax.set_title(subttl, fontsize=20)
+        ax.tick_params(axis='both', labelsize = 13, length = 6, width = 3)      
+        ax.invert_yaxis()
+        surf = ax.contourf(scores[feat],  cmap=cm.jet, norm= norm) 
+        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
+        cbar.ax.tick_params(labelsize=16) 
+    
+    if title is not None :
+        ttl = title             
+        fig.suptitle(ttl, fontsize = 24, ha ='center', va = 'top' )        
+    
+    plt.subplots_adjust(top=0.9, bottom=0.02, left=0.02, right=0.98, hspace=0.25, wspace=0.15)
+    # plt.tight_layout()
+    plt.show()
+    return fig
+
+def display_score_contours_compare(pr_scores, fcn_scores,  
+                            class_names = None, classes = None, cmap = 'jet', 
+                            columns= None, title = None, norm = False, orig_scores = None):
+    '''
+    This routine is used in experiment 6 to show scores from mrcnn and fcn side by side 
+    '''
+    if classes is None :
+        classes = range(scores.shape[0])
+    
+    n_features = len(classes)
+    
+    rows = n_features
+    if orig_scores is None:
+        columns = 3 
+    else:
+        columns = 4
+        
+    # rows = math.ceil(n_features / columns )
+    print( ' Num features: ', n_features , 'Rows / Columns: ', rows, columns)
+    fig = plt.figure(figsize=(4*columns, 4*rows))
+    # vmin = scores.min()
+    # vmax = scores.max()
+    norm = None
+    title_fontsz  = 10
+    subttl_fontsz = 10
+    cbar_fontsz   = 8
+    label_fontsz  = 8 
+    tick_fontsz   = 2
+    for idx, feat in enumerate(classes): 
+        row = idx 
+        
+        subplot = (row * columns) + 1            
+        if orig_scores is not None: 
+            ax= fig.add_subplot(rows, columns, subplot)
+            subttl = '{} - {} -  Mask RCNN Score'.format(feat, class_names[feat])
+            ax.set_title(subttl, fontsize=subttl_fontsz)
+            ax.invert_yaxis()
+            surf = ax.contourf(orig_scores[0,feat],  cmap=cm.jet, norm= norm) 
+            cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
+            cbar.ax.tick_params(labelsize=cbar_fontsz)        
+            ax.tick_params(axis='both', labelsize = label_fontsz, length = 3 , width = 1)      
+            subplot += 1
+        
+        
+        ax= fig.add_subplot(rows, columns, subplot)
+        subttl = 'Stage 1 Score '.format(feat, class_names[feat])
+        ax.set_title(subttl, fontsize=subttl_fontsz)
+        ax.tick_params(axis='both', labelsize = label_fontsz, length = 3 , width = 1)      
+        ax.invert_yaxis()
+        surf = ax.contourf(pr_scores[0,feat],  cmap=cm.jet, norm= norm) 
+        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
+        cbar.ax.tick_params(labelsize=cbar_fontsz) 
+
+        subplot += 1    
+        ax= fig.add_subplot(rows, columns, subplot)
+        subttl = 'Stage 2 Score 1'
+        ax.set_title(subttl, fontsize=subttl_fontsz)
+        ax.tick_params(axis='both', labelsize = label_fontsz, length = 3 , width = 1)      
+        ax.invert_yaxis()
+        surf = ax.contourf(fcn_scores[0,feat],  cmap=cm.jet, norm= norm) 
+        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
+        cbar.ax.tick_params(labelsize=cbar_fontsz) 
+    
+        subplot += 1 
+        ax= fig.add_subplot(rows, columns, subplot)
+        subttl = 'Stage 2 Score 2'
+        ax.set_title(subttl, fontsize=subttl_fontsz)
+        ax.tick_params(axis='both', labelsize = label_fontsz, length = 3 , width = 1)      
+        ax.invert_yaxis()
+        surf = ax.contourf(fcn_scores[1,feat],  cmap=cm.jet, norm= norm) 
+        cbar = fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
+        cbar.ax.tick_params(labelsize=cbar_fontsz) 
+    
+    if title is not None :
+        ttl = title           
+        fig.suptitle(ttl, fontsize = title_fontsz, ha ='center', va = 'top' )        
+    
+    plt.subplots_adjust(top=0.9, bottom=0.02, left=0.02, right=0.98, hspace=0.25, wspace=0.15)
+    # plt.tight_layout()
+    plt.show()
+    return fig
+
+        
 ##-----------------------------------------------------------------------------------------------------------    
 ##  FUNCTIONS USED TO PLOT SCORE CURVES BASED ON OBJECT MOVEMENT
 ##  EXP-2 Aggregate Heatmap over out of context prediciton - Newshapes V2
@@ -1481,11 +1580,11 @@ def plot_fcn_score_curves(x_y_dim, fcn_scores, mrcnn_scores, class_names, ax = N
             print('cls: ', cls)
             if cls in classes:
                 print('add to plot')
-                ax.plot(x_y_dim, fcn_scores[cls], label= cls + ' - FCN score')
+                ax.plot(x_y_dim, fcn_scores[cls], label= cls + ' - FCN score', color = COLOR[idx])
     if mrcnn:   
         for idx, cls  in enumerate(mrcnn_scores):
             if cls in classes:
-                ax.plot(x_y_dim, mrcnn_scores[cls], label= cls + ' - MR-CNN score')
+                ax.plot(x_y_dim, mrcnn_scores[cls], label= cls + ' - MR-CNN score', color = LT_COLOR[idx])
         
     print(' y limit:', plt.ylim(), ' xlimit : ', plt.xlim())
 
@@ -1500,6 +1599,7 @@ def plot_fcn_score_curves(x_y_dim, fcn_scores, mrcnn_scores, class_names, ax = N
     plt.grid(True)
 #     for xval in np.linspace(0.0, 1.0, 11):
 #         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)
+
 
 def plot_fcn_score_curves_1(x_y_dim, fcn_scores, mrcnn_scores, cls_name, ax = None ,
                             min_x = 0.0, title = None, mrcnn = True, fcn = True):
@@ -1524,4 +1624,133 @@ def plot_fcn_score_curves_1(x_y_dim, fcn_scores, mrcnn_scores, cls_name, ax = No
     leg = plt.legend(loc='lower left',frameon=True, fontsize = 10, markerscale = 6)
     leg.set_title(' Scores ',prop={'size':11})
     plt.grid(True)
+
+
+def plot_fcn_score_curves_2(x_y_dim, cls_scores, cls_name, ax = None , 
+                            min_x = 0.0, title = None):
+
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel('Object displacement from origin axis', fontsize= 12)
+    ax.set_ylabel('FCN Score', fontsize= 12)
+    ax.tick_params(axis='both', labelsize = 10)
+#     ax.set_xlim([min_x,1.05])
+#     ax.set_ylim([all_scores.min()-0.05, all_scores.max()+0.05])
+    leg = plt.legend(loc='lower left',frameon=True, fontsize = 10, markerscale = 6)
+    leg.set_title(' Scores ',prop={'size':11})
+    plt.grid(True)
+#     for xval in np.linspace(0.0, 1.0, 11):
+#         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)
+
+
+##-----------------------------------------------------------------------------------------------------------    
+##  FUNCTIONS USED TO PLOT SCORE CURVES BASED ON OBJECT MOVEMENT
+##  EXP-6 Aggregate Heatmap over out of context prediciton - Newshapes V2
+##-----------------------------------------------------------------------------------------------------------      
+def plot_exp6_score_curves(x_y_dim, fcn_scores, mrcnn_scores, class_name, 
+                           ax = None , min_y = 0.0, min_x = 0.0, ttl = None, plot = None, scales = None):
+
+    COLORS      = [ BLUE ,RED,   GREEN  , AQUA , PURPLE ,  ORANGE ,  GOLD  ,  PINK, BROWN ]
+    LT_COLORS   = [ LBLUE,LRED,  LGREEN , LAQUA, LPURPLE,  LORANGE,  LGOLD , LPINK, LBROWN ]
+    if ax is None:
+        fig = plt.figure(figsize=(10,5))
+        ax = fig.gca()
+    if plot is None:
+        plot = 'FCN'
+    # scores is always passed ffom plot_mAP_by_scores, so it's nver None
+    # so we loop on scores instead of sorted(class_data)
+    # for idx, score_key in enumerate(sorted(class_data)):
+    if scales is None:
+        scales = list(range(len(fcn_scores)))
+    
+    title = 'Score change by scale - '+class_name+' - '+ ttl
+
+    if plot == 'FCN':
+        idx = 0 
+        for run  in fcn_scores:
+            if run in scales:
+                # print('fcn plot: ', run)
+                ax.plot(x_y_dim[run], fcn_scores[run], label= str(run+1) + ' - Stg2 score' , color = COLORS[idx])
+                ax.axhline(np.mean(fcn_scores[run]), label= str(run+1) + ' - Stg2 Avgscore', color = LT_COLORS[idx], linestyle = '--')
+                idx += 1
+    else:
+        for idx, run  in enumerate(mrcnn_scores):
+            if run in scales:
+                # print('pr plot: ', run, mrcnn_scores[run])
+                ax.plot(x_y_dim[run], mrcnn_scores[run], label= str(run+1) + ' - Stg1 score', color = LT_COLORS[idx])
+        
+    # print(' y limit:', plt.ylim(), ' xlimit : ', plt.xlim())
+
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel('Object displacement across X axis', fontsize= 12)
+    ax.set_ylabel('Score', fontsize= 12)
+    ax.tick_params(axis='both', labelsize = 10)
+    ax.set_ylim([min_y,1.0])
+    # ax.set_ylim([all_scores.min()-0.05, all_scores.max()+0.05])
+    leg = plt.legend(loc='best',frameon=True, fontsize = 10, markerscale = 6)
+    leg.set_title('Scale/Score',prop={'size':11})
+    plt.grid(True)
+#     for xval in np.linspace(0.0, 1.0, 11):
+#         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)
+
+##-----------------------------------------------------------------------------------------------------------    
+##  FUNCTIONS USED TO PLOT SCORE CURVES BASED ON OBJECT MOVEMENT
+##  EXP-N Mask R-CNN 
+##-----------------------------------------------------------------------------------------------------------     
+def plot_expN_score_curves(x_y_dim,  mrcnn_scores, fcn_scores, pr_scores, class_names, 
+                           ax = None , min_y = 0.0, min_x = 0.0, ttl = None, plot = None, classes = None):
+
+    COLORS      = [ BLUE ,RED,   GREEN  , AQUA , PURPLE ,  ORANGE ,  GOLD  ,  PINK, BROWN ]
+    LT_COLORS   = [ LBLUE,LRED,  LGREEN , LAQUA, LPURPLE,  LORANGE,  LGOLD , LPINK, LBROWN ]
+    if ax is None:
+        fig = plt.figure(figsize=(10,5))
+        ax = fig.gca()
+        
+    if plot is None:
+        plot = 'MRCNN'
+    # scores is always passed ffom plot_mAP_by_scores, so it's nver None
+    # so we loop on scores instead of sorted(class_data)
+    # for idx, score_key in enumerate(sorted(class_data)):
+    if classes is None:
+        classes = list(mrcnn_scores.keys())
+    
+    title = 'Score change by vertical position '
+
+
+    if plot == 'MRCNN':
+        idx = 0 
+        for run  in mrcnn_scores:
+            if run in classes:
+                # print('class: ', run)
+                # print('mrcnn_scores: ' , mrcnn_scores[run])
+                ax.plot(x_y_dim[run], fcn_scores[run], label= class_names[run] + ' - ' , color = COLORS[idx])
+                ax.axhline(np.mean(fcn_scores[run])  , label= class_names[run] + ' - Avg', color = LT_COLORS[idx], linestyle = '--')
+                idx += 1
+
+    # if plot == 'FCN':
+        # idx = 0 
+        # for run  in fcn_scores:
+            # if run in classes:
+                # # print('fcn plot: ', run)
+                # ax.plot(x_y_dim[run], fcn_scores[run], label= str(run+1) + ' - Stg2 score' , color = COLORS[idx])
+                # ax.axhline(np.mean(fcn_scores[run]), label= str(run+1) + ' - Stg2 Avgscore', color = LT_COLORS[idx], linestyle = '--')
+                # idx += 1
+    # else:
+        # for idx, run  in enumerate(mrcnn_scores):
+            # if run in scales:
+                # # print('pr plot: ', run, mrcnn_scores[run])
+                # ax.plot(x_y_dim[run], mrcnn_scores[run], label= str(run+1) + ' - Stg1 score', color = LT_COLORS[idx])
+        
+    # print(' y limit:', plt.ylim(), ' xlimit : ', plt.xlim())
+
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel('Object displacement across X axis', fontsize= 12)
+    ax.set_ylabel('Score', fontsize= 12)
+    ax.tick_params(axis='both', labelsize = 10)
+    ax.set_ylim([min_y,1.05])
+    # ax.set_ylim([all_scores.min()-0.05, all_scores.max()+0.05])
+    leg = plt.legend(loc='best',frameon=True, fontsize = 10, markerscale = 6)
+    leg.set_title('Scale/Score',prop={'size':11})
+    plt.grid(True)
+#     for xval in np.linspace(0.0, 1.0, 11):
+#         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)
 

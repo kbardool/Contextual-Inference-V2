@@ -99,9 +99,9 @@ def build_coco_config( model = None, mode = 'training', args = None, verbose = 0
         if mode == 'training':
             config.WEIGHT_DECAY         = 2.0e-4
             config.REDUCE_LR_FACTOR     = 0.5
-            config.REDUCE_LR_COOLDOWN   = 30
-            config.REDUCE_LR_PATIENCE   = 60
-            config.EARLY_STOP_PATIENCE  = 120
+            config.REDUCE_LR_COOLDOWN   = 100
+            config.REDUCE_LR_PATIENCE   = 800
+            config.EARLY_STOP_PATIENCE  = 2000
             config.EARLY_STOP_MIN_DELTA = 1.0e-4
             config.MIN_LR               = 1.0e-10
             config.OPTIMIZER            = args.opt
@@ -1144,7 +1144,7 @@ def run_mrcnn_detection(mrcnn_model, dataset, image_ids = None, verbose = 0, dis
 ##------------------------------------------------------------------------------------    
 ## Run FCN detection on a list of image ids
 ##------------------------------------------------------------------------------------            
-def run_fcn_only_detection(fcn_model, dataset, input, image_ids = None, verbose = 0):
+def run_fcn_only_detection(fcn_model, dataset, input, image_ids = None, verbose = 0, display = False):
     '''
     Runs the fcn detection for on input list of image ids.
 
@@ -1180,6 +1180,13 @@ def run_fcn_only_detection(fcn_model, dataset, input, image_ids = None, verbose 
         image_ids = [image_ids]
 
     images       = [dataset.load_image(image_id) for image_id in image_ids]
+    
+    if display:
+        log("Display  {} images".format(len(images)))
+        for image in images:
+            log("image", image)
+        titles = ['id: '+str(i)+' ' for i in image_ids]
+        visualize.display_images(images, titles = titles)
     
     if verbose:
         for image_id in image_ids :
@@ -1222,7 +1229,7 @@ def run_fcn_only_detection(fcn_model, dataset, input, image_ids = None, verbose 
 ##------------------------------------------------------------------------------------    
 ## Run FCN detection on a list of image ids
 ##------------------------------------------------------------------------------------            
-def run_fcn_detection(fcn_model, mrcnn_model, dataset, image_ids = None, verbose = 0):
+def run_fcn_detection(fcn_model, mrcnn_model, dataset, image_ids = None, verbose = 0, display = False):
     '''
     Runs the fcn detection for on input list of image ids.
 
@@ -1261,7 +1268,15 @@ def run_fcn_detection(fcn_model, mrcnn_model, dataset, image_ids = None, verbose
             image_ids = [image_ids]
 
     images       = [dataset.load_image(image_id) for image_id in image_ids]
+
     
+    if display:
+        log("Display  {} images".format(len(images)))
+        for image in images:
+            log("image", image)
+        titles = ['id: '+str(i)+' ' for i in image_ids]
+        visualize.display_images(images, titles = titles)
+        
     if verbose:
         for image_id in image_ids :
             print("Image Id  : {}     External Id: {}.{}     Image Reference: ".format( image_id, 
