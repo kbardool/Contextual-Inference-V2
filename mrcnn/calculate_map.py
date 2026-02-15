@@ -40,16 +40,16 @@ BLUE     = '#1f77b4'
 LBLUE    = '#aec7e8'
 ORANGE   = '#ff7f0e'
 LORANGE  = '#ffbb78'
-GREEN    = '#2ca02c'
-LGREEN   = '#98df8a'
 RED      = '#d62728'
 LRED     = '#ff9896'
-PURPLE   = '#9467bd'
-LPURPLE  = '#c5b0d5'
+GREEN    = '#2ca02c'
+LGREEN   = '#98df8a'
 BROWN    = '#8c564b'
 LBROWN   = '#c49c94'
 PINK     = '#e377c2'
 LPINK    = '#f7b6d2'
+PURPLE   = '#9467bd'
+LPURPLE  = '#c5b0d5'
 GRAY     = '#7f7f7f'
 LGRAY    = '#c7c7c7'
 GOLD     = '#bcbd22'
@@ -57,16 +57,19 @@ LGOLD    = '#dbdb8d'
 AQUA     = '#17becf'
 LAQUA    = '#9edae5'
 
-SCORE_COLORS = {  'mrcnn_score_orig':  BLUE
-                , 'mrcnn_score_0'   :  LORANGE
-                , 'mrcnn_score_1'   :  LRED
-                , 'mrcnn_score_2'   :  LGREEN
+SCORE_COLORS = {  'mrcnn_score_orig'  :  BLUE
+
+                , 'mrcnn_score_0'     :  LORANGE
+                , 'mrcnn_score_1'     :  LRED
+                , 'mrcnn_score_2'     :  LGREEN
+                , 'mrcnn_score_1_norm':  LBROWN
+                , 'mrcnn_score_2_norm':  LPINK
                 
-                , 'fcn_score_0'     :  ORANGE 
-                , 'fcn_score_1'     :  RED
-                , 'fcn_score_2'     :  GREEN
-                , 'fcn_score_1_norm':  BROWN
-                , 'fcn_score_2_norm':  PINK
+                , 'fcn_score_0'       :  ORANGE 
+                , 'fcn_score_1'       :  RED
+                , 'fcn_score_2'       :  GREEN
+                , 'fcn_score_1_norm'  :  BROWN
+                , 'fcn_score_2_norm'  :  PINK
                }
                  
 # COLORS   = [ BLUE, LORANGE, ORANGE, GREEN, RED, PURPLE, BROWN, GRAY, GOLD, AQUA]
@@ -945,7 +948,7 @@ def plot_mAP_by_IOU(all_data, score , class_ids = None , class_names = None, col
 def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, scores, iou = None , 
                                             ax = None , legend = 'upper right', 
                                             min_x = 0.0, max_x = 1.05, 
-                                            min_y = 0.0, max_y = 1.05):
+                                            min_y = 0.0, max_y = 1.05, labels = None):
     avg_precs = {}
     iou_thrs = {}
     score_keys = []
@@ -958,7 +961,7 @@ def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, sco
     # scores is always passed ffom plot_mAP_by_scores, so it's nver None
     # so we loop on scores instead of sorted(class_data)
     # for idx, score_key in enumerate(sorted(class_data)):
-    for idx, score_key in enumerate(scores):
+    for idx, (score_key, score_label) in enumerate(zip(scores, labels)):
         # if  scores is not None and score_key not in  scores:
             # continue        
 #         print('score_key is: {:20s} iou: {:6.3f}  avg_prec: {:10.4f}'.format(score_key,  iou_key, class_data[score_key][iou_key]['avg_prec']))
@@ -966,7 +969,7 @@ def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, sco
         avg_precs[score_key] = class_data[score_key][iou_key]['avg_prec']
         precisions = class_data[score_key][iou_key]['precisions']
         recalls    = class_data[score_key][iou_key]['recalls']
-        label      = '{:15s}'.format(score_key)
+        label      = '{:15s}'.format(score_label)
         
         score_idx  = scores.index(score_key)
         # print('idx: ', idx, ' Score_key: ' , score_key, 'Score Index: ' , score_idx, 'color:', SCORE_COLORS[score_key])
@@ -994,7 +997,7 @@ def plot_pr_curves_by_scores_for_one_class(class_data, class_id, class_name, sco
 ##   Plot PR Curves for multiple calculated scores 
 ##------------------------------------------------------------------------------------------
 def plot_mAP_by_scores(all_data, scores = None, class_ids = None,  class_names = None, 
-                        columns=   2 , iou = 0.5, legend = 'upper right', 
+                        columns=   2 , iou = 0.5, legend = 'upper right',  labels = None, 
                         min_x  = 0.0 , max_x = 1.05, 
                         min_y  = 0.0 , max_y = 1.05,
                         size_x =   8 , size_y = 6):
@@ -1008,6 +1011,11 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None,  class_names =
         disp_scores  = [ 'mrcnn_score_orig' , 'mrcnn_score_norm', 'mrcnn_score_0', 'mrcnn_score_1', 'mrcnn_score_2', 'fcn_score_0', 'fcn_score_1', 'fcn_score_2']
     else:
         disp_scores   = scores
+
+    if labels is None:
+        disp_labels = disp_scores
+    else:
+        disp_labels = labels
         
     all_precs = {}
     all_mAPs  = {}
@@ -1028,7 +1036,8 @@ def plot_mAP_by_scores(all_data, scores = None, class_ids = None,  class_names =
         class_precs = plot_pr_curves_by_scores_for_one_class(all_data[class_id], class_id, class_names[class_id], 
                                 scores = disp_scores, iou = iou, ax = ax, legend = legend,
                                 min_x = min_x, max_x = max_x, 
-                                min_y = min_y, max_y = max_y )    
+                                min_y = min_y, max_y = max_y, 
+                                labels = disp_labels)    
         all_precs[class_id] = class_precs
         # ax.autoscale_view()
         
@@ -1178,7 +1187,8 @@ def plot_mAP_vs_IoUs_BarChart(all_data, scores = None, ious=None, class_ids = [0
 ##  Plot mAPs vs. Class Bar Chart
 ##------------------------------------------------------------------------------------------
 def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = None, 
-                               class_names = None, epochs = 0, loc = 'lower left'):
+                               class_names = None, epochs = 0, 
+                               loc = 'best', min_y = 0.0, height = 10, labels = None):
     
     if class_ids is None:
         disp_classes = sorted(all_data.keys())
@@ -1189,8 +1199,14 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
         disp_scores  = [ 'mrcnn_score_orig', 'mrcnn_score_0', 'mrcnn_score_1', 'mrcnn_score_2', 'fcn_score_0', 'fcn_score_1', 'fcn_score_2']
     else:
         disp_scores   = scores
+        
+    if labels is None:
+        disp_labels = disp_scores
+    else:
+        disp_labels = labels
     
     print('disp_scores: ', disp_scores)
+    print('disp_labels: ', disp_labels)
     iou_key    = iou        
     all_mAPs   = {}
     all_IoUs   = {}
@@ -1202,7 +1218,7 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
     num_classes    = len(disp_classes)
     num_groups     = len(disp_classes)
     width          = max(15, num_groups )
-    height         = 10  
+    
     # tick_list    = np.linspace( 0.0 , width - (group_width+ group_margin+ 2*margin), num_classes)
     tick_list      = np.linspace( 0.0 , width - (2*margin), num_groups+1)[:-1]
     tick_list     += margin 
@@ -1220,15 +1236,15 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
     fig = plt.figure(figsize=(width , height))
     ax = fig.gca()
     
-    for idx, score_key in enumerate(disp_scores):
+    for idx, (score_key, score_label) in enumerate(zip(disp_scores, disp_labels)):
         
         all_mAPs[score_key] = []
         all_IoUs[score_key] = []
         score_keys.append(score_key)
         
         for j, class_key in enumerate(disp_classes):
-            if  scores is not None and score_key not in  scores:
-                continue        
+            # if  scores is not None and score_key not in  scores:
+                # continue        
             all_mAPs[score_key].append(all_data[class_key][score_key][iou_key]['avg_prec'])
             all_IoUs[score_key].append(iou_key)
             # print('score_key is: {:20s} class: {} iou: {:6.3f}  avg_prec: {:10.4f}'.format(score_key, class_key, iou_key, all_data[class_key][score_key][iou_key]['avg_prec']))
@@ -1244,13 +1260,13 @@ def plot_mAP_vs_class_BarChart(all_data, scores = None, iou=0.5, class_ids = Non
         # print('idx: ', idx, ' Score_key: ' , score_key, 'Score Index: ' , score_idx, 'color:', SCORE_COLORS[score_key])
 
         label = '{:15s}'.format(score_key)        
-        ax.bar(r, all_mAPs[score_key], color=SCORE_COLORS[score_key], width=barWidth, edgecolor='white', label=label)
+        ax.bar(r, all_mAPs[score_key], color=SCORE_COLORS[score_key], width=barWidth, edgecolor='white', label=score_label)
 
     ax.set_xlabel('Class', fontsize= 16)
     ax.set_ylabel('AP', fontsize= 16)
     ax.tick_params(axis='both', labelsize = 15)
     ax.set_xlim([0.0 - margin, width])
-    ax.set_ylim([0.0,1.0])
+    ax.set_ylim([min_y,1.0])
     ax.set_title('mAP for various scores @ IoU {}  after {} epochs training'.format( iou_key, epochs), fontsize=16)
     leg = plt.legend(loc=loc, frameon=True, fontsize = 10, markerscale = 0.5, framealpha = 1.0)    
     leg.set_title('Score',prop={'size':10})

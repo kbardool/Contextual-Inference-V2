@@ -287,7 +287,7 @@ class Image():
     draw_priority_list   = ['sun', 'cloud', 'airplane']
     BUILD_MAX_TRIES      = 7
     MAX_OCCLUSION_RATIO  = 0.75
-    PERSON_CAR_DISTANCE       = 10   # fixed spread between car and person
+    PERSON_CAR_DISTANCE  = 10   # fixed spread between car and person
     sin_60               = math.sin(math.radians(60))
 
     print(' Init Image Class - Possible Object Choices: ', possible_choices)

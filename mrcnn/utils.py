@@ -335,11 +335,36 @@ def unresize_image(image, image_meta, upscale = None):
     return image
      
 
+##------------------------------------------------------------------------------------------
+## Resize image such that it complies with the shape expected by the NN (config.IMAGE_SHAPE)
+##------------------------------------------------------------------------------------------
+def scale_image(image, scale = None):
+    '''
+    Similar to unresize_image, but doesnt convert to uint. When converting heatmap to uint many values 
+    are driven to 0.
+
+    image:          Heatmap to resize 
+    image_meta:     Image meta contains information about padding applied to image 
+    upscale:        Necessary upscale if heatmap was downscaled in MRCNN 
+
+    Returns:
+    --------
+    image:          the resized image
+    '''
+    # Default window (y1, x1, y2, x2) and default scale == 1.
+    # print('unresize_image() : input image datatype ', image.dtype)
+
+    h, w = image.shape[:2]
+    # Get new height and width
+    if scale is not None:
+        image = skimage.transform.resize (image, (h* scale, w * scale))
+
+    return image
 
 ##------------------------------------------------------------------------------------------
 ## Resize image such that it complies with the shape expected by the NN (config.IMAGE_SHAPE)
 ##------------------------------------------------------------------------------------------
-def unresize_heatmap(image, image_meta, upscale = None):
+def unmold_heatmap(image, image_meta, upscale = None):
     '''
     Similar to unresize_image, but doesnt convert to uint. When converting heatmap to uint many values 
     are driven to 0.
@@ -364,24 +389,24 @@ def unresize_heatmap(image, image_meta, upscale = None):
     scale = 1
     
     if upscale is not None:
-        # print('0.1 - unresize_heatmap(): shape before upscale: {}  dtype {}  Upscale to h/w: {}/{} '.format(image.shape,image.dtype, (h * upscale),(w * upscale)))
+        # print('0.1 - unmold_heatmap(): shape before upscale: {}  dtype {}  Upscale to h/w: {}/{} '.format(image.shape,image.dtype, (h * upscale),(w * upscale)))
         # print('      min: {} , max: {} '.format(np.amin(image), np.amax(image)))
         image = skimage.transform.resize (image, (h*upscale, w * upscale))
-        # print('0.2 - unresize_heatmap(): shape after  upscale: {}  dtype {} '.format(image.shape, image.dtype))
+        # print('0.2 - unmold_heatmap(): shape after  upscale: {}  dtype {} '.format(image.shape, image.dtype))
         # print('      min: {} , max: {} '.format(np.amin(image), np.amax(image)))
     
-    # print('1 - unresize_heatmap(): Resize Image from: h/w: {}/{}  To:  h/w: {}/{}  , Padding: top: {}  bot: {}  left: {}   right: {} '.
+    # print('1 - unmold_heatmap(): Resize Image from: h/w: {}/{}  To:  h/w: {}/{}  , Padding: top: {}  bot: {}  left: {}   right: {} '.
                 # format(h, w, to_h, to_w, top_pad, bottom_pad, left_pad , right_pad))
         
     ## format applied for np.pad is :  [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)] 
     # print('2 - unresize_image(): shape before padding removal: {}  datatype {} '.format(image.shape, image.dtype))
     image = image[top_pad: bottom_pad, left_pad: right_pad]
-    # print('3 - unresize_heatmap(): shape after padding removal: {}  datatype {} '.format(image.shape, image.dtype))
+    # print('3 - unmold_heatmap(): shape after padding removal: {}  datatype {} '.format(image.shape, image.dtype))
 
-    # print('4 - unresize_heatmap(): shape before resize: {}  dtype: {} '.format(image.shape, image.dtype)) 
+    # print('4 - unmold_heatmap(): shape before resize: {}  dtype: {} '.format(image.shape, image.dtype)) 
     image = skimage.transform.resize (image, (to_h, to_w))
 
-    # print('5 - unresize_heatmap(): shape  after resize: {}  dtype: {} '.format(image.shape, image.dtype)) 
+    # print('5 - unmold_heatmap(): shape  after resize: {}  dtype: {} '.format(image.shape, image.dtype)) 
 
     return image
 

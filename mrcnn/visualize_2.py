@@ -115,9 +115,7 @@ def display_AP_results(APRes):
                     np.mean(APRes[key]['MRCNN_AP_2'][:LIMIT]), 
                     np.mean(APRes[key]['FCN_AP_2'][:LIMIT]) ))
         print('\n')                    
-        
-        
-        
+              
 ##-----------------------------------------------------------------------------------------------------------    
 ##  DISPLAY GROUND TRUTH BOUNDING BOXES 
 ##-----------------------------------------------------------------------------------------------------------    
@@ -128,36 +126,37 @@ def display_gt_bboxes(dataset, config, image_id=0, only = None, size = 8, verbos
                 load_image_gt(dataset, config, image_id, augment=False, use_mini_mask=True)
     if only is None:
         only = np.unique(p_gt_class_ids).astype(np.int)
+    sort_order = p_gt_class_ids.argsort()
+    print(p_gt_class_ids[sort_order])
     print()
     print('GT_BOXES for image ', image_id)
     print('-'*80)
-    print('        class             |                              ')
-    print('seq  id name              |  Y1  X1  Y2  X2     CX     CY    AREA')
+    print('        class              |                              ')
+    print('seq  id name               |  Y1  X1  Y2  X2     CX     CY    AREA')
     print('-'*80)
     idx = 0 
-    for cls , pre in zip(p_gt_class_ids, p_gt_bboxes):
+    for cls , pre in zip(p_gt_class_ids[sort_order], p_gt_bboxes[sort_order]):
         cx = pre[1] + (pre[3]-pre[1])/2
         cy = pre[0] + (pre[2]-pre[0])/2
         area = (pre[3]-pre[1]) * (pre[2]-pre[0])
         if  cls in only:
-            print('{:3.0f} {:2d} {:18s} |'\
-                  ' {:3.0f} {:3.0f} {:3.0f} {:3.0f}   {:5.1f}  {:5.1f}  {:7.2f}'.          
+            print('{:3.0f} {:3d} {:18s} |'\
+                  ' {:4.0f} {:4.0f} {:4.0f} {:4.0f}   {:5.1f}  {:5.1f}  {:7.2f}'.          
               format(idx, cls, dataset.class_names[cls],
                      pre[0],pre[1], pre[2], pre[3], cx, cy, area ))     #,  pre[4],pre[5],pre[6],roi))
         idx +=1 
     print()                
+
     ttl = "Ground Truth Boxes for image "+str(image_id)
     visualize.display_instances(p_original_image, p_gt_bboxes, p_gt_class_ids, dataset.class_names,
                       only_classes = only, title=ttl, size = size)
                       
     return
 
-
-
 ##-----------------------------------------------------------------------------------------------------------    
 ## DISPLAY MRCNN SCORES 
 ##-----------------------------------------------------------------------------------------------------------    
-def display_pr_scores(f_input, class_names, only = None, display = True, size = 12):
+def display_mrcnn_scores(f_input, class_names, only = None, display = True, size = 12):
     '''
     f_input  :    results from detection process (run_mrcnn_detection)
     pr_scores:    pr_scores returned from detection or evaluation process results['pr_scores']
@@ -179,52 +178,96 @@ def display_pr_scores(f_input, class_names, only = None, display = True, size = 
     print(' Display pr_scores ;', pr_scores.shape)
     seq_start = pr_scores.shape[1]
     print('PR_SCORES from fcn/mrcnn_results:')
-    print('-'*175)
-    print('                              |   |                |        MRCNN score 0       |          MRCNN score 1             |           MRCNN score 2            |                         ')
-    print('          class               |TP/| mrcnn  normlzd |  gaussian   bbox   nrm.scr*|  ga.sum    mask     score   norm   |  ga.sum    mask     score   norm   |                         ')
-    print('    seq  id name              | FP| score   score  |    sum      area   gau.sum |  in mask   sum              score  |  in mask   sum              score  |  X1  Y1  X2  Y2   AREA  ')
-    print('-'*175)
+    print('-'*185)
+    print('                              |   |                |        MRCNN score 0       |          MRCNN score 1             |           MRCNN score 2            |                           ')
+    print('          class               |TP/| mrcnn  normlzd |  gaussian   bbox   nrm.scr*|  ga.sum    mask     score   norm   |  ga.sum    mask     score   norm   |                           ')
+    print('    seq  id name              | FP| score   score  |    sum      AREA   gau.sum |  in mask   sum              score  |  in mask   sum              score  |  X1  Y1  X2  Y2   CX   CY ')
+    print('-'*185)
 
     for idx, pre in enumerate(pr_scores):
         cx = pre[1] + (pre[3]-pre[1])/2
         cy = pre[0] + (pre[2]-pre[0])/2
         area = (pre[3]-pre[1]) * (pre[2]-pre[0])
         int_cls = int(pre[CLASS_COLUMN])
+        # print(' int_cls ', int_cls, ' only: ', only)
         if  int_cls in only:
             print('{:3.0f} {:3.0f} {:2d} {:18s} |{:2.0f} | {:.4f}  {:.4f} |'\
                   '{:9.4f}  {:6.1f} {:9.4f} |'\
                   '{:9.4f}  {:6.1f} {:9.4f}  {:6.4f} |'\
                   '{:9.4f}  {:6.1f} {:9.4f}  {:6.4f} |'\
-                  ' {:3.0f} {:3.0f} {:3.0f} {:3.0f} {:7.2f}'.          
+                  ' {:3.0f} {:3.0f} {:3.0f} {:3.0f} {:6.2f} {:6.2f}'.          
               format(idx,    
                      pre[SEQUENCE_COLUMN],
                      int_cls, class_names[int_cls], pre[DT_TYPE_COLUMN], pre[ORIG_SCORE_COLUMN], pre[NORM_SCORE_COLUMN], 
                      pre[SCORE_0_SUM_COLUMN], pre[SCORE_0_AREA_COLUMN], pre[SCORE_0_COLUMN], 
                      pre[SCORE_1_SUM_COLUMN], pre[SCORE_1_AREA_COLUMN], pre[SCORE_1_COLUMN], pre[SCORE_1_NORM_COLUMN], 
                      pre[SCORE_2_SUM_COLUMN], pre[SCORE_2_AREA_COLUMN], pre[SCORE_2_COLUMN], pre[SCORE_2_NORM_COLUMN], 
-                     pre[1],pre[0], pre[3], pre[2], area ))     #,  pre[4],pre[5],pre[6],roi))
+                     pre[1],pre[0], pre[3], pre[2], cx, cy ))     #,  pre[4],pre[5],pre[6],roi))
                      
     if isinstance (f_input, dict)  and display:
         img_id = str(f_input['image_meta'][0])        
         visualize.display_instances(f_input['image'] , pr_scores[:,:CLASS_COLUMN], pr_scores[:,CLASS_COLUMN].astype(np.int32), 
                                     class_names, pr_scores[:,ORIG_SCORE_COLUMN], only_classes= only, size =size,
-                                    title = 'MRCNN predictions for image id'+img_id)
-                                    
-                                    
-display_mrcnn_scores = display_pr_scores
+                                    title = 'MRCNN predictions for image id'+img_id)                                                                     
 
-#-----------------------------------------------------------------------------------------------------------    
-#
-#-----------------------------------------------------------------------------------------------------------        
-def display_pr_hm_scores(r, class_names, only = None):
+def display_mrcnn_style1(f, class_names, display = True, lmt =18):
+    
+    print('\n')
+    print('-'*45)
+    print('Scores from mrcnn_results (style1): ' )
+    print('-'*45)
+    print('       classes :', f['class_ids'][:lmt])
+    names  = " ".join([ '{:>10s}'.format(class_names[i][-10:]) for i in f['class_ids'][:lmt]])
+
+    print('               : ', names)
+    print('                ', f['detection_ind'][:lmt])
+    print('   orig scores :', f['scores'][:lmt])
+    print('   orig scores :', f['pr_scores'][:lmt, ORIG_SCORE_COLUMN])
+    print('   norm scores :', f['pr_scores'][:lmt,8])
+    print('            X1 :', f['pr_scores'][:lmt,1])
+    print('            Y1 :', f['pr_scores'][:lmt,0])
+    print('            X2 :', f['pr_scores'][:lmt,3])
+    print('            Y2 :', f['pr_scores'][:lmt,2])
+
+    # print('  pr_scores[5] :', f['pr_scores'][:,5])
+
+    print('-'*185)
+    print(' SCR 0    [11] :', f['pr_scores'][:lmt,11])
+    print()
+    print(' SCR 1    [14] :', f['pr_scores'][:lmt,14])
+    print()
+    print(' SCR 2    [20] :', f['pr_scores'][:lmt,20])
+    
+def display_mrcnn_style2(f, class_names, display = True, lmt =18):
+    print('\n')
+    print('-'*45)
+    print('Scores from mrcnn_results (style2): ' )
+    print('-'*45)
+    for i, [molded_bbox, cls, scr, pr_scr] in enumerate(zip(f['molded_rois'].astype(np.int), f['class_ids'],  f['scores'], f['pr_scores'])):
+        print('{} ({:2d})-  {:.<18s}  {:5.4f} {}  '.format(i, cls, class_names[cls], scr, pr_scr[[4,5,6,7,8]] ))
+        print('{:>86s} {}'.format('  Bbox Coordinates - molded_rois: ', molded_bbox))
+        print('{:>86s} {}'.format('  Bbox Coordinates - pr_scores  : ', pr_scr[:4]))
+        print()    
+        print('{:>86s} {}'.format('   Orig/Norm score : ',  pr_scr[[5,8]]))
+        print('{:>86s} {}'.format('  mrcnn old scores : ',  pr_scr[[9,10,11]]))
+        print()    
+        print('{:>86s} {}'.format(' mrcnn alt scores1 : ', pr_scr[[12,13,14,15,16,17]]))
+        print()    
+        print('{:>86s} {}'.format(' mrcnn alt scores2 : ', pr_scr[[18,19,20,21,22,23]]))
+        print()    
+        
+def display_mrcnn_scores_by_class(r, class_names, display = True, only = None):
     '''
     pr_hm_scores:   pr_hm_scores or pr_hm_scores_by_class ( [class, bbox, score info] ) results from mrcnn detect
     class_names :   class names
     
     '''
-    pr_hm_scores = r['pr_hm_scores']
+    pr_hm_scores = r['pr_scores_by_class']
     
-    print(' Display pr_hm_scores :', pr_hm_scores.shape)
+    print('\n')
+    print('-'*45)
+    print('Display pr_hm_scores :', pr_hm_scores.shape)
+    print('-'*45)
     np_format = {}
     float_formatter = lambda x: "%10.4f" % x
     int_formatter   = lambda x: "%10d" % x
@@ -234,9 +277,7 @@ def display_pr_hm_scores(r, class_names, only = None):
     
     if only is None:
         only = range(pr_hm_scores.shape[0])
-#     seq_start = r['pr_hm_scores'].shape[1]
     # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
-    print('  classes     : ', only)
     print('-'*182)
     print('                         |  |                 |           alt score 0      |              alt score 1              |                alt score 2            |')
     print('        class            |  | mrcnn   normlzd |  gauss     bbox   nrm.scr* |  ga.sum     mask    score      norm   |   ga.sum     mask     score   norm    |')
@@ -264,12 +305,9 @@ def display_pr_hm_scores(r, class_names, only = None):
                        pre[SCORE_2_SUM_COLUMN], pre[SCORE_2_AREA_COLUMN], pre[SCORE_2_COLUMN], pre[SCORE_2_NORM_COLUMN], 
                        cx, cy , area))     #,  pre[4],pre[5],pre[6],roi))
             # print('-'*170)
-    return 
-    
-#-----------------------------------------------------------------------------------------------------------    
-#
-#-----------------------------------------------------------------------------------------------------------        
-def display_pr_hm_scores_box_info(r, class_names, only = None):
+    return                                     
+                                                            
+def display_mrcnn_scores_box_info(r, class_names, display = True, only = None):
     '''
     r:    results from mrcnn detect
     cn:   class names
@@ -277,7 +315,10 @@ def display_pr_hm_scores_box_info(r, class_names, only = None):
     '''
     pr_hm_scores = r['pr_hm_scores']
     
-    print(' Display pr_hm_scores_box_info :', pr_hm_scores.shape)
+    print('\n')
+    print('-'*45)
+    print('Display pr_hm_scores_box_info :', pr_hm_scores.shape)
+    print('-'*45)
     
     np_format = {}
     float_formatter = lambda x: "%10.4f" % x
@@ -316,13 +357,14 @@ def display_pr_hm_scores_box_info(r, class_names, only = None):
                          cx,  cy,  width,  height, area, covar_x, covar_y))    
     print('-'*170)
     return
-    
-
+display_pr_scores = display_mrcnn_scores    
+display_pr_hm_scores = display_mrcnn_scores_by_class
+display_pr_hm_scores_box_info = display_mrcnn_scores_box_info
 
 ##-----------------------------------------------------------------------------------------------------------    
 ## DISPLAY FCN SCORES
 ##-----------------------------------------------------------------------------------------------------------    
-def display_fcn_scores(f_input, class_names, only = None, display = True, size = 12):
+def display_fcn_scores(f, class_names, only = None, display = True, size = 12):
     '''
     fcn_scores:    fcn_scores returned from detection or evaluation process
     cn:   class names3
@@ -331,17 +373,18 @@ def display_fcn_scores(f_input, class_names, only = None, display = True, size =
     np_format['float'] = lambda x: "%10.4f" % x
     np_format['int']   = lambda x: "%10d" % x
     np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
-    if isinstance (f_input, dict) :
-        fcn_scores = f_input['fcn_scores']
+    if isinstance (f, dict) :
+        fcn_scores = f['fcn_scores']
     else:
-        fcn_scores = f_input    
+        fcn_scores = f    
+
         
     print(' Display fcn_scores :',fcn_scores.shape)         
     if only is None:
         only = np.unique(fcn_scores[:,4]).astype(np.int)
     
     seq_start = fcn_scores.shape[1]
-    print('\nFCN_SCORES:')
+    print('\n FCN_SCORES:')
     print('-'*175)
     print('                              |   |                |         FCN score 0        |            FCN score 1             |            FCN score 2             |                         ')
     print('          class               |TP/| mrcnn  normlzd |  gaussian   bbox   nrm.scr*|  ga.sum    mask     score   norm   |  ga.sum    mask     score   norm   |                         ')
@@ -368,34 +411,37 @@ def display_fcn_scores(f_input, class_names, only = None, display = True, size =
                      pre[0],pre[1], pre[2], pre[3], area ))     #,  pre[4],pre[5],pre[6],roi))
     print()
         
-    if isinstance (f_input, dict)  and display:
-        img_id = str(f_input['image_meta'][0])
-        visualize.display_instances(f_input['image'] , fcn_scores[:,:CLASS_COLUMN ], fcn_scores[:,CLASS_COLUMN].astype(np.int32), 
+    if isinstance (f, dict)  and display:
+        img_id = str(f['image_meta'][0])
+        visualize.display_instances(f['image'] , fcn_scores[:,:CLASS_COLUMN ], fcn_scores[:,CLASS_COLUMN].astype(np.int32), 
                                     class_names, fcn_scores[:,SCORE_1_COLUMN], only_classes= only, size =size,
                                     title = 'FCN predictions for image id '+img_id)
 
-def display_fcn_scores_box_info(r,  class_names = None, fcn_hm = None, only = None):
+def display_fcn_scores_box_info(f,  class_names, only = None, display = False):
     '''
-    r:    results from mrcnn detect
+    f:    results from mrcnn detect
     cn:   class names
     
     '''
-    fcn_scores = r['fcn_scores']
-    fcn_hm     = r['fcn_hm']
+    fcn_scores = f['fcn_scores']
+    fcn_hm     = f['fcn_hm']
     np_format = {}
     np_format['float'] = lambda x: "%10.4f" % x
     np_format['int']   = lambda x: "%10d" % x
     np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
  
-    print(' Display fcn_scores_box_info :',fcn_scores.shape)
+    print('\n')
+    print('-'*50)
+    print('Display fcn_scores_info w/ bbox information :',fcn_scores.shape)
+    print('-'*50)
     if only is None:
         only = np.unique(fcn_scores[:,4]).astype(np.int)
         # only = np.unique(fcn_scores[:,4])
         
     seq_start = fcn_scores.shape[1]
-#     seq_start = r['pr_hm_scores'].shape[1]
-    # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
-    print('  FCN BBox Information - classes   --  : ', only)
+#     seq_start = f['pr_hm_scores'].shape[1]
+    # print('  class ids  : ', f['class_ids'], type(f['class_ids']))
+    print('Classes   --  : ', only)
     print('-'*175)
     print('                                                         |                                                 |    (COVAR)    |               CLIP REGION   ')
     print('BOX     class                                            |                   Width   Height                |      SQRT     |      FROM/TO               FROM/TO ')
@@ -465,13 +511,9 @@ def display_fcn_scores_box_info(r,  class_names = None, fcn_hm = None, only = No
     print('-'*175)
     return
     
-
-#-----------------------------------------------------------------------------------------------------------    
-#
-#-----------------------------------------------------------------------------------------------------------        
-def display_fcn_scores_box_info2(fcn_scores, fcn_hm , class_names, only = None):
+def display_fcn_scores_box_info2(f, class_names, only = None):
     '''
-    r:    results from mrcnn detect
+    f:    results from mrcnn detect
     cn:   class names
     
     '''
@@ -482,6 +524,9 @@ def display_fcn_scores_box_info2(fcn_scores, fcn_hm , class_names, only = None):
     np_format['int']   = int_formatter
     np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
     
+    fcn_scores = f['fcn_scores']
+    fcn_hm     = f['fcn_hm']
+    
     if only is None:
         only = np.unique(fcn_scores[:,4])
         
@@ -489,10 +534,15 @@ def display_fcn_scores_box_info2(fcn_scores, fcn_hm , class_names, only = None):
     num_classes = fcn_hm.shape[-1]
     class_list  = np.arange(num_classes) 
     sub_title   = ''.join([ '{:>15s}'.format(i) for i in class_names])
-    print(' Display fcn_scores_box_info2 :',fcn_scores.shape)
-#     seq_start = r['pr_hm_scores'].shape[1]
-    # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
-    print('  classes     : ', only)
+    
+    print('\n')
+    print('-'*45)
+    print('Display fcn_scores_box_info2 :',fcn_scores.shape)
+    print('-'*45)
+
+#     seq_start = f['pr_hm_scores'].shape[1]
+    # print('  class ids  : ', f['class_ids'], type(f['class_ids']))
+    print('Classes     : ', only)
     # print('-'*175)
     # print('                                       |                                              |   (COVAR)     |    ')
     # print('BOX                                    |                   Width   Height             |     SQRT      |   FROM/TO  ')
@@ -598,10 +648,7 @@ def display_fcn_scores_box_info2(fcn_scores, fcn_hm , class_names, only = None):
     print('-'*175)
     return
 
-#-----------------------------------------------------------------------------------------------------------    
-#
-#-----------------------------------------------------------------------------------------------------------        
-def display_fcn_hm_scores_by_class(fcn_hm_scores_by_class, class_names, only = None):
+def display_fcn_scores_by_class(f, class_names, only = None):
     '''
     fcn_hm_scores:    results from fcn_detection [num_classes, num_bboxes, columns] 
     cn:   class names
@@ -613,11 +660,18 @@ def display_fcn_hm_scores_by_class(fcn_hm_scores_by_class, class_names, only = N
     np_format['float'] = float_formatter
     np_format['int']   = int_formatter
     np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
-    
+    fcn_scores_by_class = f['fcn_scores_by_class']
     if only is None:
-        only = range(fcn_hm_scores_by_class.shape[0])
-#     seq_start = r['pr_hm_scores'].shape[1]
-    # print('  class ids  : ', r['class_ids'], type(r['class_ids']))
+        only = range(fcn_scores_by_class.shape[0])
+        
+        
+#     seq_start = f['pr_hm_scores'].shape[1]
+    # print('  class ids  : ', f['class_ids'], type(f['class_ids']))
+    print('\n')
+    print('-'*45)
+    print(' Display fcn_scores_by_class :',fcn_scores_by_class.shape)
+    print('-'*45)
+
     print('  classes     : ', only)
     print('-'*175)
     print('                                          |           alt score 0           |              alt score 1              |                alt score 2            |')
@@ -625,9 +679,9 @@ def display_fcn_hm_scores_by_class(fcn_hm_scores_by_class, class_names, only = N
     print('seq  id     name          score   score   |   sum        area    gau.sum    |  in mask    sum                score  |   in mask    sum              score   |')
     print('-'*175)
     
-    for cls in range(fcn_hm_scores_by_class.shape[0]):
+    for cls in range(fcn_scores_by_class.shape[0]):
         if cls in only:
-            for pre in fcn_hm_scores_by_class[cls]:
+            for pre in fcn_scores_by_class[cls]:
         #     print(' {:4d}      {:12s}   {:.4f}   {:.4f}     {:.4f}  {:7.4f}  {:.4f}      {:.4f}   {}'.
                 width = pre[3]-pre[1]
                 height = pre[2]-pre[0]
@@ -648,15 +702,14 @@ def display_fcn_hm_scores_by_class(fcn_hm_scores_by_class, class_names, only = N
                      cx, cy , area))     #,  pre[4],pre[5],pre[6],roi))
             print('-'*175)
     return 
-                                    
-                                    
+display_fcn_hm_scores_by_class = display_fcn_scores_by_class
                                     
 ##-----------------------------------------------------------------------------------------------------------    
 ## DISPLAY MRCNN AND FCN SCORES 
 ##-----------------------------------------------------------------------------------------------------------    
-def display_pr_fcn_scores(f_input, class_names, only = None, display = True, size = 12):
+def display_pr_fcn_scores(f, class_names, only = None, display = True, size = 12):
     '''
-    f_input  :    results from detection process (run_mrcnn_detection)
+    f  :    results from detection process (run_mrcnn_detection)
     pr_scores:    pr_scores returned from detection or evaluation process results['pr_scores']
     cn:   class names
     
@@ -666,8 +719,8 @@ def display_pr_fcn_scores(f_input, class_names, only = None, display = True, siz
     np_format['int']   = lambda x: "%10d" % x
     np.set_printoptions(linewidth=195, precision=4, floatmode='fixed', threshold =10000, formatter = np_format)
 
-    pr_scores = f_input['pr_scores']
-    fcn_scores = f_input['fcn_scores']
+    pr_scores = f['pr_scores']
+    fcn_scores = f['fcn_scores']
     
     if only is None:
         only = np.unique(pr_scores[:,4]).astype(np.int)
@@ -675,13 +728,18 @@ def display_pr_fcn_scores(f_input, class_names, only = None, display = True, siz
     seq_start = pr_scores.shape[1]
     
     print('\n')
-    print('PR_SCORES from fcn/mrcnn_results:   (top line MRCNN, bottom line FCN) ' )
+    print('-'*45)
+    print('Scores from fcn/mrcnn_results (style3): ' )
+    print('-'*45)
+    print('\n')
+    print('Scores from fcn/mrcnn_results:   (top line MRCNN, bottom line FCN) ' )
     print('-'*175)
     print('                              |   |                |     MRCNN / FCN score 0    |         MRCNN / FCN score 1        |        MRCNN / FCN score 2         | ')
     print('          class               |TP/| mrcnn  normlzd |  gaussian   bbox   nrm.scr*|  ga.sum    mask     score   norm   |  ga.sum    mask     score   norm   | ')
     print('    seq  id name              | FP| score   score  |    sum      area   gau.sum |  in mask   sum              score  |  in mask   sum              score  |  Y1  X1  Y2  X2   AREA  ')
     print('-'*175)
 
+    # print(' pre class: ' , pre[CLASS_COLUMN], ' fcn: ', fcn[CLASS_COLUMN]) 
     for idx, (pre, fcn) in enumerate(zip(pr_scores, fcn_scores)):
         int_cls = int(pre[CLASS_COLUMN])
         if  int_cls in only:
@@ -718,45 +776,19 @@ def display_pr_fcn_scores(f_input, class_names, only = None, display = True, siz
                      fcn[SCORE_1_SUM_COLUMN], fcn[SCORE_1_AREA_COLUMN], fcn[SCORE_1_COLUMN], fcn[SCORE_1_NORM_COLUMN], 
                      fcn[SCORE_2_SUM_COLUMN], fcn[SCORE_2_AREA_COLUMN], fcn[SCORE_2_COLUMN], fcn[SCORE_2_NORM_COLUMN],                   
                      fcn[0],fcn[1], fcn[2], fcn[3], area ))     #,  fcn[4],fcn[5],fcn[6],roi))                     
-            print()
-        
-    # if isinstance (f_input, dict)  and display:
-        # img_id = str(f_input['image_meta'][0])        
-        # visualize.display_instances(f_input['image'] , pr_scores[:,:CLASS_COLUMN], pr_scores[:,CLASS_COLUMN].astype(np.int32), 
+            print()        
+    # if isinstance (f, dict)  and display:
+        # img_id = str(f['image_meta'][0])        
+        # visualize.display_instances(f['image'] , pr_scores[:,:CLASS_COLUMN], pr_scores[:,CLASS_COLUMN].astype(np.int32), 
                                     # class_names, pr_scores[:,ORIG_SCORE_COLUMN], only_classes= only, size =size,
                                     # title = 'MRCNN predictions for image id'+img_id)
                                     
-                                    
-#------------------------------------------------------------------------------------------------------------------                                    
-# detections as returned from the model's `detect()` functon
-#------------------------------------------------------------------------------------------------------------------
-def display_mrcnn_style1(f, class_names,lmt =18):
-    print('       classes :', f['class_ids'][:lmt])
-    names  = " ".join([ '{:>10s}'.format(class_names[i][-10:]) for i in f['class_ids'][:lmt]])
+def display_pr_fcn_style1(f, class_names, display = False, lmt =18):
 
-    print('               : ', names)
-    print('                ', f['detection_ind'][:lmt])
-    print('   orig scores :', f['scores'][:lmt])
-    print('   orig scores :', f['pr_scores'][:lmt, ORIG_SCORE_COLUMN])
-    print('   norm scores :', f['pr_scores'][:lmt,8])
-    print('            X1 :', f['pr_scores'][:lmt,1])
-    print('            Y1 :', f['pr_scores'][:lmt,0])
-    print('            X2 :', f['pr_scores'][:lmt,3])
-    print('            Y2 :', f['pr_scores'][:lmt,2])
-
-    # print('  pr_scores[5] :', f['pr_scores'][:,5])
-
-    print('-'*185)
-    print(' SCR 0    [11] :', f['pr_scores'][:lmt,11])
-    # print(' fcn_scores[11] :', f['fcn_scores'][:lmt,11])
-    print()
-    print(' SCR 1    [14] :', f['pr_scores'][:lmt,14])
-    # print('fcn_scores[14] :', f['fcn_scores'][:lmt,14])
-    print()
-    print(' SCR 2    [20] :', f['pr_scores'][:lmt,20])
-    # print('fcn_scores[20] :', f['fcn_scores'][:lmt,20])
-    
-def display_pr_fcn_style1(f, class_names,lmt =18):
+    print('\n')
+    print('-'*45)
+    print('Scores from fcn/mrcnn_results (style1): ' )
+    print('-'*45)
     names  = " ".join([ '{:>10s}'.format(class_names[i][-10:]) for i in f['pr_scores'][:lmt, 4].astype(np.int32)])
 
     print('         bbox seq id :', f['pr_scores'][:lmt,7].astype(int))
@@ -791,22 +823,12 @@ def display_pr_fcn_style1(f, class_names,lmt =18):
     print('norm fcn_score  [23] :', f['fcn_scores'][:lmt,23])
 
 
-def display_mrcnn_style2(f, class_names,lmt =18):
-    for i, [molded_bbox, cls, scr, pr_scr] in enumerate(zip(f['molded_rois'].astype(np.int), f['class_ids'],  f['scores'], f['pr_scores'])):
-        print('{} ({:2d})-  {:.<18s}  {:5.4f} {}  '.format(i, cls, class_names[cls], scr, pr_scr[[4,5,6,7,8]] ))
-        print('{:>86s} {}'.format('  Bbox Coordinates - molded_rois: ', molded_bbox))
-        print('{:>86s} {}'.format('  Bbox Coordinates - pr_scores  : ', pr_scr[:4]))
-        print()    
-        print('{:>86s} {}'.format('   Orig/Norm score : ',  pr_scr[[5,8]]))
-        print('{:>86s} {}'.format('  mrcnn old scores : ',  pr_scr[[9,10,11]]))
-        print()    
-        print('{:>86s} {}'.format(' mrcnn alt scores1 : ', pr_scr[[12,13,14,15,16,17]]))
-        print()    
-        print('{:>86s} {}'.format(' mrcnn alt scores2 : ', pr_scr[[18,19,20,21,22,23]]))
-        print()    
-        
+def display_pr_fcn_style2(f, class_names, display = False, lmt =18):
+    print('\n')
+    print('-'*45)    
+    print('Scores from fcn/mrcnn_results (style2): ' )
+    print('-'*45)
 
-def display_pr_fcn_style2(f, class_names,lmt =18):
     for i, [molded_bbox, cls, scr, pr_scr, fcn_scr] in enumerate(zip(f['molded_rois'].astype(np.int), f['class_ids'],  f['scores'], f['pr_scores'], f['fcn_scores'])):
         
         print('{} ({:2d})-  {:.<18s}  {:5.4f} {}  '.format(i, cls, class_names[cls], scr, fcn_scr[[4,5,6,7,8]]))
@@ -825,8 +847,13 @@ def display_pr_fcn_style2(f, class_names,lmt =18):
         print()    
         
         
-def display_pr_fcn_style3(f, class_names,lmt =18):
-    print(f['detections'].shape)
+def display_pr_fcn_style3(f, class_names, display = False, lmt =18):
+    print('\n')
+    print('-'*45)
+    print('Scores from fcn/mrcnn_results (style3): ' )
+    print('-'*45)
+
+    print('  f[detections] shape : ', f['detections'].shape)
     print('  alt_score  0: (gauss. sum over large bbox / bbox area/ gauss_sum * normlzd_score))')
     print('  alt_scores 1: (gauss. sum over small mask / mask area/ gauss_sum / mask_area):  ')
     sort_by_class_order = np.argsort(f['class_ids'])
@@ -854,13 +881,10 @@ def display_pr_fcn_style3(f, class_names,lmt =18):
         print(i , 'alt score 2 [20]:  '.rjust(90), ' from mrcnn:{:10.4f}  from FCN: {:10.4f} '.format(f['pr_scores'][i,20],f['fcn_scores'][i,20]))
         print()        
         
-        
-        
-
-##-----------------------------------------------------------------------------------------------------------    
-##
-##-----------------------------------------------------------------------------------------------------------        
-    
+display_both_scores = display_pr_fcn_scores
+display_both_scores_style1= display_pr_fcn_style1        
+display_both_scores_style2= display_pr_fcn_style2        
+display_both_scores_style3= display_pr_fcn_style3        
 
 ##-----------------------------------------------------------------------------------------------------------    
 ## DISPLAY INTERSECTION OVER UNION
@@ -1191,6 +1215,86 @@ def display_activations(activations, layer, layer_names, class_names, columns = 
     fig.suptitle(title, fontsize = 24, ha ='center' )        
     fig.tight_layout(rect=[0, 0.05, 1, 0.97])
 
+
+
+
+
+##-----------------------------------------------------------------------------------------------------------    
+##
+##-----------------------------------------------------------------------------------------------------------    
+def display_final_activations(activations, layers, layer_names, class_names, classes = None, 
+                              columns = None, cmap = 'jet', image = None, config = None, 
+                              disp_title = True, cbar = True, sp_title = True):
+    n_layers   = len(layers)
+    fig_num = 1
+    fontsize = 65
+    if image is None:
+        display_orig_image = 0 
+    else: 
+        display_orig_image = 1
+        image = utils.unmold_image(image, config)
+
+    if classes is None :
+        features = list(range(activations[-1].shape[-1]))
+    else:
+        features = classes
+    
+    n_features = len(features)
+    # print( ' Num features: ', n_features , 'Rows / Columns: ', rows, columns, 'classes : ' , classes)
+    
+    for LAYER in layers:
+        # set appropriate number of columns for this layer if columns not specified
+        if columns  is None:
+            layer_columns = n_features + display_orig_image
+        else:
+            layer_columns = columns
+            
+        rows = math.ceil(n_features / layer_columns )
+        
+        print('Layer:', LAYER, ' - ',layer_names[LAYER], '   Shape: ', activations[LAYER][0,:,:,:].shape, ' # features: ', n_features, 
+              ' rows : ', rows, ' columns: ',  columns, ' layer_columns: ', layer_columns)
+        fig = plt.figure(fig_num, figsize=(10 * layer_columns, 10 * rows))
+
+        subplot = 0 
+        if display_orig_image:
+            subplot = 1
+            ax = fig.add_subplot(rows, layer_columns, subplot)
+            surf = ax.imshow(image, cmap=cmap, interpolation='none')
+            # ttl = ' Image Id: {} '.format(image_meta[0])
+            # ax.set_title(ttl, fontsize=18)
+            plt.tick_params(bottom = False, left=False, labelbottom =False, labelleft=False)
+            # if cbar:
+                # fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.05)
+
+        for cls in features: 
+            subplot +=1
+            # print('                 ', 'layer_columns: ', layer_columns, ' rows : ', rows, ' subplot: ', subplot)
+            ax = fig.add_subplot(rows, layer_columns, subplot)
+            if sp_title:
+                # ax.set_title(class_names[cls], fontsize=fontsize)
+                # ax.title.set_fontsize(24)
+                ax.text(0.5, 1.04, class_names[cls], fontsize=fontsize, horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+
+            # surf = ax.imshow(activations[LAYER][0,:,:,cls], cmap=cmap, interpolation='none', vmin=-1.0, vmax=1.0)
+            surf = ax.imshow(activations[LAYER][0,:,:,cls], cmap=cmap, interpolation='none')
+            plt.tick_params(bottom = False, left=False, labelbottom =False, labelleft=False)
+        
+            if cbar:
+                cb = fig.colorbar(surf, shrink=0.8, aspect=30, fraction=0.05)
+                cb.ax.tick_params(labelsize=10) 
+                
+        if disp_title:
+            title = 'Layer: {:3d} - {:25s} - shape: {}'.format(LAYER, layer_names[LAYER], str(activations[LAYER][0].shape))        
+            fig.suptitle(title, fontsize = 24, ha ='center' )            
+        
+        # plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, hspace=0.10, wspace=0.0)                
+        # fig.tight_layout(rect=[0, 0.02, 1, 0.97])
+        # fig.tight_layout(rect=[0, 0.0, 1, 1.0], h_pad = 0.2)
+        fig.tight_layout(rect=[0, 0.0, 1, 1])
+        fig_num +=1
+
+    plt.show()
+
     
 ##-----------------------------------------------------------------------------------------------------------    
 ##
@@ -1229,52 +1333,6 @@ def display_final_activations_2(activations, layers, layer_names, columns = 8, c
 #     plt.subplots_adjust(top=0.97)      
     plt.show()
     
-
-
-##-----------------------------------------------------------------------------------------------------------    
-##
-##-----------------------------------------------------------------------------------------------------------    
-def display_final_activations(activations, layers, layer_names, class_names, classes = None, columns = None, cmap = 'jet'):
-    n_layers   = len(layers)
-    fig_num = 1
-
-    if classes is None :
-        n_features = list(range(activations[-1].shape[-1]))
-    else:
-        n_features = classes
-    
-    # if columns is None:
-        # columns = len(n_features)
-    # print( ' Num features: ', n_features , 'Rows / Columns: ', rows, columns, 'classes : ' , classes)
-    
-    for LAYER in layers:
-        if columns  is None:
-            layer_columns = len(n_features)
-        else:
-            layer_columns = columns
-            
-        rows = math.ceil(len(n_features) / layer_columns )
-        print('Layer:', LAYER, ' - ',layer_names[LAYER], '   Shape: ', activations[LAYER][0,:,:,:].shape, ' # features: ', n_features, 
-              'columns: ',  columns, 'layer_columns: ', layer_columns, ' rows : ', rows)
-        fig = plt.figure(fig_num, figsize=(8 * layer_columns, 7* rows))
-
-        for idx, cls in enumerate(n_features): 
-            row = idx // layer_columns
-            col = idx  % layer_columns
-            subplot = (row * layer_columns) + col +1    
-            plt.subplot(rows, layer_columns, subplot)
-            ax = plt.gca()
-            ax.set_title(class_names[cls], fontsize=18)
-            # surf = ax.imshow(activations[LAYER][0,:,:,cls], cmap=cmap, interpolation='none', vmin=-1.0, vmax=1.0)
-            surf = ax.imshow(activations[LAYER][0,:,:,cls], cmap=cmap, interpolation='none')
-            fig.colorbar(surf, shrink=0.6, aspect=30, fraction=0.05)
-        title = 'Layer: {:3d} - {:25s} - shape: {}'.format(LAYER, layer_names[LAYER], str(activations[LAYER][0].shape))        
-        fig.suptitle(title, fontsize = 24, ha ='center' )            
-#         fig.savfig
-        fig_num +=1
-
-    plt.show()
-
 
 '''
 ##-----------------------------------------------------------------------------------------------------------    
@@ -1501,7 +1559,7 @@ def display_score_contours_compare(pr_scores, fcn_scores,
     # vmax = scores.max()
     norm = None
     title_fontsz  = 10
-    subttl_fontsz = 10
+    subttl_fontsz = 12
     cbar_fontsz   = 8
     label_fontsz  = 8 
     tick_fontsz   = 2
@@ -1522,7 +1580,7 @@ def display_score_contours_compare(pr_scores, fcn_scores,
         
         
         ax= fig.add_subplot(rows, columns, subplot)
-        subttl = 'Stage 1 Score '.format(feat, class_names[feat])
+        subttl = '{} - {} - Stage 1 Cntxt Score '.format(feat, class_names[feat])
         ax.set_title(subttl, fontsize=subttl_fontsz)
         ax.tick_params(axis='both', labelsize = label_fontsz, length = 3 , width = 1)      
         ax.invert_yaxis()
@@ -1532,7 +1590,7 @@ def display_score_contours_compare(pr_scores, fcn_scores,
 
         subplot += 1    
         ax= fig.add_subplot(rows, columns, subplot)
-        subttl = 'Stage 2 Score 1'
+        subttl = 'Stage 2 Cntxt Score 1'
         ax.set_title(subttl, fontsize=subttl_fontsz)
         ax.tick_params(axis='both', labelsize = label_fontsz, length = 3 , width = 1)      
         ax.invert_yaxis()
@@ -1542,7 +1600,7 @@ def display_score_contours_compare(pr_scores, fcn_scores,
     
         subplot += 1 
         ax= fig.add_subplot(rows, columns, subplot)
-        subttl = 'Stage 2 Score 2'
+        subttl = 'Stage 2 Contxt Score 2'
         ax.set_title(subttl, fontsize=subttl_fontsz)
         ax.tick_params(axis='both', labelsize = label_fontsz, length = 3 , width = 1)      
         ax.invert_yaxis()
@@ -1564,10 +1622,9 @@ def display_score_contours_compare(pr_scores, fcn_scores,
 ##  FUNCTIONS USED TO PLOT SCORE CURVES BASED ON OBJECT MOVEMENT
 ##  EXP-2 Aggregate Heatmap over out of context prediciton - Newshapes V2
 ##-----------------------------------------------------------------------------------------------------------     
-    
-    
+ 
 def plot_fcn_score_curves(x_y_dim, fcn_scores, mrcnn_scores, class_names, ax = None , 
-                          min_x = 0.0, title = None, mrcnn = False, fcn = True, classes = None):
+                          y_range = None , title = None, mrcnn = False, fcn = True, classes = None):
     if ax is None:
         plt.figure(figsize=(10,5))
         ax = plt.gca()
@@ -1577,25 +1634,30 @@ def plot_fcn_score_curves(x_y_dim, fcn_scores, mrcnn_scores, class_names, ax = N
     # for idx, score_key in enumerate(sorted(class_data)):
     if fcn:
         for idx, cls  in enumerate(fcn_scores):
-            print('cls: ', cls)
+            # print('cls: ', cls)
             if cls in classes:
-                print('add to plot')
-                ax.plot(x_y_dim, fcn_scores[cls], label= cls + ' - FCN score', color = COLOR[idx])
+                ax.plot(x_y_dim, fcn_scores[cls], label= cls + ' - Stg 2 score', color = COLORS[idx])
     if mrcnn:   
         for idx, cls  in enumerate(mrcnn_scores):
             if cls in classes:
-                ax.plot(x_y_dim, mrcnn_scores[cls], label= cls + ' - MR-CNN score', color = LT_COLOR[idx])
+                ax.plot(x_y_dim, mrcnn_scores[cls], label= cls + ' - Stg 2 score', color = LT_COLORS[idx])
         
+    if y_range is None:
+        min_y, max_y  = plt.ylim()
+    else: 
+        min_y, max_y = y_range
+    print(' Y range is : ' , y_range)
     print(' y limit:', plt.ylim(), ' xlimit : ', plt.xlim())
-
+    print(' min_y : ', min_y, ' max_y : ', max_y)
+    
     ax.set_title(title, fontsize=14)
-    ax.set_xlabel('Object displacement from origin axis', fontsize= 12)
-    ax.set_ylabel('FCN Score', fontsize= 12)
+    ax.set_xlabel('Position of moving object on X axis', fontsize= 12)
+    ax.set_ylabel('Stage 2 Contextual Score', fontsize= 12)
     ax.tick_params(axis='both', labelsize = 10)
-#     ax.set_xlim([min_x,1.05])
-#     ax.set_ylim([all_scores.min()-0.05, all_scores.max()+0.05])
-    leg = plt.legend(loc='lower left',frameon=True, fontsize = 10, markerscale = 6)
-    leg.set_title(' Scores ',prop={'size':11})
+    # ax.set_xlim([-1.0, 131])
+    ax.set_ylim([min_y, max_y])
+    leg = plt.legend(loc='best',frameon=True, fontsize = 10, markerscale = 6)
+    leg.set_title(' Contextual Scores ',prop={'size':11})
     plt.grid(True)
 #     for xval in np.linspace(0.0, 1.0, 11):
 #         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)
@@ -1641,13 +1703,149 @@ def plot_fcn_score_curves_2(x_y_dim, cls_scores, cls_name, ax = None ,
 #     for xval in np.linspace(0.0, 1.0, 11):
 #         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)
 
+ 
+##-----------------------------------------------------------------------------------------------------------    
+##  FUNCTIONS USED TO PLOT SCORE CURVES BASED ON OBJECT MOVEMENT
+##  EXP-3 Spatial Co-occurence  - Newshapes V2
+##-----------------------------------------------------------------------------------------------------------      
+def plot_exp3_score_curves(x_y_dim, fcn_scores, mrcnn_scores, class_names, ax = None , 
+                          y_range = None , title = None, mrcnn = False, fcn = True, classes = None):
+    if ax is None:
+        plt.figure(figsize=(10,5))
+        ax = plt.gca()
 
+    # scores is always passed ffom plot_mAP_by_scores, so it's nver None
+    # so we loop on scores instead of sorted(class_data)
+    # for idx, score_key in enumerate(sorted(class_data)):
+    if fcn:
+        for idx, cls  in enumerate(fcn_scores):
+            # print('cls: ', cls)
+            if cls in classes:
+                ax.plot(x_y_dim, fcn_scores[cls], label= cls + ' - Stg 2 score', color = COLORS[idx])
+    if mrcnn:   
+        for idx, cls  in enumerate(mrcnn_scores):
+            if cls in classes:
+                ax.plot(x_y_dim, mrcnn_scores[cls], label= cls + ' - Stg 2 score', color = LT_COLORS[idx])
+        
+    if y_range is None:
+        min_y, max_y  = plt.ylim()
+    else: 
+        min_y, max_y = y_range
+    print(' Y range is : ' , y_range)
+    print(' y limit:', plt.ylim(), ' xlimit : ', plt.xlim())
+    print(' min_y : ', min_y, ' max_y : ', max_y)
+    
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel('Position of moving object on X axis', fontsize= 12)
+    ax.set_ylabel('Stage 2 Contextual Score', fontsize= 12)
+    ax.tick_params(axis='both', labelsize = 10)
+    # ax.set_xlim([-1.0, 131])
+    ax.set_ylim([min_y, max_y])
+    rect = patches.Rectangle((22,0.5),16,0.28,linewidth=2,edgecolor='green',facecolor='none')
+    ax.add_patch(rect)
+    rect = patches.Rectangle((82,0.5),16,0.28,linewidth=2,edgecolor='green',facecolor='none')
+    ax.add_patch(rect)
+
+    leg = plt.legend(loc='best',frameon=True, fontsize = 10, markerscale = 6)
+    leg.set_title(' Contextual Scores ',prop={'size':11})
+    plt.grid(True)
+#     for xval in np.linspace(0.0, 1.0, 11):
+#         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)
+
+
+##-----------------------------------------------------------------------------------------------------------    
+##  FUNCTIONS USED TO PLOT SCORE CURVES BASED ON OBJECT MOVEMENT
+##  EXP-4 Inter-class co-occurrence - Newshapes V2
+##-----------------------------------------------------------------------------------------------------------   
+def plot_exp4_score_curves(x_y_dim, fcn_scores, mrcnn_scores, class_names, ax = None , min_x = 0.0, title = None):
+    if ax is None:
+        plt.figure(figsize=(10,5))
+        ax = plt.gca()
+
+    # scores is always passed ffom plot_mAP_by_scores, so it's nver None
+    # so we loop on scores instead of sorted(class_data)
+    # for idx, score_key in enumerate(sorted(class_data)):
+    for idx, cls  in enumerate(fcn_scores):
+        ax.plot(x_y_dim, fcn_scores[cls], label= cls + ' - FCN score')
+        # if  scores is not None and score_key not in  scores:
+            # continue        
+#         print('score_key is: {:20s} iou: {:6.3f}  avg_prec: {:10.4f}'.format(score_key,  iou_key, class_data[score_key][iou_key]['avg_prec']))
+#         score_keys.append(score_key)
+#         avg_precs[score_key] = class_data[score_key][iou_key]['avg_prec']
+#         precisions = class_data[score_key][iou_key]['precisions']
+#         recalls    = class_data[score_key][iou_key]['recalls']
+#         label      = '{:15s}'.format(score_key)
+        
+#         score_idx  = scores.index(score_key)
+#         print('idx: ', idx, ' Score_key: ' , score_key, 'Score Index: ' , score_idx, 'color:', SCORE_COLORS[score_key])
+    
+    for idx, cls  in enumerate(mrcnn_scores):
+        ax.plot(x_y_dim, mrcnn_scores[cls], label= cls + ' - MR-CNN score')
+        
+    print(' y limit:', plt.ylim(), ' xlimit : ', plt.xlim())
+
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel('Object displacement from origin axis', fontsize= 12)
+    ax.set_ylabel('FCN Score', fontsize= 12)
+    ax.tick_params(axis='both', labelsize = 10)
+#     ax.set_xlim([min_x,1.05])
+#     ax.set_ylim([all_scores.min()-0.05, all_scores.max()+0.05])
+    leg = plt.legend(loc='lower left',frameon=True, fontsize = 10, markerscale = 6)
+    leg.set_title(' Scores ',prop={'size':11})
+    plt.grid(True)
+#     for xval in np.linspace(0.0, 1.0, 11):
+#         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)
+
+def plot_exp4_score_curves_1(x_y_dim, scores, cls_name, ax = None , min_x = 0.0, title = None, color_idx = None):
+    plt.ioff()
+    if ax is None:
+        # plt.ion()
+        fig = plt.figure(figsize=(10,5))
+        ax = plt.gca()
+        ax.set_title(title, fontsize=14)
+        ax.set_xlabel('Object displacement from origin axis', fontsize= 12)
+        ax.set_ylabel('FCN Score', fontsize= 12)
+        ax.tick_params(axis='both', labelsize = 10)
+        ax.set_xlim([-0.5,130])
+        # ax.set_ylim([scores.min()-0.05, scores.max()+0.05])
+        # ax.set_ylim([-0.05, 1.05])
+        ax.grid(True)
+    else:
+        # ax = fig.gca()
+        print('ax already exists : ')
+
+    if color_idx is None:
+        color_idx = range(len(scores.keys()))
+    
+    for idx, cls  in zip(color_idx, scores):
+        print('idx/cls: ', idx, cls, scores[cls])
+        plt.plot(x_y_dim, scores[cls], label= cls + ' - FCN score', color = COLORS[idx])
+        # fig.canvas.draw()    
+        plt.axhline(np.mean(scores[cls]), label= cls + ' - Average', color = LT_COLORS[idx], linestyle = '--', linewidth=2)
+        # fig.canvas.draw()
+    # leg = ax.legend(loc='lower left',frameon=True, fontsize = 10, markerscale = 6)
+    # leg.set_title(' Scores ',prop={'size':11})
+#     for xval in np.linspace(0.0, 1.0, 11):
+#         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)
+    
+    return  
+    
+def plot_exp4_add_to_plot(xy_dim, scores, cls_name, ax = None , min_x = 0.0, title = None, color_idx = None):
+    for idx, cls  in zip(color_idx, scores):
+        # print('idx/cls: ', idx, cls,  scores[cls])
+        plt.plot(xy_dim,  scores[cls], label= cls + ' ' +  title, color = LT_COLORS[idx])
+        plt.axhline(np.mean( scores[cls]), label= cls + ' ' + title +' - Avg', color = COLORS[idx], linestyle = '--', linewidth=2)
+    leg = plt.legend(loc='best',frameon=True, fontsize = 10, markerscale = 6)    
+    
+    return
+
+    
 ##-----------------------------------------------------------------------------------------------------------    
 ##  FUNCTIONS USED TO PLOT SCORE CURVES BASED ON OBJECT MOVEMENT
 ##  EXP-6 Aggregate Heatmap over out of context prediciton - Newshapes V2
 ##-----------------------------------------------------------------------------------------------------------      
 def plot_exp6_score_curves(x_y_dim, fcn_scores, mrcnn_scores, class_name, 
-                           ax = None , min_y = 0.0, min_x = 0.0, ttl = None, plot = None, scales = None):
+                           ax = None , min_y = -0.05, min_x = 0.0, ttl = None, plot = None, scales = None, loc = 'best'):
 
     COLORS      = [ BLUE ,RED,   GREEN  , AQUA , PURPLE ,  ORANGE ,  GOLD  ,  PINK, BROWN ]
     LT_COLORS   = [ LBLUE,LRED,  LGREEN , LAQUA, LPURPLE,  LORANGE,  LGOLD , LPINK, LBROWN ]
@@ -1660,34 +1858,35 @@ def plot_exp6_score_curves(x_y_dim, fcn_scores, mrcnn_scores, class_name,
     # so we loop on scores instead of sorted(class_data)
     # for idx, score_key in enumerate(sorted(class_data)):
     if scales is None:
-        scales = list(range(len(fcn_scores)))
+        scales = { i : str(i) for i in fcn_scores}
     
-    title = 'Score change by scale - '+class_name+' - '+ ttl
-
+    # print('Scales: ', scales)
     if plot == 'FCN':
         idx = 0 
         for run  in fcn_scores:
-            if run in scales:
+            # print('fcn_score key : ' , run)
+            if run in scales.keys():
                 # print('fcn plot: ', run)
-                ax.plot(x_y_dim[run], fcn_scores[run], label= str(run+1) + ' - Stg2 score' , color = COLORS[idx])
-                ax.axhline(np.mean(fcn_scores[run]), label= str(run+1) + ' - Stg2 Avgscore', color = LT_COLORS[idx], linestyle = '--')
+                ax.plot(x_y_dim[run], fcn_scores[run], label= scales[run] + ' - Stg2 score' , color = COLORS[idx])
+                ax.axhline(np.mean(fcn_scores[run]), label= scales[run] + ' - Average', color = COLORS[idx], linestyle = '--', linewidth=2)
                 idx += 1
     else:
         for idx, run  in enumerate(mrcnn_scores):
             if run in scales:
                 # print('pr plot: ', run, mrcnn_scores[run])
-                ax.plot(x_y_dim[run], mrcnn_scores[run], label= str(run+1) + ' - Stg1 score', color = LT_COLORS[idx])
+                ax.plot(x_y_dim[run], mrcnn_scores[run], label= str(run) + ' - Stg1 score', color = LT_COLORS[idx])
         
     # print(' y limit:', plt.ylim(), ' xlimit : ', plt.xlim())
 
+    title = 'Score change by scale - '+class_name+' - '+ ttl
     ax.set_title(title, fontsize=14)
     ax.set_xlabel('Object displacement across X axis', fontsize= 12)
-    ax.set_ylabel('Score', fontsize= 12)
+    ax.set_ylabel('Stage 2 contextual score', fontsize= 12)
     ax.tick_params(axis='both', labelsize = 10)
     ax.set_ylim([min_y,1.0])
     # ax.set_ylim([all_scores.min()-0.05, all_scores.max()+0.05])
-    leg = plt.legend(loc='best',frameon=True, fontsize = 10, markerscale = 6)
-    leg.set_title('Scale/Score',prop={'size':11})
+    leg = plt.legend(loc=loc,frameon=True, fontsize = 10, markerscale = 6)
+    # leg.set_title('Scale/Score',prop={'size':11})
     plt.grid(True)
 #     for xval in np.linspace(0.0, 1.0, 11):
 #         plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed', linewidth=1)

@@ -89,8 +89,7 @@ def display_image(image, title='', cmap=None, norm=None,
     # if title is None:
     title += "H x W={}x{}".format(image.shape[0], image.shape[1])
     plt.title(title, fontsize=12)
-    plt.imshow(image, cmap=cmap,
-               norm=norm, interpolation=interpolation)
+    plt.imshow(image, cmap=cmap, norm=norm, interpolation=interpolation)
         
         
 ##----------------------------------------------------------------------
@@ -126,7 +125,7 @@ def display_image_bw(image, title="B/W Display" , cmap=None, norm=None,
 ## display_images
 ##----------------------------------------------------------------------
 def display_images(images, titles=None, cols=4, cmap=None, norm=None,
-                   interpolation=None, width=14, grid = False):
+                   interpolation=None, width=14, grid = False, ticks = False):
     """
     Display the given set of images, optionally with titles.
     
@@ -137,21 +136,30 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
     norm:               Optional. A Normalize instance to map values to colors.
     interpolation:      Optional. Image interporlation to use for display.
     """
-    titles = titles if titles is not None else [""] * len(images)
+    titles = titles if titles is not None else [None] * len(images)
     rows = len(images) // cols + 1
-     
-    plt.figure(figsize=(width, width * rows // cols))
+#    print('titles is :', titles) 
+    fig = plt.figure(figsize=(width, width * rows // cols))
     i = 1
     for image, title in zip(images, titles):
-        title += " H x W={}x{}".format(image.shape[0], image.shape[1])
         ax = plt.subplot(rows, cols, i)
-        ax.tick_params(axis='both', bottom = True, left = True, labelsize = 6, width = 1.0, length = 2)
-        ax.set_title(title, fontsize=9)
+        if ticks:
+            ax.tick_params(axis='both', bottom = True, left = True, labelsize = 6, width = 1.0, length = 2)
+        else:
+            ax.tick_params(bottom = False, left=False, labelbottom =False, labelleft=False)
+
+        if title is not None:
+            title += " H x W={}x{}".format(image.shape[0], image.shape[1])
+            ax.set_title(title, fontsize=9)
+
         # if not grid:
         plt.grid(grid)
         plt.imshow(image.astype(np.uint8), cmap=cmap,
                    norm=norm, interpolation=interpolation)
         i += 1
+
+    fig.tight_layout(rect=[0, 0.02, 1, 0.97])
+
     plt.show()
 
 
@@ -159,7 +167,7 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
 ##------------------------------------------------------------------------------------    
 ## display_image_gt()
 ##------------------------------------------------------------------------------------    
-def display_image_gt(dataset, config, image_ids, masks= False, only_classes = None, size=12, verbose = True):
+def display_image_gt(dataset, config, image_ids, display_masks= False, only_classes = None, size=12, verbose = True):
     ''' 
     display images in a mrcnn train_batch 
     '''
@@ -171,8 +179,8 @@ def display_image_gt(dataset, config, image_ids, masks= False, only_classes = No
         image           = dataset.load_image(image_id)
         # molded_image, image_meta, class_ids, bbox = load_image_gt(dataset, config, image_id)
         _, image_meta, _, _ = load_image_gt(dataset, config, image_id)
-        mask, class_ids = dataset.load_mask(image_id)
-        bbox            = utils.extract_bboxes(mask)
+        masks, class_ids = dataset.load_mask(image_id)
+        bbox            = utils.extract_bboxes(masks)
         class_names     = [str(dataset.class_names[class_id]) for class_id in class_ids]
         title = 'Image Id :'+str(image_id)
         if verbose:
@@ -180,18 +188,16 @@ def display_image_gt(dataset, config, image_ids, masks= False, only_classes = No
             print(' Image meta  : ', image_meta[:10])
             print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
             print(' Class Names : ', class_names)  
-        # display_top_masks(image, mask, class_ids, dataset.class_names)
-        if masks:
-            display_instances_with_mask(image, bbox, mask, class_ids, dataset.class_names, size =size) 
-        else:
-            display_instances(image, bbox, class_ids, dataset.class_names, only_classes = only_classes, title = title, size=size)
-    return    
+            
+        display_instances(image, bbox,  class_ids, dataset.class_names, masks = masks,  display_masks = display_masks,
+                            size = size, only_classes = only_classes, title = title)
+        
     
 
 ##------------------------------------------------------------------------------------    
 ## display_training_batch()
 ##------------------------------------------------------------------------------------    
-def display_training_batch(dataset, batch_x, masks= False, size = 9):
+def display_training_batch(dataset, batch_x, size = 9, display_masks= False  ):
     ''' 
     display images in a mrcnn train_batch 
     '''
@@ -205,26 +211,238 @@ def display_training_batch(dataset, batch_x, masks= False, size = 9):
         image_id = img_meta[img_idx,0]
         print('image id : ', image_id)
         image    = dataset.load_image(image_id)
-        mask, class_ids = dataset.load_mask(image_id)
-        bbox     = utils.extract_bboxes(mask)
+        masks, class_ids = dataset.load_mask(image_id)
+        bbox     = utils.extract_bboxes(masks)
         class_names = [str(dataset.class_names[class_id]) for class_id in class_ids]
         print(' Image_id    : ', image_id, ' Reference: ', dataset.image_reference(image_id) , 'Coco Id:', dataset.image_info[image_id]['id'])
         print(' Image meta  : ', img_meta[img_idx, :8])
         print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
         print(' Class Names : ', class_names)    #     print('Classes (1: circle, 2: square, 3: triangle ): ',class_ids)
-        if masks:
-            display_top_masks(image, mask, class_ids, dataset.class_names)
-            display_instances_with_mask(image, bbox, mask, class_ids, dataset.class_names, size = size) 
-        else:
-            display_instances(image, bbox, class_ids, dataset.class_names)
-    return    
+
+        display_instances(image, bbox,  class_ids, dataset.class_names, masks = masks, size = size, display_masks = display_masks)
+
+
+
+ ##------------------------------------------------------------------------------------    
+## display_training_batch()
+##------------------------------------------------------------------------------------    
+def display_image_masks(dataset, image_ids , limit = 5):
+    ''' 
+    display images in a mrcnn train_batch 
+    '''
+    # replaced following two lines with next line to avoid the need to pass model to this fuction
+    # imgmeta_idx = mrcnn_model.keras_model.input_names.index('input_image_meta')
+    # img_meta    = train_batch_x[imgmeta_idx]
+
+    img_meta    = len(image_ids)
+
+    for image_id in image_ids:
+
+        image           = dataset.load_image(image_id)
+        mask, class_ids = dataset.load_mask(image_id)
+        # print('image id : ', image_id)
+        # print(' Image_id    : ', image_id, ' Reference: ', dataset.image_reference(image_id) , 'Coco Id:', dataset.image_info[image_id]['id'])
+        # print(' Class ids   : ', class_ids.shape, '  ' , class_ids)
+        # print(' Class Names : ', dataset.class_names)    #     print('Classes (1: circle, 2: square, 3: triangle ): ',class_ids)
+        display_top_masks(image, mask, class_ids, dataset.class_names, limit = limit)
+    return   
+##----------------------------------------------------------------------
+## draw_box
+##----------------------------------------------------------------------
+# TODO: Replace with matplotlib equivalent?
+def draw_box(image, box, color):
+    """Draw 3-pixel width bounding boxes on the given image array.
+    color: list of 3 int values for RGB.
+    """
+    y1, x1, y2, x2 = box
+    image[y1:y1 + 2, x1:x2] = color
+    image[y2:y2 + 2, x1:x2] = color
+    image[y1:y2, x1:x1 + 2] = color
+    image[y1:y2, x2:x2 + 2] = color
+    return image
+
+
+##----------------------------------------------------------------------
+## display_top_masks
+##----------------------------------------------------------------------    
+def display_top_masks(image, mask, class_ids, class_names, limit=4):
+    """Display the given image and the top few class masks."""
+    to_display = []
+    titles = []
+    to_display.append(image)
+    titles.append("H x W={}x{}".format(image.shape[0], image.shape[1]))
+    
+    # Pick top prominent classes in this image
+    unique_class_ids = np.unique(class_ids)
+    mask_area = [np.sum(mask[:, :, np.where(class_ids == i)[0]]) for i in unique_class_ids]
+    top_ids = [v[0] for v in sorted(zip(unique_class_ids, mask_area),
+                                    key=lambda r: r[1], reverse=True) if v[1] > 0]
+
+            
+    # Generate images and titles
+    for i in range(limit):
+        class_id = top_ids[i] if i < len(top_ids) else -1
+       
+       # Pull masks of instances belonging to the same class.
+        m = mask[:, :, np.where(class_ids == class_id)[0]]
+        m = np.sum(m * np.arange(1, m.shape[-1] + 1), -1)
+        to_display.append(m)
+        titles.append('{} - {}'.format(class_id,class_names[class_id]) if class_id != -1 else "")
+    display_images(to_display, titles=titles, cols=limit + 1, cmap="Blues_r")
+
+##----------------------------------------------------------------------
+## plot_precision_recall
+##----------------------------------------------------------------------
+def plot_precision_recall(AP, precisions, recalls, ttl = ''):
+    """Draw the precision-recall curve.
+
+    AP: Average precision at IoU >= 0.5
+    precisions: list of precision values
+    recalls: list of recall values
+    """
+    # Plot the Precision-Recall curve
+    _, ax = plt.subplots(1)
+    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+
+    _ = ax.plot(recalls, precisions)
+
+
+##----------------------------------------------------------------------
+## plot_precision_recall_grid
+##----------------------------------------------------------------------
+def plot_precision_recall_compare(fcn_results):
+    """Draw the precision-recall curve.
+
+    AP: Average precision at IoU >= 0.5
+    precisions: list of precision values
+    recalls: list of recall values
+    """
+    # Plot the Precision-Recall curve
+    rows       = 4
+    columns    = 2
+    orig_score = 5
+    norm_score = 8
+    alt_scr_0  = 11
+    alt_scr_1  = 14   # in MRCNN alt_scr_1 ans alt_scr_2 are the same
+    alt_scr_2  = 20
+    f = fcn_results[0]    
+    fig = plt.figure(figsize=(14,20))
+    
+    
+
+    # Draw precision-recall curve
+
+    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['scores'])
+    # visualize.plot_precision_recall(AP, precisions, recalls,ttl = "- RCNN Orig Score")
+    ttl = "- RCNN Orig Score"
+    ax = fig.add_subplot(rows, columns, 1 )
+    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+    _ = ax.plot(recalls, precisions)
+
+    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['pr_scores'][:,norm_score])
+    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- RCNN Normlzd Score")
+    ttl = "- RCNN Normlzd Score"
+    ax = fig.add_subplot(rows, columns, 2 )
+    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+    _ = ax.plot(recalls, precisions)
+
+    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['pr_scores'][:,alt_scr_0])
+    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- RCNN Alt Score 0 ")
+    ttl = "- RCNN Alt Score 0 "
+    ax = fig.add_subplot(rows, columns, 3 )
+    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+    _ = ax.plot(recalls, precisions)
+    
+    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['fcn_scores'][:,alt_scr_0])
+    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- FCN Alt Score 0 ")
+    ttl = "- FCN Alt Score 0 "
+    ax = fig.add_subplot(rows, columns, 4 )
+    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+    _ = ax.plot(recalls, precisions)
+    
+
+    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['pr_scores'][:,alt_scr_1])
+    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- RCNN Alt Score 1 ")
+    ttl = "- RCNN Alt Score 1 "
+    ax = fig.add_subplot(rows, columns, 5 )
+    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+    _ = ax.plot(recalls, precisions)
+    
+    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['fcn_scores'][:,alt_scr_1])
+    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- FCN Alt Score 1 ")
+    ttl = "- FCN Alt Score 1 "
+    ax = fig.add_subplot(rows, columns, 6 )
+    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+    _ = ax.plot(recalls, precisions)
+
+
+    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['pr_scores'][:,alt_scr_2])
+    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- RCNN Alt Score 1 ")
+    ttl = "- RCNN Alt Score2 "
+    ax = fig.add_subplot(rows, columns, 7 )
+    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+    _ = ax.plot(recalls, precisions)
+
+    
+    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['fcn_scores'][:,alt_scr_2])
+    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- FCN Alt Score 1 ")
+    ttl = "- FCN Alt Score2 "
+    ax = fig.add_subplot(rows, columns, 8 )
+    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(0, 1.1)
+    ax.set_xlabel(' Recall    ', fontsize=10)
+    ax.set_ylabel(' Precision ', fontsize=10)
+    _ = ax.plot(recalls, precisions)
+
+    # plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, hspace=0.10, wspace=0.10)   
+    fig.tight_layout(rect=[0, 0.02, 1, 0.97])
+
     
 ##----------------------------------------------------------------------
 ## display_instances
 ##----------------------------------------------------------------------
 def display_instances(image, boxes, class_ids, class_names,
-                      scores=None,  title="", only_classes = None, 
-                      figsize=(16, 16), size = 8, ax=None, score_range = (-1.0, 1.0)):
+                      masks = None, 
+                      scores=None,  title="", 
+                      only_classes = None, 
+                      figsize=(16, 16), 
+                      size = 8, 
+                      ax=None, 
+                      display_masks = False,
+                      score_range = (-1.0, 1.0)):
     """
     boxes:                  [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
     masks:                  [num_instances, height, width]
@@ -242,8 +460,6 @@ def display_instances(image, boxes, class_ids, class_names,
         assert boxes.shape[0] == class_ids.shape[0], " boxes.shape[0]: {:d} must be ==class_ids.shape[0]: {:d}".format(boxes.shape[0], class_ids.shape[0])
         # assert boxes.shape[0] == class_ids.shape[0]
     
-    # print(' display_instances() : Image shape: ', image.shape)
-   
     if not ax:
         ax = get_ax(rows =1, cols = 1, size= size)
         # _, ax = plt.subplots(1, figsize=figsize)
@@ -259,7 +475,7 @@ def display_instances(image, boxes, class_ids, class_names,
     # ax.set_xlabel(' X axis', fontsize = 12)
     # ax.set_ylabel(' Y axis', fontsize = 12)
     ax.tick_params(axis='both', labelsize = 10)
-    ax.set_title(title, fontsize= 14)
+    # ax.set_title(title, fontsize= 14)
  
     masked_image = image.astype(np.uint32).copy()
     for i in range(N):
@@ -272,6 +488,7 @@ def display_instances(image, boxes, class_ids, class_names,
             # print(' boxes ' ,i,'   ' , boxes[i], 'score: ', scores[i], '    ', score_range)
             if scores[i] <= score_range[0] or scores[i] >= score_range[1]:
                     continue
+
         color = colors[i]
 
         # Bounding box
@@ -298,11 +515,27 @@ def display_instances(image, boxes, class_ids, class_names,
         t = ax.text(x1, y1 + 8, caption, color='k', size=8, backgroundcolor="w")
         t.set_bbox(dict(facecolor='w', alpha=0.5, edgecolor='w'))
   
+        # Mask
+        if display_masks:
+            mask = masks[:, :, i]
+            masked_image = apply_mask(masked_image, mask, color)
+
+            # Mask Polygon
+            # Pad to ensure proper polygons for masks that touch image edges.
+            padded_mask = np.zeros((mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+            padded_mask[1:-1, 1:-1] = mask
+            contours = find_contours(padded_mask, 0.5)
+            for verts in contours:
+                # Subtract the padding and flip (y, x) to (x, y)
+                verts = np.fliplr(verts) - 1
+                p = Polygon(verts, facecolor="none", edgecolor=color)
+                ax.add_patch(p)
+    ax.grid()
     ax.imshow(masked_image.astype(np.uint8))
     # plt.show()
     return 
 
-    
+'''    
 ##----------------------------------------------------------------------
 ## display_instances_with_mask
 ##----------------------------------------------------------------------
@@ -344,6 +577,8 @@ def display_instances_with_mask(image, boxes, masks, class_ids, class_names,
 
     masked_image = image.astype(np.uint32).copy()
     for i in range(N):
+        class_id = class_ids[i]
+
         color = colors[i]
 
         # Bounding box
@@ -360,18 +595,6 @@ def display_instances_with_mask(image, boxes, masks, class_ids, class_names,
         
         score = scores[i] if scores is not None else None
         
-        class_id = class_ids[i]
-        
-        # label = class_names[class_id]
-        # if class_id >= 0 :
-            # label = class_names[class_id]
-        # else:
-            # label = class_names[-class_id] + ' (CROWD)'
-
-        # x = random.randint(x1, (x1 + x2) // 2)
-        # caption = "{} {:.3f}".format(label, score) if score else label
-        # ax.text(x1, y1 + 8, caption, color='k', size=11, backgroundcolor="w")
-        
         if class_id >= 0 :
             label = "{:2d}-{:2d} {}".format(i,class_id, class_names[class_id])
         else:
@@ -381,8 +604,7 @@ def display_instances_with_mask(image, boxes, masks, class_ids, class_names,
         caption = "{} {:.3f}".format(label, score) if score else label
         t = ax.text(x1, y1 + 8, caption, color='k', size=8, backgroundcolor="w")
         t.set_bbox(dict(facecolor='w', alpha=0.5, edgecolor='w'))        
-        
-        
+                
         # Mask
         mask = masks[:, :, i]
         masked_image = apply_mask(masked_image, mask, color)
@@ -400,97 +622,9 @@ def display_instances_with_mask(image, boxes, masks, class_ids, class_names,
     ax.imshow(masked_image.astype(np.uint8))
     plt.show()
     return
-    
-##----------------------------------------------------------------------
-## display_instances from pr_scores
-##----------------------------------------------------------------------
-def display_instances_from_prscores(image, pr_scores, class_names,
-                      title="", only_classes = None, 
-                      size = 12, 
-                      ax=None, score_range = (0.0, 1.0)):
-    """
-    boxes:                  [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
-    pr_scores :             Condensed score array (scores_by_image)
-    class_names:            list of class names of the dataset
-    figsize:                (optional) the size of the image.
-    max_score:              show instances with score less than this 
-    """
-    # Number of instances
-    
-    boxes     = pr_scores[:,:4]
-    class_ids = pr_scores[:,4].astype(int)
-    scores    = pr_scores[:,5]
-    det_ind   = pr_scores[:,6].astype(int)
-    sequences = pr_scores[:,7].astype(int)
+'''
 
-    N = boxes.shape[0]
-    if not N:
-        print("\n*** No instances to display *** \n")
-    else:
-        assert boxes.shape[0] == class_ids.shape[0], " boxes.shape[0]: {:d} must be ==class_ids.shape[0]: {:d}".format(boxes.shape[0], class_ids.shape[0])
-    print(' display_instances() : Image shape: ', image.shape)
 
-    if not ax:
-        ax = get_ax(rows =1, cols = 1, size= size)
-        # _, ax = plt.subplots(1, figsize=figsize)
-
-    # Generate random colors
-    colors = random_colors(N)
-
-    # Show area outside image boundaries.
-    height, width = image.shape[:2]
-    ax.set_ylim(height + 10, -10)
-    ax.set_xlim(-10, width + 10)
-    # ax.axis('off')
-    ax.set_title(title)
- 
-    masked_image = image.astype(np.uint32).copy()
-
-    for i in range(N):
-        class_id = class_ids[i]
-        
-        if only_classes is not None:
-            if class_id not in only_classes:
-                continue
-    
-        if scores is not None:
-            if scores[i] <= score_range[0] or scores[i] >= score_range[1]:
-                continue
-        color = colors[i]
-
-        # Bounding box
-        if not np.any(boxes[i]):
-            # Skip this instance. Has no bbox. Likely lost in image cropping.
-            continue
-        y1, x1, y2, x2 = boxes[i]
-        p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
-                              alpha=0.7, linestyle="dashed",
-                              edgecolor=color, facecolor='none')
-        ax.add_patch(p)
-
-        # Label
-        
-        score = scores[i] if scores is not None else None
-        if det_ind[i] == -1:
-            det_ttl = ' ADDED FP'
-        else:
-            det_ttl = ''
-            
-        if class_id >= 0 :
-            label = class_names[class_id] + det_ttl
-        else:
-            label = class_names[-class_id] + ' (CROWD)'
-            
-        x = random.randint(x1, (x1 + x2) // 2)
-        caption = "{:2d}-{} {:.4f}".format(class_id, label, score) if score else label
-        ax.text(x1, y1 - 2, caption, color='k', size=9, backgroundcolor="w")
-
-    ax.imshow(masked_image.astype(np.uint8))
-    plt.show()
-    return
-    
-    
-    
 ##----------------------------------------------------------------------
 ## display_gt_bboxes
 ##----------------------------------------------------------------------    
@@ -762,188 +896,6 @@ def draw_rois(image, rois, class_ids, class_names, bbox_ids = None , limit=0, ra
     print("Negative ROIs: ", class_ids[class_ids == 0].shape[0])
     print("Positive Ratio: {:.2f}".format(
         class_ids[class_ids > 0].shape[0] / class_ids.shape[0]))
-
-##----------------------------------------------------------------------
-## draw_box
-##----------------------------------------------------------------------
-# TODO: Replace with matplotlib equivalent?
-def draw_box(image, box, color):
-    """Draw 3-pixel width bounding boxes on the given image array.
-    color: list of 3 int values for RGB.
-    """
-    y1, x1, y2, x2 = box
-    image[y1:y1 + 2, x1:x2] = color
-    image[y2:y2 + 2, x1:x2] = color
-    image[y1:y2, x1:x1 + 2] = color
-    image[y1:y2, x2:x2 + 2] = color
-    return image
-
-
-##----------------------------------------------------------------------
-## display_top_masks
-##----------------------------------------------------------------------    
-def display_top_masks(image, mask, class_ids, class_names, limit=4):
-    """Display the given image and the top few class masks."""
-    to_display = []
-    titles = []
-    to_display.append(image)
-    titles.append("H x W={}x{}".format(image.shape[0], image.shape[1]))
-    # Pick top prominent classes in this image
-    unique_class_ids = np.unique(class_ids)
-    mask_area = [np.sum(mask[:, :, np.where(class_ids == i)[0]])
-                 for i in unique_class_ids]
-    top_ids = [v[0] for v in sorted(zip(unique_class_ids, mask_area),
-                                    key=lambda r: r[1], reverse=True) if v[1] > 0]
-    # Generate images and titles
-    for i in range(limit):
-        class_id = top_ids[i] if i < len(top_ids) else -1
-        # Pull masks of instances belonging to the same class.
-        m = mask[:, :, np.where(class_ids == class_id)[0]]
-        m = np.sum(m * np.arange(1, m.shape[-1] + 1), -1)
-        to_display.append(m)
-        titles.append(class_names[class_id] if class_id != -1 else "-")
-    display_images(to_display, titles=titles, cols=limit + 1, cmap="Blues_r")
-
-##----------------------------------------------------------------------
-## plot_precision_recall
-##----------------------------------------------------------------------
-def plot_precision_recall(AP, precisions, recalls, ttl = ''):
-    """Draw the precision-recall curve.
-
-    AP: Average precision at IoU >= 0.5
-    precisions: list of precision values
-    recalls: list of recall values
-    """
-    # Plot the Precision-Recall curve
-    _, ax = plt.subplots(1)
-    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
-    ax.set_ylim(0, 1.1)
-    ax.set_xlim(0, 1.1)
-    ax.set_xlabel(' Recall    ', fontsize=10)
-    ax.set_ylabel(' Precision ', fontsize=10)
-
-    _ = ax.plot(recalls, precisions)
-
-
-##----------------------------------------------------------------------
-## plot_precision_recall_grid
-##----------------------------------------------------------------------
-def plot_precision_recall_compare(fcn_results):
-    """Draw the precision-recall curve.
-
-    AP: Average precision at IoU >= 0.5
-    precisions: list of precision values
-    recalls: list of recall values
-    """
-    # Plot the Precision-Recall curve
-    rows       = 4
-    columns    = 2
-    orig_score = 5
-    norm_score = 8
-    alt_scr_0  = 11
-    alt_scr_1  = 14   # in MRCNN alt_scr_1 ans alt_scr_2 are the same
-    alt_scr_2  = 20
-    f = fcn_results[0]    
-    fig = plt.figure(figsize=(14,20))
-    
-    
-
-    # Draw precision-recall curve
-
-    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['scores'])
-    # visualize.plot_precision_recall(AP, precisions, recalls,ttl = "- RCNN Orig Score")
-    ttl = "- RCNN Orig Score"
-    ax = fig.add_subplot(rows, columns, 1 )
-    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
-    ax.set_ylim(0, 1.1)
-    ax.set_xlim(0, 1.1)
-    ax.set_xlabel(' Recall    ', fontsize=10)
-    ax.set_ylabel(' Precision ', fontsize=10)
-    _ = ax.plot(recalls, precisions)
-
-    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['pr_scores'][:,norm_score])
-    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- RCNN Normlzd Score")
-    ttl = "- RCNN Normlzd Score"
-    ax = fig.add_subplot(rows, columns, 2 )
-    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
-    ax.set_ylim(0, 1.1)
-    ax.set_xlim(0, 1.1)
-    ax.set_xlabel(' Recall    ', fontsize=10)
-    ax.set_ylabel(' Precision ', fontsize=10)
-    _ = ax.plot(recalls, precisions)
-
-    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['pr_scores'][:,alt_scr_0])
-    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- RCNN Alt Score 0 ")
-    ttl = "- RCNN Alt Score 0 "
-    ax = fig.add_subplot(rows, columns, 3 )
-    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
-    ax.set_ylim(0, 1.1)
-    ax.set_xlim(0, 1.1)
-    ax.set_xlabel(' Recall    ', fontsize=10)
-    ax.set_ylabel(' Precision ', fontsize=10)
-    _ = ax.plot(recalls, precisions)
-    
-    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['fcn_scores'][:,alt_scr_0])
-    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- FCN Alt Score 0 ")
-    ttl = "- FCN Alt Score 0 "
-    ax = fig.add_subplot(rows, columns, 4 )
-    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
-    ax.set_ylim(0, 1.1)
-    ax.set_xlim(0, 1.1)
-    ax.set_xlabel(' Recall    ', fontsize=10)
-    ax.set_ylabel(' Precision ', fontsize=10)
-    _ = ax.plot(recalls, precisions)
-    
-
-    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['pr_scores'][:,alt_scr_1])
-    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- RCNN Alt Score 1 ")
-    ttl = "- RCNN Alt Score 1 "
-    ax = fig.add_subplot(rows, columns, 5 )
-    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
-    ax.set_ylim(0, 1.1)
-    ax.set_xlim(0, 1.1)
-    ax.set_xlabel(' Recall    ', fontsize=10)
-    ax.set_ylabel(' Precision ', fontsize=10)
-    _ = ax.plot(recalls, precisions)
-    
-    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['fcn_scores'][:,alt_scr_1])
-    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- FCN Alt Score 1 ")
-    ttl = "- FCN Alt Score 1 "
-    ax = fig.add_subplot(rows, columns, 6 )
-    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
-    ax.set_ylim(0, 1.1)
-    ax.set_xlim(0, 1.1)
-    ax.set_xlabel(' Recall    ', fontsize=10)
-    ax.set_ylabel(' Precision ', fontsize=10)
-    _ = ax.plot(recalls, precisions)
-
-
-    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['pr_scores'][:,alt_scr_2])
-    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- RCNN Alt Score 1 ")
-    ttl = "- RCNN Alt Score2 "
-    ax = fig.add_subplot(rows, columns, 7 )
-    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
-    ax.set_ylim(0, 1.1)
-    ax.set_xlim(0, 1.1)
-    ax.set_xlabel(' Recall    ', fontsize=10)
-    ax.set_ylabel(' Precision ', fontsize=10)
-    _ = ax.plot(recalls, precisions)
-
-    
-    AP, precisions, recalls, overlaps = utils.compute_ap(f['gt_bboxes'], f['gt_class_ids'], f['molded_rois'], f['class_ids'], f['fcn_scores'][:,alt_scr_2])
-    # visualize.plot_precision_recall(AP, precisions, recalls, ttl = "- FCN Alt Score 1 ")
-    ttl = "- FCN Alt Score2 "
-    ax = fig.add_subplot(rows, columns, 8 )
-    ax.set_title("Precision-Recall Curve. AP@50 = {:.3f} {}".format(AP, ttl))
-    ax.set_ylim(0, 1.1)
-    ax.set_xlim(0, 1.1)
-    ax.set_xlabel(' Recall    ', fontsize=10)
-    ax.set_ylabel(' Precision ', fontsize=10)
-    _ = ax.plot(recalls, precisions)
-
-    # plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, hspace=0.10, wspace=0.10)   
-    fig.tight_layout(rect=[0, 0.02, 1, 0.97])
-
 
 
     
@@ -1571,7 +1523,7 @@ def display_heatmaps_mrcnn(mrcnn_input_batch, boxes, heatmaps, image_id, hm = 'p
         ax.set_ylabel(' Y axis', fontsize=10)
     
         ## heatmaps here are already in the range [0,1.0]
-        unmolded_heatmap = utils.unresize_heatmap(heatmaps[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
+        unmolded_heatmap = utils.unmold_heatmap(heatmaps[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
         
         ax.imshow(image_bw , cmap=plt.cm.gray)
         ax.imshow(unmolded_heatmap, alpha = 0.6,cmap=cm.YlOrRd)              
@@ -1739,7 +1691,7 @@ def display_heatmaps_mrcnn_fcn(mrcnn_input_batch, mrcnn_output_batch, image_id, 
         ttl += ' - min: {:6.5f}  max: {:6.5f}  avg: {:6.5f}'.format(min_z_cls[0,0,cls], max_z_cls[0,0,cls], avg_z_cls[0,0,cls])
         print(' Title: ', ttl)
 
-        unmolded_heatmap = utils.unresize_heatmap(YY[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
+        unmolded_heatmap = utils.unmold_heatmap(YY[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
         # print(' unmolded_heatmap: shape:', unmolded_heatmap.shape, unmolded_heatmap.dtype, np.amin(unmolded_heatmap), np.amax(unmolded_heatmap))
         surf = ax.imshow(unmolded_heatmap, alpha = 0.6, cmap=cm.YlOrRd, vmin = vmin, vmax = vmax )              
         
@@ -1927,7 +1879,7 @@ def display_heatmaps_compare(mrcnn_input_batch, mrcnn_output_batch,  heatmap, im
             vmax = 1
 
         ttl = ttl +' - min: {:6.5f}  max: {:6.5f}  avg: {:6.5f}'.format(min_z1_cls[0,0,cls], max_z1_cls[0,0,cls], avg_z1_cls[0,0,cls])
-        unmolded_heatmap = utils.unresize_heatmap(Z1[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
+        unmolded_heatmap = utils.unmold_heatmap(Z1[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
         # print(' unmolded_heatmap: shape:', unmolded_heatmap.shape, unmolded_heatmap.dtype, np.amin(unmolded_heatmap), np.amax(unmolded_heatmap))
         surf = ax.imshow(unmolded_heatmap, alpha = 0.6, cmap=cm.YlOrRd, vmin = vmin, vmax = vmax )              
         
@@ -1965,7 +1917,7 @@ def display_heatmaps_compare(mrcnn_input_batch, mrcnn_output_batch,  heatmap, im
 
         ttl = ttl +' - min: {:6.5f}  max: {:6.5f}  avg: {:6.5f}'.format(min_z2_cls[0,0,cls], max_z2_cls[0,0,cls], avg_z2_cls[0,0,cls])
         # print(' Title: ', ttl)
-        unmolded_heatmap = utils.unresize_heatmap(Z2[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
+        unmolded_heatmap = utils.unmold_heatmap(Z2[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
         # print(' unmolded_heatmap: shape:', unmolded_heatmap.shape, unmolded_heatmap.dtype, np.amin(unmolded_heatmap), np.amax(unmolded_heatmap))
         surf = ax.imshow(unmolded_heatmap, alpha = 0.6, cmap=cm.YlOrRd, vmin = vmin, vmax = vmax )              
         
@@ -1995,7 +1947,8 @@ def display_heatmaps_compare(mrcnn_input_batch, mrcnn_output_batch,  heatmap, im
 ##----------------------------------------------------------------------        
 def plot_2d_heatmap( Z, boxes, image_idx, class_ids = None,  
                      columns = None, size = (9,9), num_bboxes = 999,
-                     title = '2d heatmap w/ bboxes', class_names=None, scale = 1, scaling = 'none'):
+                     title = '2d heatmap w/ bboxes', class_names=None, 
+                     scale = 1, scaling = 'none'):
 
     '''
     Z:             Gaussian heatmap [ BatchSize, height, width, Num_classes]
@@ -2175,6 +2128,9 @@ def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = None,
     scaling    = scaling.lower()
     print(" Scaling options are 'all', 'class', or 'clip'/ None ")
 
+    if Z.ndim == 4:
+        Z = Z[image_idx]
+
     if class_ids is None :
         print('Display all classes...')
         num_classes = Z.shape[-1]
@@ -2310,7 +2266,8 @@ def plot_3d_heatmap( Z, image_idx, class_ids = None,  columns = None,
 ## comparative 2D plot of two gauss_distributions for one image, for a list of classes
 ##----------------------------------------------------------------------       
 def plot_2d_heatmap_compare( Z1, Z2, boxes, image_idx, class_ids = None,   
-                             size = (9,9), num_bboxes = 0, class_names=None, scale = 1, scaling = 'none', 
+                             size = (9,9), num_bboxes = 0, class_names=None, scale = 1,
+                             scaling = 'none', 
                              title = '2D Comparison between 2d heatmaps w/ bboxes'):
     '''    
     Z:             Gaussian heatmap [ BatchSize, height, width, Num_classes]
@@ -2494,7 +2451,8 @@ def plot_2d_heatmap_compare( Z1, Z2, boxes, image_idx, class_ids = None,
 ##----------------------------------------------------------------------       
 def plot_3d_heatmap_compare( Z1, Z2, image_idx, class_ids = None, 
                              title = '3d heatmap comparison',
-                             size = (8,8), class_names=None, zlim = 'all' , scaling = 'none'):
+                             size = (8,8), class_names=None, zlim = 'all' , 
+                             scaling = 'none'):
     '''
     
     Z:             Gaussian heatmap [ BatchSize, height, width, Num_classes]
@@ -2704,156 +2662,6 @@ def plot_one_bbox_heatmap( Z, boxes, title = 'My figure', width = 7, height =12 
     
 
 ##----------------------------------------------------------------------
-## inference_heatmaps_display()
-##----------------------------------------------------------------------     
-def inference_heatmaps_display( input, image_id, hm = 'fcn_hm' ,  heatmaps = None, 
-                      class_ids = None, 
-                      class_names = None,
-                      size = (8,8), columns = 3, config = None, scaling = 'clip') :
-    '''
-    input
-    -----
-        Z       Gaussian distribution (Batch Sz, Class_sz, Img Height, Img Width)
-        boxes   array of bounding boxes 
-    '''
-    scaling    = scaling.lower()
-    hm         = hm.lower()
-    print(" Scaling options are:  'all', 'class'/'each' , or  'clip' ")
-    assert hm in ['fcn_hm', 'fcn_sm', 'pr_hm'], "hm must be 'fcn_hm', 'fcn_sm', or 'pr_hm'"
-
-    results    = input[image_id]
-    
-    image      = results['image']
-    image_meta = results['image_meta']
-
-    if hm in ['fcn_hm', 'fcn_sm']:
-        boxes =  results['fcn_scores_by_class'] 
-    else:
-        boxes =  results['pr_scores_by_class'] 
-    
-    Z1 = results[hm]
-    if hm == 'fcn_hm':
-        # Z1    =  results['fcn_hm']
-        title = 'Image: {:2d} - FCN Heatmaps '.format(image_id)         
-    elif hm == 'fcn_sm':
-        # Z1    =  results['fcn_sm']
-        title = 'Image: {:2d} - FCN Softmax '.format(image_id)
-    else :
-        # Z1    =  results['pr_hm']
-        title = 'Image: {:2d} - MRCNN Heatmaps '.format(image_id)
-
-    print(' heatmap shape: ', Z1.shape,' Bounding boxes shape: ', boxes.shape)
-    scale = config.HEATMAP_SCALE_FACTOR
-
-    if class_ids is None :
-        print('Display all classes...')
-        num_classes = Z1.shape[-1]
-        class_ids   = np.arange(num_classes)
-    else:
-        print('Display classes:', class_ids)
-        num_classes = len(class_ids)    
-
-    # if class_ids is None :
-        # class_ids = np.unique(results['class_ids'])
-    class_ids = np.sort(class_ids)
-    num_classes = len(class_ids)
-    
-    # print('Image shape :',image.shape)
-
-    display_image(image)
-    ## Convert to grayscale np array   
-    image_bw = np.asarray(Image.fromarray(image).convert(mode='L'))
-    
-    columns  = min(columns, num_classes)
-    rows     = math.ceil(num_classes/columns)
-    width  = size[0] * columns
-    height = size[1] * rows
-    fig = plt.figure(figsize=(width, height))
-    
-    num_bboxes  = boxes.shape[2]  
-    if num_bboxes > 0:
-        x1    = boxes[:,:,1] 
-        x2    = boxes[:,:,3] 
-        y1    = boxes[:,:,0] 
-        y2    = boxes[:,:,2] 
-        box_w = x2 - x1    
-        box_h = y2 - y1 
-        # print('x1, x2...shapes:', x1.shape, x2.shape, y1.shape, y2.shape, box_h.shape, box_w.shape)    
-    
-    min_z1_all = np.amin(Z1)
-    max_z1_all = np.amax(Z1
-    )    
-    min_z1_cls = np.amin(Z1, axis = (0,1), keepdims = True)
-    max_z1_cls = np.amax(Z1, axis = (0,1), keepdims = True)
-    avg_z1_cls = np.mean(Z1, axis = (0,1), keepdims = True)
-    
-    if scaling == 'all':   
-        Z1 = (Z1 - min_z1_all)/(max_z1_all - min_z1_all + 1.0e-9)
-        title += ' - NORMALIZED to [0, 1] across ALL classes (jointly)'
-        zlim = 'one'
-    elif scaling in [ 'class', 'each']:
-        Z1 = (Z1 - min_z1_cls)/(max_z1_cls - min_z1_cls + 1.0e-9)
-        title += ' - NORMALIZED to [0, 1] over each class '
-    elif scaling == 'clip':    
-        print(' SCALING == clip (clip to [-1, +1])')    
-        Z1 = np.clip(Z1, -1.0, 1.0) 
-        title += ' - Clip output to [-1, +1]'
-    else: 
-        print(" ERROR - scaling must be 'all', 'class'/'each' , or  'clip' : ", scaling)
-        return        
-    
-    colors = random_colors(num_classes)
-    style = "dotted"
-    linewidth = 1.0
-    alpha = 1
-    color = (0.5, 0.0, 1.0)
-
-    for idx, cls in enumerate(class_ids):
-        row = idx // columns
-        col = idx  % columns
-        subplot = (row * columns) + col +1
-        # print('idx ', idx,  ' class:', cls, 'row:', row,'col:', col, 'subplot: ', subplot, 'clor:', color)
-        if class_names is None:
-            ttl = 'Cls: {:2d} '.format(cls)
-        else:
-            ttl = 'Cls: {:2d}/{:s}'.format(cls, class_names[cls])
-
-        ax = fig.add_subplot(rows, columns, subplot)
-        ttl = ttl +'  -  min: {:6.5f}  max: {:6.5f}  avg: {:6.5f}'.format(min_z1_cls[0,0,cls], max_z1_cls[0,0,cls], avg_z1_cls[0,0,cls])
-        ax.set_title(ttl, fontsize=12)
-        ax.tick_params(axis='both', labelsize = 5)
-        ax.tick_params(direction='out', length=6, width=1, colors='r', labelsize = 10)
-        ax.set_xlabel(' X axis', fontsize=10)
-        ax.set_ylabel(' Y axis', fontsize=10)
-
-        if scaling == 'clip':
-            vmin = min_z1_cls[0,0,cls]
-            vmax = max_z1_cls[0,0,cls]
-        else:
-            vmin = 0
-            vmax = 1
-
-        unmolded_heatmap = utils.unresize_heatmap(Z1[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
-        # print(' unmolded_heatmap: shape:', unmolded_heatmap.shape, unmolded_heatmap.dtype, np.amin(unmolded_heatmap), np.amax(unmolded_heatmap))
-        ax.imshow(image_bw , cmap=plt.cm.gray)        
-
-        for bbox in range(num_bboxes):
-            # print(ttl,x1[cls,bbox], y1[cls,bbox],x2[cls,bbox],y2[cls,bbox])
-            p = patches.Rectangle( (x1[cls,bbox],y1[cls,bbox]), box_w[cls,bbox], box_h[cls,bbox], 
-                               linewidth=1, alpha=alpha, linestyle=style, edgecolor=color, facecolor='none')
-            ax.add_patch(p)
-        surf = ax.imshow(unmolded_heatmap, alpha = 0.6, cmap=cm.jet, vmin = vmin, vmax = vmax )              
-        fig.colorbar(surf, shrink=0.7, aspect=30, fraction=0.05)
-        plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, hspace=0.10, wspace=0.10)                
-    
-    fig.tight_layout(rect=[0, 0.02, 1, 0.97])
-    fig.suptitle(title, fontsize = 13) ## , ha ='center' )
-    plt.show()
-    
-    # plt.close()
-    return
-    
-##----------------------------------------------------------------------
 ## inference_heatmaps_compare()
 ##----------------------------------------------------------------------     
 def inference_heatmaps_compare(input, image_id = 0, hm = 'hm' ,  
@@ -3027,7 +2835,7 @@ def inference_heatmaps_compare(input, image_id = 0, hm = 'hm' ,
         ttl = ttl +'  -  min: {:6.5f}  max: {:6.5f}  avg: {:6.5f}'.format(min_z1_cls[0,0,cls], max_z1_cls[0,0,cls], avg_z1_cls[0,0,cls])
         
         
-        unmolded_heatmap = utils.unresize_heatmap(Z1[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
+        unmolded_heatmap = utils.unmold_heatmap(Z1[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
         # print(' unmolded_heatmap: shape:', unmolded_heatmap.shape, unmolded_heatmap.dtype, np.amin(unmolded_heatmap), np.amax(unmolded_heatmap))
         ax.imshow(image_bw , cmap=plt.cm.gray)        
         surf = ax.imshow(unmolded_heatmap, alpha = 0.6, cmap=cm.YlOrRd, vmin = vmin, vmax = vmax )              
@@ -3062,7 +2870,7 @@ def inference_heatmaps_compare(input, image_id = 0, hm = 'hm' ,
         # ttl = ttl +'  -  min: {:6.5f}  max: {:6.5f}'.format(np.amin(Z2[:,:,cls]), np.amax(Z2[:,:,cls]))
         ttl = 'FCN Cls: {:2d} - min: {:6.5f}  max: {:6.5f}  mean: {:6.5f}'.format(cls, min_z2_cls[0,0,cls], max_z2_cls[0,0,cls], avg_z2_cls[0,0,cls])
         # print(' Title: ', ttl)
-        unmolded_heatmap = utils.unresize_heatmap(Z2[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
+        unmolded_heatmap = utils.unmold_heatmap(Z2[:,:,cls],image_meta, upscale = config.HEATMAP_SCALE_FACTOR)
         # print(' unmolded_heatmap: shape:', unmolded_heatmap.shape, unmolded_heatmap.dtype, np.amin(unmolded_heatmap), np.amax(unmolded_heatmap))
         
         for bbox in range(num_bboxes):

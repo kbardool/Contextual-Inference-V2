@@ -5,9 +5,7 @@ __pycache__/
 mrcnn/ArchivedCode/
 *.h5
 logs/
-assets/
-images/
-train_*/average_heatmaps
+images/train_*/average_heatmaps
 train_*/*_results*/
 .idea/
-.vscode
+JobOutputs/

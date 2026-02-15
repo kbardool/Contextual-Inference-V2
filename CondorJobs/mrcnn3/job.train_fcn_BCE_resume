@@ -1,0 +1,66 @@
+######################################################
+# HTCondor Submit Description File. COMMON TEMPLATE --   
+# Next commands should be added to all your submit files   
+######################################################
+ if !defined FNAME
+   FNAME = fcn_
+ endif
+ #ID     = $(Cluster).$(Process)
+
+ ID      = $(Cluster)
+ output  = $(FNAME)$(ID).out
+ error   = $(FNAME)$(ID).err
+ log     = $(FNAME)$(ID).log
+
+#-------------------------------------------------------
+# RUN FCN Training on COCO
+#-------------------------------------------------------
+Universe        = vanilla 
+
+Executable      = /users/students/r0653928/anaconda3/envs/TFG/bin/python
+Initialdir      = /users/students/r0653928/projs/mrcnn3/train_coco
+Arguments       = "../mrcnn/train_coco_fcn.py   \
+    --epochs                100   \
+    --dataset            coco2014 \
+    --steps_in_epoch        256   \
+    --val_steps              64   \
+    --last_epoch              0   \
+    --batch_size              3   \
+    --lr                    0.0001 \
+    --fcn_arch              FCN8L2 \
+    --fcn_layers            all    \
+    --fcn_losses            fcn_BCE_loss \
+    --mrcnn_logs_dir        train_mrcnn_coco_subset \
+    --fcn_logs_dir          train_fcn8L2_BCE_subset \
+    --mrcnn_model           last   \
+    --fcn_model             last   \
+    --opt                   adam   \
+    --coco_classes          78 79 80 81 82 44 46 47 48 49 50 51 34 35 36 37 38 39 40 41 42 43 10 11 13 14 15 \
+    --sysout                all   \
+    --new_log_folder "
+
+## InteractiveJob   = False
+Notification     = Always
+RequestCpus      = 1
+RequestMemory    = 16G
+Request_GPUs     = 1
++RequestWalltime = 372000
+Requirements     = (machineowner == "Visics") && (CUDAGlobalMemoryMb > 12000) && (CUDACapability >=3.5)
+NiceUser         = True
+Queue 1
+
+##--------------------------------------------------------------------------------------------------------------
+## Train FCN8L2 - All layers - w/ fcn_BCE_loss: Training on coco subset with loadAnns = 'active_only'
+## CONDOR               EPOCH                              STOP
+## JOB ID    DATE        START  #EPCHS    LR     END REASON                  EPOCH       ERROR   WGHT FILE    
+##----------------------------------------------------------------------------------------------------------------
+##        01-10-2019  1047       3000   0.0001                        
+##        
+##------- 
+## 699    07-01-2019        0   3000     0.001    CONDOR STOP                  1421   0.01494221      1347   64 16
+## 370    12-01-2019     1421   3000    0.0001    EARLY STOP                   2856   0.01523829      1856   64 16
+## 387    19-01-2019     2856   3000    0.0001    EARLY STOP                   4930   0.01160112      3930   64 16
+##        21-01-2019     4930   1030    0.00001                                                              64  8
+## Rank = machine == "monkey.east.kuleuven.be"
+##
+##

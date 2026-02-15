@@ -132,7 +132,7 @@ class CocoDataset(dataset.Dataset):
             print('=====================================================================')
         else:
             print('=====================================================================')
-            print('             Loading annotations for ALL Coco classes ...    ')
+            print('             Loading annotations for ALL CLASSES ...    ')
             print(' Dataset dir : ', dataset_dir, ' subset: ', subset)
             print('=====================================================================')
 
@@ -323,7 +323,13 @@ class CocoDataset(dataset.Dataset):
         m = maskUtils.decode(rle)
         return m
 
-
+    def get_coco_image_id(self, coco_id):
+        image_info_len = len(self.image_info)
+        for img_id in range(image_info_len):
+            if self.image_info[img_id]['id'] == coco_id:
+                print(' Coco id: ', self_test.image_info[img_id]['id'], ' ---> dataset id:', img_id)
+                return img_id
+        return -1
     
 ############################################################
 #  COCO Evaluation - Build Results

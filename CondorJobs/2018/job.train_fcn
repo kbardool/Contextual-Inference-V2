@@ -1,0 +1,58 @@
+
+######################################################
+# HTCondor Submit Description File. COMMON TEMPLATE   
+# Next commands should be added to all your submit files   
+######################################################
+ if !defined FNAME
+   FNAME = fcn_
+ endif
+ #ID      = $(Cluster).$(Process)
+ 
+ ID      = $(Cluster)
+ output  = $(FNAME)$(ID).out
+ error   = $(FNAME)$(ID).err
+ log     = $(FNAME)$(ID).log
+
+#-------------------------------------------------------
+#
+#-------------------------------------------------------
+universe         = vanilla 
+
+executable  = /users/students/r0653928/anaconda3/envs/TFG/bin/python
+initialdir  = /users/students/r0653928/projs/mrcnn3
+Arguments   = "./mrcnn/train_coco_fcn.py   \
+    --epochs             2000   \
+    --steps_in_epoch       64   \
+    --last_epoch         2298   \
+    --batch_size            2   \
+    --lr               0.0001   \
+    --val_steps            16   \
+    --fcn_arch           FCN8   \
+    --fcn_layers          all   \    
+    --mrcnn_logs_dir     train_mrcnn_coco \
+    --fcn_logs_dir       train_fcn8_coco_adam \
+    --mrcnn_model        last   \
+    --fcn_model          last   \
+    --opt                adam   \
+    --sysout             file   "
+
+##    --new_log_folder "
+
+Notification     = error
+RequestCpus      = 1
+RequestMemory    = 16G
+Request_GPUs     = 1
++RequestWalltime = 372000          
+Requirements     = ( machineowner == "Visics" ) && ( CUDAGlobalMemoryMb > 12000 ) && (CUDACapability >=3.5)
+NiceUser         = true
+Queue 1
+
+
+## epochs          epochs    steps in epoch   batch sz     val_steps    LR           opt
+# 
+# 
+# 
+#
+#
+#
+### Rank = machine == "monkey.east.kuleuven.be"

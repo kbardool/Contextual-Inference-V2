@@ -797,7 +797,7 @@ def get_inference_batch(dataset, config, image_ids = None, generator = None, dis
         # log("molded_images", batch_x[0])
         # log("image_metas"  , batch_x[1])
         # titles = ['id: '+str(i)+' ' for i in batch_x[1]]
-        visualize.display_training_batch(dataset, batch_x, masks = masks, size = 8)
+        visualize.display_training_batch(dataset, batch_x, display_masks = masks, size = 8)
 
     raw_images    = np.array(images).astype(np.float32)
     # molded_images = batch_x[0]
